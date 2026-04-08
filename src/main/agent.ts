@@ -27,6 +27,14 @@ export class AgentService {
       return this.processMessage(topicId, content)
     })
 
+    ipcMain.removeHandler('agent:complete-command')
+    ipcMain.handle(
+      'agent:complete-command',
+      async (_event, topicId: string, hostId: string, partialCommand: string) => {
+        return this.completeCommand(topicId, hostId, partialCommand)
+      }
+    )
+
     ipcMain.removeHandler('agent:auth-response')
     ipcMain.handle('agent:auth-response', (_, requestId: string, approved: boolean) => {
       const resolve = this.pendingRequests.get(requestId)
@@ -434,8 +442,6 @@ export class AgentService {
                   })
 
                   result = await executeAgentCommand(sessionId, args.command, this.webContents)
-
-                  this.webContents.send('agent:terminal-hide', { sessionId })
                 }
               } catch (err) {
                 result = `Error: ${err instanceof Error ? err.message : 'Unknown error'}`
@@ -565,5 +571,41 @@ export class AgentService {
       }
       return errorMsg
     }
+  }
+
+  private async completeCommand(
+    topicId: string,
+    hostId: string,
+    partialCommand: string
+  ): Promise<string> {
+    const host = hostDB.getHostById(hostId)
+    if (!host) {
+      throw new Error('Host not found')
+    }
+
+    const history = messageDB.getMessages(topicId).slice(-8)
+    const aiClient = getAIClient()
+    const model = getCurrentModel()
+    const response = await aiClient.chat.completions.create({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You complete shell commands for a human operating a remote terminal. Return only the completed command text with no markdown, no explanation, and no trailing newline.'
+        },
+        {
+          role: 'user',
+          content: `Host: ${host.alias} (${host.username}@${host.ip}:${host.port || 22})
+Recent topic context:
+${history.map((message) => `${message.role}: ${message.content}`).join('\n')}
+
+Partial shell input:
+${partialCommand}`
+        }
+      ]
+    })
+
+    return response.choices[0].message.content?.trim() || partialCommand
   }
 }

@@ -66,6 +66,11 @@ declare global {
       onSSHClosed: (sessionId: string, callback: () => void) => () => void
 
       sendMessage: (topicId: string, content: string) => Promise<Message>
+      completeAgentCommand: (
+        topicId: string,
+        hostId: string,
+        partialCommand: string
+      ) => Promise<string>
       getAgentSessions: (
         topicId: string
       ) => Promise<{ sessionId: string; hostId: string; hostAlias: string }[]>
@@ -98,6 +103,8 @@ declare global {
       createAgentSSHSession: (hostId: string) => Promise<string>
       executeAgentSSHCommand: (sessionId: string, command: string) => Promise<string>
       closeAgentSSHSession: (sessionId: string) => Promise<void>
+      setAgentSessionPaused: (sessionId: string, paused: boolean) => Promise<boolean>
+      isAgentSessionPaused: (sessionId: string) => Promise<boolean>
       onSSHReady: (sessionId: string, callback: (hostAlias: string) => void) => () => void
       onSSHCommand: (sessionId: string, callback: (command: string) => void) => () => void
 

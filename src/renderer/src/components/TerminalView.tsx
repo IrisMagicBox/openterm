@@ -7,11 +7,27 @@ import '@xterm/xterm/css/xterm.css'
 interface TerminalViewProps {
   sessionId: string
   onClose: () => void
+  topicId?: string
+  hostId?: string
+  commandAssistEnabled?: boolean
+  onFocusSession?: () => void
+  onSuggestionChange?: (suggestion: { partial: string; completion: string } | null) => void
 }
 
-export function TerminalView({ sessionId, onClose }: TerminalViewProps) {
+export function TerminalView({
+  sessionId,
+  onClose,
+  topicId,
+  hostId,
+  commandAssistEnabled,
+  onFocusSession,
+  onSuggestionChange
+}: TerminalViewProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
+  const currentLineRef = useRef('')
+  const isCompletingRef = useRef(false)
+  const pendingSuggestionRef = useRef<{ partial: string; completion: string } | null>(null)
 
   useEffect(() => {
     if (!terminalRef.current) return
@@ -21,18 +37,18 @@ export function TerminalView({ sessionId, onClose }: TerminalViewProps) {
       fontSize: 13,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: {
-        background: '#ffffff',
-        foreground: '#111827',
-        cursor: '#3b82f6',
-        selectionBackground: '#bfdbfe',
-        black: '#000000',
+        background: '#1a1b1e',
+        foreground: '#d1d5db',
+        cursor: '#60a5fa',
+        selectionBackground: '#374151',
+        black: '#1a1b1e',
         red: '#ef4444',
         green: '#22c55e',
         yellow: '#f59e0b',
         blue: '#3b82f6',
         magenta: '#d946ef',
         cyan: '#06b6d4',
-        white: '#ffffff',
+        white: '#d1d5db',
         brightBlack: '#6b7280',
         brightRed: '#f87171',
         brightGreen: '#4ade80',
@@ -50,6 +66,8 @@ export function TerminalView({ sessionId, onClose }: TerminalViewProps) {
     term.loadAddon(clipboardAddon)
     term.open(terminalRef.current)
     fitAddon.fit()
+    const handleMouseDown = () => onFocusSession?.()
+    terminalRef.current.addEventListener('mousedown', handleMouseDown)
 
     xtermRef.current = term
 
@@ -65,6 +83,56 @@ export function TerminalView({ sessionId, onClose }: TerminalViewProps) {
     })
 
     term.onData((data) => {
+      onFocusSession?.()
+
+      if (commandAssistEnabled && data === '\t' && topicId && hostId && !isCompletingRef.current) {
+        const partialCommand = currentLineRef.current.trim()
+        if (partialCommand.length > 0) {
+          if (
+            pendingSuggestionRef.current &&
+            pendingSuggestionRef.current.partial === partialCommand &&
+            pendingSuggestionRef.current.completion.startsWith(partialCommand)
+          ) {
+            const suffix = pendingSuggestionRef.current.completion.slice(partialCommand.length)
+            if (suffix) {
+              currentLineRef.current = pendingSuggestionRef.current.completion
+              window.api.sendSSHInput(sessionId, suffix)
+            }
+            pendingSuggestionRef.current = null
+            onSuggestionChange?.(null)
+            return
+          }
+
+          isCompletingRef.current = true
+          window.api
+            .completeAgentCommand(topicId, hostId, partialCommand)
+            .then((completion) => {
+              if (!completion || !completion.startsWith(partialCommand)) return
+              const suffix = completion.slice(partialCommand.length)
+              if (!suffix) return
+              pendingSuggestionRef.current = { partial: partialCommand, completion }
+              onSuggestionChange?.({ partial: partialCommand, completion })
+            })
+            .finally(() => {
+              isCompletingRef.current = false
+            })
+        }
+        return
+      }
+
+      if (data === '\r') {
+        currentLineRef.current = ''
+        pendingSuggestionRef.current = null
+        onSuggestionChange?.(null)
+      } else if (data === '\u007f') {
+        currentLineRef.current = currentLineRef.current.slice(0, -1)
+        pendingSuggestionRef.current = null
+        onSuggestionChange?.(null)
+      } else if (data >= ' ' && data !== '\u007f') {
+        currentLineRef.current += data
+        pendingSuggestionRef.current = null
+        onSuggestionChange?.(null)
+      }
       window.api.sendSSHInput(sessionId, data)
     })
 
@@ -81,13 +149,15 @@ export function TerminalView({ sessionId, onClose }: TerminalViewProps) {
       window.removeEventListener('resize', handleResize)
       cleanupData()
       cleanupClosed()
+      terminalRef.current?.removeEventListener('mousedown', handleMouseDown)
+      onSuggestionChange?.(null)
       term.dispose()
     }
-  }, [sessionId])
+  }, [sessionId, topicId, hostId, commandAssistEnabled, onFocusSession, onSuggestionChange])
 
   return (
-    <div className="w-full h-full bg-white relative">
-      <div ref={terminalRef} className="w-full h-full p-4" />
+    <div className="w-full h-full relative">
+      <div ref={terminalRef} className="w-full h-full p-1" />
     </div>
   )
 }

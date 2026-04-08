@@ -11,6 +11,8 @@ interface SSHSession {
   isAgentSession?: boolean // Mark if this is an agent-controlled session
   commandResolve?: (value: string) => void // Promise resolver for command completion
   currentOutput: string // Accumulate current command output
+  agentPaused?: boolean
+  agentPauseWaiters?: Array<() => void>
 }
 
 const sessions = new Map<string, SSHSession>()
@@ -89,6 +91,35 @@ export const getTerminalBuffer = (sessionId: string): string => {
   return session ? session.buffer.slice(-2000) : ''
 }
 
+const waitForAgentResume = (session: SSHSession): Promise<void> => {
+  if (!session.agentPaused) return Promise.resolve()
+
+  return new Promise((resolve) => {
+    if (!session.agentPauseWaiters) {
+      session.agentPauseWaiters = []
+    }
+    session.agentPauseWaiters.push(resolve)
+  })
+}
+
+export const setAgentSessionPaused = (sessionId: string, paused: boolean): boolean => {
+  const session = sessions.get(sessionId)
+  if (!session || !session.isAgentSession) return false
+
+  session.agentPaused = paused
+  if (!paused && session.agentPauseWaiters?.length) {
+    const waiters = [...session.agentPauseWaiters]
+    session.agentPauseWaiters = []
+    waiters.forEach((resolve) => resolve())
+  }
+  return true
+}
+
+export const isAgentSessionPaused = (sessionId: string): boolean => {
+  const session = sessions.get(sessionId)
+  return Boolean(session?.agentPaused)
+}
+
 // Execute command in an agent session (interactive shell mode)
 export const executeAgentCommand = (
   sessionId: string,
@@ -102,29 +133,28 @@ export const executeAgentCommand = (
       return
     }
 
-    // Reset output accumulator
-    session.currentOutput = ''
-    session.commandResolve = resolve
-
-    // Send command to terminal
-    const cmdWithNewline = command.endsWith('\n') ? command : command + '\n'
-    session.stream.write(cmdWithNewline)
-
-    // Send to renderer for display
-    if (webContents) {
-      webContents.send(`ssh:command:${sessionId}`, command)
-    }
-
-    // Set a timeout for command completion detection
-    // This is a simple approach - more sophisticated would use prompt detection
-    setTimeout(() => {
-      if (session.commandResolve) {
-        const output = session.currentOutput
+    waitForAgentResume(session)
+      .then(() => {
         session.currentOutput = ''
-        session.commandResolve = undefined
-        resolve(output)
-      }
-    }, 500) // Wait for initial output
+        session.commandResolve = resolve
+
+        const cmdWithNewline = command.endsWith('\n') ? command : command + '\n'
+        session.stream.write(cmdWithNewline)
+
+        if (webContents) {
+          webContents.send(`ssh:command:${sessionId}`, command)
+        }
+
+        setTimeout(() => {
+          if (session.commandResolve) {
+            const output = session.currentOutput
+            session.currentOutput = ''
+            session.commandResolve = undefined
+            resolve(output)
+          }
+        }, 500)
+      })
+      .catch(reject)
   })
 }
 
@@ -149,7 +179,9 @@ export const createAgentSession = (hostId: string, webContents: WebContents): Pr
             hostId,
             buffer: '',
             isAgentSession: true,
-            currentOutput: ''
+            currentOutput: '',
+            agentPaused: false,
+            agentPauseWaiters: []
           }
           sessions.set(sessionId, session)
 
@@ -261,6 +293,16 @@ export function setupSSHHandlers() {
   ipcMain.removeHandler('ssh:agent:close')
   ipcMain.handle('ssh:agent:close', (_, sessionId: string) => {
     closeSession(sessionId)
+  })
+
+  ipcMain.removeHandler('ssh:agent:set-paused')
+  ipcMain.handle('ssh:agent:set-paused', (_, sessionId: string, paused: boolean) => {
+    return setAgentSessionPaused(sessionId, paused)
+  })
+
+  ipcMain.removeHandler('ssh:agent:is-paused')
+  ipcMain.handle('ssh:agent:is-paused', (_, sessionId: string) => {
+    return isAgentSessionPaused(sessionId)
   })
 
   // SSH input

@@ -49,6 +49,8 @@ const api = {
   // Agent APIs
   sendMessage: (topicId: string, content: string) =>
     ipcRenderer.invoke('agent:message', topicId, content),
+  completeAgentCommand: (topicId: string, hostId: string, partialCommand: string) =>
+    ipcRenderer.invoke('agent:complete-command', topicId, hostId, partialCommand),
   getAgentSessions: (topicId: string) => ipcRenderer.invoke('agent:get-sessions', topicId),
   addHostToTopic: (topicId: string, hostId: string) =>
     ipcRenderer.invoke('agent:add-host', topicId, hostId),
@@ -118,6 +120,9 @@ const api = {
   executeAgentSSHCommand: (sessionId: string, command: string) =>
     ipcRenderer.invoke('ssh:agent:execute', sessionId, command),
   closeAgentSSHSession: (sessionId: string) => ipcRenderer.invoke('ssh:agent:close', sessionId),
+  setAgentSessionPaused: (sessionId: string, paused: boolean) =>
+    ipcRenderer.invoke('ssh:agent:set-paused', sessionId, paused),
+  isAgentSessionPaused: (sessionId: string) => ipcRenderer.invoke('ssh:agent:is-paused', sessionId),
   onSSHReady: (sessionId: string, callback: (hostAlias: string) => void) => {
     const listener = (_event, hostAlias: string) => callback(hostAlias)
     ipcRenderer.on(`ssh:ready:${sessionId}`, listener)
