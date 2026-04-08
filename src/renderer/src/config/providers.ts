@@ -6,6 +6,17 @@ export interface SystemProvider extends Provider {
 }
 
 export const SYSTEM_PROVIDERS_CONFIG: Record<SystemProviderId, SystemProvider> = {
+  coreshub: {
+    id: 'coreshub',
+    name: 'CoresHub',
+    type: 'openai',
+    apiKey: '',
+    apiHost: 'https://openapi.coreshub.cn/v1',
+    enabled: false,
+    isSystem: true,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  },
   openai: {
     id: 'openai',
     name: 'OpenAI',
@@ -245,7 +256,8 @@ export const SYSTEM_PROVIDERS_CONFIG: Record<SystemProviderId, SystemProvider> =
     isSystem: true,
     createdAt: Date.now(),
     updatedAt: Date.now()
-  }
+  },
+
 }
 
 export const SYSTEM_PROVIDERS: SystemProvider[] = Object.values(SYSTEM_PROVIDERS_CONFIG)
@@ -270,6 +282,15 @@ export const PROVIDER_URLS: Record<
     }
   }
 > = {
+  coreshub: {
+    api: { url: 'https://openapi.coreshub.cn/v1' },
+    websites: {
+      official: 'https://coreshub.cn',
+      apiKey: 'https://coreshub.cn',
+      docs: 'https://coreshub.cn',
+      models: 'https://coreshub.cn'
+    }
+  },
   openai: {
     api: { url: 'https://api.openai.com' },
     websites: {
@@ -445,5 +466,5 @@ export const PROVIDER_URLS: Record<
       docs: 'https://openrouter.ai/docs/quick-start',
       models: 'https://openrouter.ai/models'
     }
-  }
+  },
 }

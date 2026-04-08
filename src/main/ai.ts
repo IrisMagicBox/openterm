@@ -1,8 +1,67 @@
 import OpenAI from 'openai'
 import { providerDB, modelDB } from './db'
+import type { Provider } from '../shared/types'
 
 let cachedClient: OpenAI | null = null
 let cachedConfig = ''
+
+export const normalizeProviderApiHost = (provider: Pick<Provider, 'apiHost' | 'type'>): string => {
+  const trimmedHost = provider.apiHost.trim().replace(/\/+$/, '')
+  if (!trimmedHost) return trimmedHost
+
+  if (
+    provider.type === 'openai' &&
+    !trimmedHost.endsWith('/v1') &&
+    !trimmedHost.includes('/api/v1') &&
+    !trimmedHost.endsWith('/openai')
+  ) {
+    return `${trimmedHost}/v1`
+  }
+
+  if (provider.type === 'azure-openai') {
+    return trimmedHost
+  }
+
+  return trimmedHost
+}
+
+export const buildProviderModelsUrl = (provider: Pick<Provider, 'apiHost' | 'type'>): string => {
+  const normalizedHost = normalizeProviderApiHost(provider)
+  if (!normalizedHost) return normalizedHost
+
+  if (provider.type === 'ollama') {
+    return `${normalizedHost}/api/tags`
+  }
+
+  if (provider.type === 'azure-openai') {
+    return normalizedHost
+  }
+
+  if (normalizedHost.endsWith('/models') || normalizedHost.endsWith('/api/tags')) {
+    return normalizedHost
+  }
+
+  return `${normalizedHost}/models`
+}
+
+export const buildProviderChatUrl = (provider: Pick<Provider, 'apiHost' | 'type'>): string => {
+  const normalizedHost = normalizeProviderApiHost(provider)
+  if (!normalizedHost) return normalizedHost
+
+  if (provider.type === 'anthropic') {
+    return `${normalizedHost}/v1/messages`
+  }
+
+  if (provider.type === 'gemini') {
+    return normalizedHost // Gemini uses a different pattern with model ID in URL
+  }
+
+  if (normalizedHost.endsWith('/chat/completions')) {
+    return normalizedHost
+  }
+
+  return `${normalizedHost}/chat/completions`
+}
 
 export const getAIClient = (): OpenAI => {
   const providers = providerDB.getProviders()
@@ -13,12 +72,13 @@ export const getAIClient = (): OpenAI => {
   }
 
   const provider = enabledProviders[0]
-  const configKey = `${provider.apiHost}:${provider.apiKey}`
+  const normalizedHost = normalizeProviderApiHost(provider)
+  const configKey = `${normalizedHost}:${provider.apiKey}`
 
   if (!cachedClient || cachedConfig !== configKey) {
     cachedClient = new OpenAI({
       apiKey: provider.apiKey,
-      baseURL: provider.apiHost
+      baseURL: normalizedHost
     })
     cachedConfig = configKey
   }

@@ -52,7 +52,7 @@ export function ModelSelector({
     return (
       <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm">
         <Cpu size={14} />
-        <span>No providers enabled</span>
+        <span>未启用提供商</span>
       </div>
     )
   }
@@ -73,14 +73,14 @@ export function ModelSelector({
           {selectedModel
             ? selectedModel.name
             : selectedProvider
-              ? `${selectedProvider.name} (default)`
-              : 'Select Model'}
+              ? `${selectedProvider.name} (默认)`
+              : '选择模型'}
         </span>
         <ChevronDown size={14} className="text-gray-400" />
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full left-0 mb-2 w-72 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden z-50">
+        <div className="absolute top-full right-0 mt-2 w-72 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-200">
           <div className="max-h-80 overflow-y-auto">
             {enabledProviders.map((provider) => {
               const providerModels = getProviderModels(provider.id)
@@ -121,7 +121,7 @@ export function ModelSelector({
                       {selectedProviderId === provider.id && selectedModelId === null && (
                         <Check size={14} className="text-blue-500" />
                       )}
-                      <span className="text-gray-500 italic">Default model</span>
+                      <span className="text-gray-500 italic">默认模型</span>
                     </button>
                   )}
                 </div>

@@ -13,12 +13,18 @@
 }
 
 /* Electron Drag Regions */
-aside {
+.drag {
   -webkit-app-region: drag;
 }
-aside button, aside input, nav, nav button {
+
+.no-drag {
   -webkit-app-region: no-drag;
 }
+
+button, input, textarea, [role="button"] {
+  -webkit-app-region: no-drag;
+}
+
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {

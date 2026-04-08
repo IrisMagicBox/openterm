@@ -1,5 +1,17 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { Host, Topic, Message, ModelSettings, Provider, Model } from '../shared/types'
+import {
+  Host,
+  Topic,
+  Message,
+  ModelSettings,
+  Provider,
+  Model,
+  PermissionSettings,
+  Task,
+  TaskStep,
+  Approval,
+  Artifact
+} from '../shared/types'
 
 declare global {
   interface Window {
@@ -10,8 +22,42 @@ declare global {
       deleteHost: (id: string) => Promise<void>
       getTopics: () => Promise<Topic[]>
       createTopic: (title: string, hostIds: string[]) => Promise<Topic>
+      updateTopicTitle: (topicId: string, title: string) => Promise<void>
+      deleteTopic: (topicId: string) => Promise<void>
       updateTopicHosts: (topicId: string, hostIds: string[]) => Promise<void>
       getMessages: (topicId: string) => Promise<Message[]>
+      getTasks: (topicId?: string) => Promise<Task[]>
+      getLatestTask: (topicId: string) => Promise<Task | undefined>
+      createTask: (
+        task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> &
+          Partial<Pick<Task, 'id' | 'createdAt' | 'updatedAt'>>
+      ) => Promise<Task>
+      updateTask: (
+        id: string,
+        updates: Partial<Omit<Task, 'id' | 'topicId' | 'createdAt'>>
+      ) => Promise<Task | undefined>
+      getTaskSteps: (taskId: string) => Promise<TaskStep[]>
+      createTaskStep: (
+        step: Omit<TaskStep, 'id' | 'createdAt' | 'updatedAt'> &
+          Partial<Pick<TaskStep, 'id' | 'createdAt' | 'updatedAt'>>
+      ) => Promise<TaskStep>
+      updateTaskStep: (
+        id: string,
+        updates: Partial<Omit<TaskStep, 'id' | 'taskId' | 'createdAt'>>
+      ) => Promise<TaskStep | undefined>
+      getApprovals: (taskId: string) => Promise<Approval[]>
+      createApproval: (
+        approval: Omit<Approval, 'id' | 'createdAt'> & Partial<Pick<Approval, 'id' | 'createdAt'>>
+      ) => Promise<Approval>
+      updateApprovalStatus: (
+        id: string,
+        status: Approval['status']
+      ) => Promise<Approval | undefined>
+      getArtifacts: (taskId: string) => Promise<Artifact[]>
+      createArtifact: (
+        artifact: Omit<Artifact, 'id' | 'createdAt' | 'updatedAt'> &
+          Partial<Pick<Artifact, 'id' | 'createdAt' | 'updatedAt'>>
+      ) => Promise<Artifact>
 
       connectSSH: (hostId: string) => Promise<string>
       sendSSHInput: (sessionId: string, data: string) => void
@@ -62,10 +108,18 @@ declare global {
       getProvider: (id: string) => Promise<Provider | undefined>
       saveProvider: (provider: Provider) => Promise<void>
       deleteProvider: (id: string) => Promise<void>
+      testProviderConnection: (
+        provider: Provider,
+        modelId?: string
+      ) => Promise<{ ok: boolean; message: string }>
 
       getModels: (providerId?: string) => Promise<Model[]>
       saveModel: (model: Model) => Promise<void>
       deleteModel: (id: string) => Promise<void>
+
+      // Permission Settings APIs
+      getPermissions: () => Promise<PermissionSettings>
+      savePermissions: (permissions: Partial<PermissionSettings>) => Promise<void>
     }
   }
 }

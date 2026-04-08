@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { ApprovalStatus } from '../shared/types'
 
 // Custom APIs for renderer
 const api = {
@@ -9,9 +10,25 @@ const api = {
   getTopics: () => ipcRenderer.invoke('get-topics'),
   createTopic: (title: string, hostIds: string[]) =>
     ipcRenderer.invoke('create-topic', title, hostIds),
+  updateTopicTitle: (topicId: string, title: string) =>
+    ipcRenderer.invoke('update-topic-title', topicId, title),
+  deleteTopic: (topicId: string) => ipcRenderer.invoke('delete-topic', topicId),
   updateTopicHosts: (topicId: string, hostIds: string[]) =>
     ipcRenderer.invoke('update-topic-hosts', topicId, hostIds),
   getMessages: (topicId: string) => ipcRenderer.invoke('get-messages', topicId),
+  getTasks: (topicId?: string) => ipcRenderer.invoke('get-tasks', topicId),
+  getLatestTask: (topicId: string) => ipcRenderer.invoke('get-latest-task', topicId),
+  createTask: (task: any) => ipcRenderer.invoke('create-task', task),
+  updateTask: (id: string, updates: any) => ipcRenderer.invoke('update-task', id, updates),
+  getTaskSteps: (taskId: string) => ipcRenderer.invoke('get-task-steps', taskId),
+  createTaskStep: (step: any) => ipcRenderer.invoke('create-task-step', step),
+  updateTaskStep: (id: string, updates: any) => ipcRenderer.invoke('update-task-step', id, updates),
+  getApprovals: (taskId: string) => ipcRenderer.invoke('get-approvals', taskId),
+  createApproval: (approval: any) => ipcRenderer.invoke('create-approval', approval),
+  updateApprovalStatus: (id: string, status: ApprovalStatus) =>
+    ipcRenderer.invoke('update-approval-status', id, status),
+  getArtifacts: (taskId: string) => ipcRenderer.invoke('get-artifacts', taskId),
+  createArtifact: (artifact: any) => ipcRenderer.invoke('create-artifact', artifact),
 
   // SSH Terminal APIs
   connectSSH: (hostId: string) => ipcRenderer.invoke('ssh:connect', hostId),
@@ -120,10 +137,17 @@ const api = {
   getProvider: (id: string) => ipcRenderer.invoke('get-provider', id),
   saveProvider: (provider: any) => ipcRenderer.invoke('save-provider', provider),
   deleteProvider: (id: string) => ipcRenderer.invoke('delete-provider', id),
+  testProviderConnection: (provider: any, modelId?: string) =>
+    ipcRenderer.invoke('test-provider-connection', provider, modelId),
 
   getModels: (providerId?: string) => ipcRenderer.invoke('get-models', providerId),
   saveModel: (model: any) => ipcRenderer.invoke('save-model', model),
-  deleteModel: (id: string) => ipcRenderer.invoke('delete-model', id)
+  deleteModel: (id: string) => ipcRenderer.invoke('delete-model', id),
+
+  // Permission Settings APIs
+  getPermissions: () => ipcRenderer.invoke('get-permissions'),
+  savePermissions: (permissions: { requireConfirmation?: boolean; autoExecuteSafeOperations?: boolean }) =>
+    ipcRenderer.invoke('save-permissions', permissions)
 }
 
 if (process.contextIsolated) {

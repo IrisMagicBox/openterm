@@ -32,7 +32,8 @@ const providerIcons: Record<string, React.ReactNode> = {
   vertexai: <Cloud size={18} />,
   github: <Cloud size={18} />,
   copilot: <Cloud size={18} />,
-  openrouter: <Cloud size={18} />
+  openrouter: <Cloud size={18} />,
+  coreshub: <Cpu size={18} />
 }
 
 function getProviderIcon(provider: Provider) {
@@ -60,15 +61,15 @@ export function ProviderList({
     <div className="flex flex-col h-full bg-gray-50 border-r border-gray-200 w-72">
       <div className="p-4 border-b border-gray-200 bg-white">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-gray-900">AI Providers</h2>
+          <h2 className="font-semibold text-gray-900">AI 提供商</h2>
           <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-            {enabledCount}/{providers.length} enabled
+            {enabledCount}/{providers.length} 已启用
           </span>
         </div>
         <div className="flex gap-2">
           <input
             type="text"
-            placeholder="Filter providers..."
+            placeholder="筛选提供商..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -76,7 +77,7 @@ export function ProviderList({
           <button
             onClick={onAddProvider}
             className="p-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            title="Add custom provider"
+            title="添加自定义提供商"
           >
             <Plus size={18} />
           </button>
@@ -85,7 +86,7 @@ export function ProviderList({
 
       <div className="flex-1 overflow-y-auto">
         {filteredProviders.length === 0 ? (
-          <div className="p-4 text-center text-gray-500 text-sm">No providers found</div>
+          <div className="p-4 text-center text-gray-500 text-sm">未找到提供商</div>
         ) : (
           <div className="divide-y divide-gray-100">
             {filteredProviders.map((provider) => (
@@ -119,7 +120,7 @@ export function ProviderList({
                         onResetProvider(provider.id)
                       }}
                       className="p-1.5 text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Reset to defaults"
+                      title="恢复默认设置"
                     >
                       <RefreshCw size={14} />
                     </button>
@@ -132,7 +133,7 @@ export function ProviderList({
                         onDeleteProvider(provider.id)
                       }}
                       className="p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Delete provider"
+                      title="删除提供商"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -146,7 +147,7 @@ export function ProviderList({
                     className={`p-1 transition-colors ${
                       provider.enabled ? 'text-blue-600' : 'text-gray-400'
                     }`}
-                    title={provider.enabled ? 'Disable provider' : 'Enable provider'}
+                    title={provider.enabled ? '禁用提供商' : '启用提供商'}
                   >
                     {provider.enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                   </button>
@@ -158,7 +159,7 @@ export function ProviderList({
       </div>
 
       <div className="p-3 border-t border-gray-200 bg-white text-xs text-gray-500">
-        Click a provider to configure its settings
+        点击提供商以配置其设置
       </div>
     </div>
   )

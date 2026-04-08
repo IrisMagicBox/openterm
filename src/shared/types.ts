@@ -18,6 +18,87 @@ export interface Topic {
   createdAt: number
 }
 
+export type TaskStatus =
+  | 'pending'
+  | 'planning'
+  | 'running'
+  | 'waiting_approval'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export type TaskStepType = 'plan' | 'command' | 'result' | 'approval' | 'final' | 'note'
+
+export type TaskStepStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'blocked'
+  | 'cancelled'
+
+export type ApprovalRiskLevel =
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'critical'
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired'
+
+export type ArtifactType = 'report' | 'script' | 'diff' | 'log' | 'note'
+
+export interface Task {
+  id: string
+  topicId: string
+  title: string
+  goal: string
+  status: TaskStatus
+  summary?: string
+  selectedProviderId?: string
+  selectedModelId?: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface TaskStep {
+  id: string
+  taskId: string
+  type: TaskStepType
+  status: TaskStepStatus
+  hostId?: string
+  title?: string
+  content: string
+  rawOutput?: string
+  metadata?: Record<string, unknown>
+  startedAt?: number
+  endedAt?: number
+  createdAt: number
+  updatedAt: number
+}
+
+export interface Approval {
+  id: string
+  taskId: string
+  stepId?: string
+  command: string
+  riskLevel: ApprovalRiskLevel
+  reason?: string
+  status: ApprovalStatus
+  createdAt: number
+  respondedAt?: number
+}
+
+export interface Artifact {
+  id: string
+  taskId: string
+  type: ArtifactType
+  title: string
+  content: string
+  metadata?: Record<string, unknown>
+  createdAt: number
+  updatedAt: number
+}
+
 export interface Message {
   id: string
   topicId: string
@@ -52,6 +133,12 @@ export interface ModelSettings {
   updatedAt: number
 }
 
+export interface PermissionSettings {
+  requireConfirmation: boolean
+  autoExecuteSafeOperations: boolean
+  updatedAt: number
+}
+
 export type ProviderType =
   | 'openai'
   | 'anthropic'
@@ -65,7 +152,6 @@ export type ProviderType =
   | 'minimax'
   | 'groq'
   | 'mistral'
-  | 'groq'
   | 'together'
   | 'fireworks'
   | 'nvidia'
@@ -148,3 +234,4 @@ export type SystemProviderId =
   | 'vertexai'
   | 'github'
   | 'copilot'
+  | 'coreshub'

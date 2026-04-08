@@ -1,11 +1,24 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import path from 'path'
-import { Host, Topic, Message, ModelSettings, Provider, Model } from '../shared/types'
+import {
+  Host,
+  Topic,
+  Message,
+  ModelSettings,
+  Provider,
+  Model,
+  PermissionSettings,
+  Task,
+  TaskStep,
+  Approval,
+  Artifact
+} from '../shared/types'
 import { v4 as uuidv4 } from 'uuid'
 
 const dbPath = path.join(app.getPath('userData'), 'openterm.db')
 const db = new Database(dbPath)
+db.pragma('foreign_keys = ON')
 
 export const initializeDB = () => {
   db.exec(`
@@ -71,6 +84,71 @@ export const initializeDB = () => {
       createdAt INTEGER NOT NULL,
       FOREIGN KEY (providerId) REFERENCES providers(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS permissions (
+      id TEXT PRIMARY KEY,
+      requireConfirmation INTEGER DEFAULT 1,
+      autoExecuteSafeOperations INTEGER DEFAULT 1,
+      updatedAt INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      topicId TEXT NOT NULL,
+      title TEXT NOT NULL,
+      goal TEXT NOT NULL,
+      status TEXT NOT NULL,
+      summary TEXT,
+      selectedProviderId TEXT,
+      selectedModelId TEXT,
+      createdAt INTEGER NOT NULL,
+      updatedAt INTEGER NOT NULL,
+      FOREIGN KEY (topicId) REFERENCES topics(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS task_steps (
+      id TEXT PRIMARY KEY,
+      taskId TEXT NOT NULL,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      hostId TEXT,
+      title TEXT,
+      content TEXT NOT NULL,
+      rawOutput TEXT,
+      metadata TEXT,
+      startedAt INTEGER,
+      endedAt INTEGER,
+      createdAt INTEGER NOT NULL,
+      updatedAt INTEGER NOT NULL,
+      FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (hostId) REFERENCES hosts(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS approvals (
+      id TEXT PRIMARY KEY,
+      taskId TEXT NOT NULL,
+      stepId TEXT,
+      command TEXT NOT NULL,
+      riskLevel TEXT NOT NULL,
+      reason TEXT,
+      status TEXT NOT NULL,
+      createdAt INTEGER NOT NULL,
+      respondedAt INTEGER,
+      FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (stepId) REFERENCES task_steps(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS artifacts (
+      id TEXT PRIMARY KEY,
+      taskId TEXT NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      metadata TEXT,
+      createdAt INTEGER NOT NULL,
+      updatedAt INTEGER NOT NULL,
+      FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE CASCADE
+    );
   `)
 
   const tableInfo = db.prepare('PRAGMA table_info(messages)').all() as any[]
@@ -90,12 +168,73 @@ export const initializeDB = () => {
   }
 }
 
+const parseJSON = <T>(value: string | null | undefined, fallback: T): T => {
+  if (!value) return fallback
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return fallback
+  }
+}
+
+const mapTaskRow = (row: any): Task => ({
+  id: row.id,
+  topicId: row.topicId,
+  title: row.title,
+  goal: row.goal,
+  status: row.status,
+  summary: row.summary || undefined,
+  selectedProviderId: row.selectedProviderId || undefined,
+  selectedModelId: row.selectedModelId || undefined,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt
+})
+
+const mapTaskStepRow = (row: any): TaskStep => ({
+  id: row.id,
+  taskId: row.taskId,
+  type: row.type,
+  status: row.status,
+  hostId: row.hostId || undefined,
+  title: row.title || undefined,
+  content: row.content,
+  rawOutput: row.rawOutput || undefined,
+  metadata: parseJSON<Record<string, unknown> | undefined>(row.metadata, undefined),
+  startedAt: row.startedAt || undefined,
+  endedAt: row.endedAt || undefined,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt
+})
+
+const mapApprovalRow = (row: any): Approval => ({
+  id: row.id,
+  taskId: row.taskId,
+  stepId: row.stepId || undefined,
+  command: row.command,
+  riskLevel: row.riskLevel,
+  reason: row.reason || undefined,
+  status: row.status,
+  createdAt: row.createdAt,
+  respondedAt: row.respondedAt || undefined
+})
+
+const mapArtifactRow = (row: any): Artifact => ({
+  id: row.id,
+  taskId: row.taskId,
+  type: row.type,
+  title: row.title,
+  content: row.content,
+  metadata: parseJSON<Record<string, unknown> | undefined>(row.metadata, undefined),
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt
+})
+
 export const hostDB = {
   getHosts: (): Host[] => {
     const rows = db.prepare('SELECT * FROM hosts ORDER BY createdAt DESC').all() as any[]
     return rows.map((row) => ({
       ...row,
-      tags: JSON.parse(row.tags || '[]')
+      tags: parseJSON(row.tags, [])
     }))
   },
 
@@ -133,7 +272,7 @@ export const hostDB = {
     if (!row) return undefined
     return {
       ...row,
-      tags: JSON.parse(row.tags || '[]')
+      tags: parseJSON(row.tags, [])
     }
   }
 }
@@ -143,7 +282,7 @@ export const topicDB = {
     const rows = db.prepare('SELECT * FROM topics ORDER BY lastMessageAt DESC').all() as any[]
     return rows.map((row) => ({
       ...row,
-      hostIds: JSON.parse(row.hostIds || '[]')
+      hostIds: parseJSON(row.hostIds, [])
     }))
   },
 
@@ -166,6 +305,10 @@ export const topicDB = {
     db.prepare('UPDATE topics SET title = ? WHERE id = ?').run(title, id)
   },
 
+  deleteTopic: (id: string) => {
+    db.prepare('DELETE FROM topics WHERE id = ?').run(id)
+  },
+
   updateTopicHosts: (id: string, hostIds: string[]) => {
     const hostsStr = JSON.stringify(hostIds)
     db.prepare('UPDATE topics SET hostIds = ? WHERE id = ?').run(hostsStr, id)
@@ -176,7 +319,7 @@ export const topicDB = {
     if (!row) return undefined
     return {
       ...row,
-      hostIds: JSON.parse(row.hostIds || '[]')
+      hostIds: parseJSON(row.hostIds, [])
     }
   }
 }
@@ -188,7 +331,7 @@ export const messageDB = {
       .all(topicId) as any[]
     return rows.map((row) => ({
       ...row,
-      toolCalls: JSON.parse(row.toolCalls || 'null')
+      toolCalls: parseJSON(row.toolCalls, null)
     }))
   },
 
@@ -215,6 +358,297 @@ export const messageDB = {
       message.timestamp,
       message.topicId
     )
+  }
+}
+
+export const taskDB = {
+  getTasks: (topicId?: string): Task[] => {
+    const query = topicId
+      ? 'SELECT * FROM tasks WHERE topicId = ? ORDER BY updatedAt DESC'
+      : 'SELECT * FROM tasks ORDER BY updatedAt DESC'
+    const rows = db.prepare(query).all(topicId ? topicId : undefined) as any[]
+    return rows.map(mapTaskRow)
+  },
+
+  getTaskById: (id: string): Task | undefined => {
+    const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as any
+    return row ? mapTaskRow(row) : undefined
+  },
+
+  getLatestTaskByTopicId: (topicId: string): Task | undefined => {
+    const row = db
+      .prepare('SELECT * FROM tasks WHERE topicId = ? ORDER BY updatedAt DESC LIMIT 1')
+      .get(topicId) as any
+    return row ? mapTaskRow(row) : undefined
+  },
+
+  createTask: (
+    task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> & Partial<Pick<Task, 'id' | 'createdAt' | 'updatedAt'>>
+  ): Task => {
+    const id = task.id || uuidv4()
+    const now = task.createdAt || Date.now()
+    const updatedAt = task.updatedAt || now
+    const createdTask: Task = {
+      id,
+      topicId: task.topicId,
+      title: task.title,
+      goal: task.goal,
+      status: task.status,
+      summary: task.summary,
+      selectedProviderId: task.selectedProviderId,
+      selectedModelId: task.selectedModelId,
+      createdAt: now,
+      updatedAt
+    }
+
+    db.prepare(
+      `
+      INSERT INTO tasks (id, topicId, title, goal, status, summary, selectedProviderId, selectedModelId, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+    ).run(
+      createdTask.id,
+      createdTask.topicId,
+      createdTask.title,
+      createdTask.goal,
+      createdTask.status,
+      createdTask.summary || null,
+      createdTask.selectedProviderId || null,
+      createdTask.selectedModelId || null,
+      createdTask.createdAt,
+      createdTask.updatedAt
+    )
+
+    return createdTask
+  },
+
+  updateTask: (id: string, updates: Partial<Omit<Task, 'id' | 'topicId' | 'createdAt'>>): Task | undefined => {
+    const existing = taskDB.getTaskById(id)
+    if (!existing) return undefined
+
+    const updated: Task = {
+      ...existing,
+      ...updates,
+      updatedAt: Date.now()
+    }
+
+    db.prepare(
+      `
+      UPDATE tasks
+      SET title = ?, goal = ?, status = ?, summary = ?, selectedProviderId = ?, selectedModelId = ?, updatedAt = ?
+      WHERE id = ?
+    `
+    ).run(
+      updated.title,
+      updated.goal,
+      updated.status,
+      updated.summary || null,
+      updated.selectedProviderId || null,
+      updated.selectedModelId || null,
+      updated.updatedAt,
+      id
+    )
+
+    return updated
+  }
+}
+
+export const taskStepDB = {
+  getTaskSteps: (taskId: string): TaskStep[] => {
+    const rows = db
+      .prepare('SELECT * FROM task_steps WHERE taskId = ? ORDER BY createdAt ASC')
+      .all(taskId) as any[]
+    return rows.map(mapTaskStepRow)
+  },
+
+  createStep: (
+    step: Omit<TaskStep, 'id' | 'createdAt' | 'updatedAt'> &
+      Partial<Pick<TaskStep, 'id' | 'createdAt' | 'updatedAt'>>
+  ): TaskStep => {
+    const id = step.id || uuidv4()
+    const now = step.createdAt || Date.now()
+    const updatedAt = step.updatedAt || now
+    const createdStep: TaskStep = {
+      id,
+      taskId: step.taskId,
+      type: step.type,
+      status: step.status,
+      hostId: step.hostId,
+      title: step.title,
+      content: step.content,
+      rawOutput: step.rawOutput,
+      metadata: step.metadata,
+      startedAt: step.startedAt,
+      endedAt: step.endedAt,
+      createdAt: now,
+      updatedAt
+    }
+
+    db.prepare(
+      `
+      INSERT INTO task_steps (id, taskId, type, status, hostId, title, content, rawOutput, metadata, startedAt, endedAt, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+    ).run(
+      createdStep.id,
+      createdStep.taskId,
+      createdStep.type,
+      createdStep.status,
+      createdStep.hostId || null,
+      createdStep.title || null,
+      createdStep.content,
+      createdStep.rawOutput || null,
+      createdStep.metadata ? JSON.stringify(createdStep.metadata) : null,
+      createdStep.startedAt || null,
+      createdStep.endedAt || null,
+      createdStep.createdAt,
+      createdStep.updatedAt
+    )
+
+    db.prepare('UPDATE tasks SET updatedAt = ? WHERE id = ?').run(updatedAt, createdStep.taskId)
+    return createdStep
+  },
+
+  updateStep: (id: string, updates: Partial<Omit<TaskStep, 'id' | 'taskId' | 'createdAt'>>): TaskStep | undefined => {
+    const row = db.prepare('SELECT * FROM task_steps WHERE id = ?').get(id) as any
+    if (!row) return undefined
+
+    const existing = mapTaskStepRow(row)
+    const updated: TaskStep = {
+      ...existing,
+      ...updates,
+      updatedAt: Date.now()
+    }
+
+    db.prepare(
+      `
+      UPDATE task_steps
+      SET type = ?, status = ?, hostId = ?, title = ?, content = ?, rawOutput = ?, metadata = ?, startedAt = ?, endedAt = ?, updatedAt = ?
+      WHERE id = ?
+    `
+    ).run(
+      updated.type,
+      updated.status,
+      updated.hostId || null,
+      updated.title || null,
+      updated.content,
+      updated.rawOutput || null,
+      updated.metadata ? JSON.stringify(updated.metadata) : null,
+      updated.startedAt || null,
+      updated.endedAt || null,
+      updated.updatedAt,
+      id
+    )
+
+    db.prepare('UPDATE tasks SET updatedAt = ? WHERE id = ?').run(updated.updatedAt, updated.taskId)
+    return updated
+  }
+}
+
+export const approvalDB = {
+  getApprovalsByTaskId: (taskId: string): Approval[] => {
+    const rows = db
+      .prepare('SELECT * FROM approvals WHERE taskId = ? ORDER BY createdAt ASC')
+      .all(taskId) as any[]
+    return rows.map(mapApprovalRow)
+  },
+
+  createApproval: (
+    approval: Omit<Approval, 'id' | 'createdAt'> & Partial<Pick<Approval, 'id' | 'createdAt'>>
+  ): Approval => {
+    const id = approval.id || uuidv4()
+    const createdAt = approval.createdAt || Date.now()
+    const createdApproval: Approval = {
+      id,
+      taskId: approval.taskId,
+      stepId: approval.stepId,
+      command: approval.command,
+      riskLevel: approval.riskLevel,
+      reason: approval.reason,
+      status: approval.status,
+      createdAt,
+      respondedAt: approval.respondedAt
+    }
+
+    db.prepare(
+      `
+      INSERT INTO approvals (id, taskId, stepId, command, riskLevel, reason, status, createdAt, respondedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+    ).run(
+      createdApproval.id,
+      createdApproval.taskId,
+      createdApproval.stepId || null,
+      createdApproval.command,
+      createdApproval.riskLevel,
+      createdApproval.reason || null,
+      createdApproval.status,
+      createdApproval.createdAt,
+      createdApproval.respondedAt || null
+    )
+
+    return createdApproval
+  },
+
+  updateApprovalStatus: (id: string, status: Approval['status']): Approval | undefined => {
+    const row = db.prepare('SELECT * FROM approvals WHERE id = ?').get(id) as any
+    if (!row) return undefined
+
+    const respondedAt = Date.now()
+    db.prepare('UPDATE approvals SET status = ?, respondedAt = ? WHERE id = ?').run(
+      status,
+      respondedAt,
+      id
+    )
+
+    return mapApprovalRow({ ...row, status, respondedAt })
+  }
+}
+
+export const artifactDB = {
+  getArtifactsByTaskId: (taskId: string): Artifact[] => {
+    const rows = db
+      .prepare('SELECT * FROM artifacts WHERE taskId = ? ORDER BY createdAt ASC')
+      .all(taskId) as any[]
+    return rows.map(mapArtifactRow)
+  },
+
+  createArtifact: (
+    artifact: Omit<Artifact, 'id' | 'createdAt' | 'updatedAt'> &
+      Partial<Pick<Artifact, 'id' | 'createdAt' | 'updatedAt'>>
+  ): Artifact => {
+    const id = artifact.id || uuidv4()
+    const now = artifact.createdAt || Date.now()
+    const updatedAt = artifact.updatedAt || now
+    const createdArtifact: Artifact = {
+      id,
+      taskId: artifact.taskId,
+      type: artifact.type,
+      title: artifact.title,
+      content: artifact.content,
+      metadata: artifact.metadata,
+      createdAt: now,
+      updatedAt
+    }
+
+    db.prepare(
+      `
+      INSERT INTO artifacts (id, taskId, type, title, content, metadata, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+    ).run(
+      createdArtifact.id,
+      createdArtifact.taskId,
+      createdArtifact.type,
+      createdArtifact.title,
+      createdArtifact.content,
+      createdArtifact.metadata ? JSON.stringify(createdArtifact.metadata) : null,
+      createdArtifact.createdAt,
+      createdArtifact.updatedAt
+    )
+
+    db.prepare('UPDATE tasks SET updatedAt = ? WHERE id = ?').run(updatedAt, createdArtifact.taskId)
+    return createdArtifact
   }
 }
 
@@ -274,6 +708,61 @@ export const modelSettingsDB = {
         settings.apiKey || DEFAULT_MODEL_SETTINGS.apiKey,
         settings.baseURL || DEFAULT_MODEL_SETTINGS.baseURL,
         settings.model || DEFAULT_MODEL_SETTINGS.model,
+        now
+      )
+    }
+  }
+}
+
+const DEFAULT_PERMISSIONS: PermissionSettings = {
+  requireConfirmation: true,
+  autoExecuteSafeOperations: true,
+  updatedAt: Date.now()
+}
+
+export const permissionDB = {
+  getPermissions: (): PermissionSettings => {
+    const row = db.prepare('SELECT * FROM permissions WHERE id = ?').get('default') as any
+    if (!row) {
+      permissionDB.savePermissions(DEFAULT_PERMISSIONS)
+      return DEFAULT_PERMISSIONS
+    }
+    return {
+      requireConfirmation: row.requireConfirmation === 1,
+      autoExecuteSafeOperations: row.autoExecuteSafeOperations === 1,
+      updatedAt: row.updatedAt
+    }
+  },
+
+  savePermissions: (permissions: Partial<PermissionSettings>) => {
+    const existing = db.prepare('SELECT * FROM permissions WHERE id = ?').get('default') as any
+    const now = Date.now()
+
+    if (existing) {
+      db.prepare(
+        `
+        UPDATE permissions
+        SET requireConfirmation = COALESCE(?, requireConfirmation),
+            autoExecuteSafeOperations = COALESCE(?, autoExecuteSafeOperations),
+            updatedAt = ?
+        WHERE id = ?
+      `
+      ).run(
+        permissions.requireConfirmation !== undefined ? (permissions.requireConfirmation ? 1 : 0) : null,
+        permissions.autoExecuteSafeOperations !== undefined ? (permissions.autoExecuteSafeOperations ? 1 : 0) : null,
+        now,
+        'default'
+      )
+    } else {
+      db.prepare(
+        `
+        INSERT INTO permissions (id, requireConfirmation, autoExecuteSafeOperations, updatedAt)
+        VALUES (?, ?, ?, ?)
+      `
+      ).run(
+        'default',
+        permissions.requireConfirmation !== undefined ? (permissions.requireConfirmation ? 1 : 0) : 1,
+        permissions.autoExecuteSafeOperations !== undefined ? (permissions.autoExecuteSafeOperations ? 1 : 0) : 1,
         now
       )
     }

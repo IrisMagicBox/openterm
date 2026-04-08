@@ -122,9 +122,10 @@ export function useProvider() {
   )
 
   const resetSystemProvider = useCallback(
-    (id: SystemProviderId) => {
+    async (id: SystemProviderId) => {
       const systemProvider = getSystemProvider(id)
       if (systemProvider) {
+        await window.api.saveProvider(systemProvider)
         dispatch(updateProvider(systemProvider))
         return systemProvider
       }
@@ -134,11 +135,12 @@ export function useProvider() {
   )
 
   const createModel = useCallback(
-    (model: Omit<Model, 'createdAt'>) => {
+    async (model: Omit<Model, 'createdAt'>) => {
       const newModel: Model = {
         ...model,
         createdAt: Date.now()
       }
+      await window.api.saveModel(newModel)
       dispatch(addModel(newModel))
       return newModel
     },
@@ -146,17 +148,20 @@ export function useProvider() {
   )
 
   const updateModelById = useCallback(
-    (providerId: string, modelId: string, updates: Partial<Model>) => {
+    async (providerId: string, modelId: string, updates: Partial<Model>) => {
       const model = models.find((m) => m.id === modelId && m.providerId === providerId)
       if (!model) return null
-      dispatch(updateModel({ ...model, ...updates }))
-      return { ...model, ...updates }
+      const updatedModel = { ...model, ...updates }
+      await window.api.saveModel(updatedModel)
+      dispatch(updateModel(updatedModel))
+      return updatedModel
     },
     [dispatch, models]
   )
 
   const deleteModel = useCallback(
-    (providerId: string, modelId: string) => {
+    async (providerId: string, modelId: string) => {
+      await window.api.deleteModel(modelId)
       dispatch(removeModel({ id: modelId, providerId }))
     },
     [dispatch]

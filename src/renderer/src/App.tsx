@@ -23,15 +23,18 @@ import {
   Clock,
   ArrowRight,
   Monitor,
-  Minus
+  Minus,
+  Pencil
 } from 'lucide-react'
 import { TerminalView } from './components/TerminalView'
+import logo from './assets/logo.png'
 import { AuthModal } from './components/AuthModal'
 import { Host, Topic, Message } from '../../shared/types'
 import { MarkdownRenderer } from './components/MarkdownRenderer'
 import { SettingsPage } from './components/settings'
 import { ModelSelector } from './components/ModelSelector'
 import { useProvider } from './hooks/useProvider'
+import { usePermissions } from './hooks/usePermissions'
 
 type View = 'hosts' | 'terminal' | 'chat' | 'settings'
 
@@ -42,6 +45,8 @@ interface AgentTerminalSession {
   command: string
   visible: boolean
 }
+
+
 
 function AddHostModal({ onClose, onSave }: { onClose: () => void; onSave: (host: any) => void }) {
   const [form, setForm] = useState({
@@ -243,9 +248,14 @@ function HostCard({
         <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors shadow-inner">
           <Server size={26} />
         </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-base font-black text-gray-900 truncate">{host.alias}</h3>
-          <span className="text-xs font-mono text-gray-400">
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <h3 className="text-base font-black text-gray-900 truncate" title={host.alias}>
+            {host.alias}
+          </h3>
+          <span
+            className="text-xs font-mono text-gray-400 truncate block"
+            title={`${host.username}@${host.ip}:${host.port || 22}`}
+          >
             {host.username}@{host.ip}:{host.port || 22}
           </span>
         </div>
@@ -378,6 +388,7 @@ function ChatPanel({
     return () => unlistenStep()
   }, [topic.id])
 
+
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [messages, isThinking])
@@ -432,17 +443,18 @@ function ChatPanel({
     }
   }
 
+
   return (
     <div className="flex flex-col h-full bg-white">
-      <div className="px-7 py-5 border-b border-gray-100 flex items-center justify-between">
-        <div>
+      <div className="px-7 py-5 border-b border-gray-100 flex items-center justify-between drag">
+        <div className="no-drag">
           <h2 className="font-black text-gray-900">{topic.title}</h2>
           <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5">
             <Clock size={11} />
             {messages.length > 0 ? `${messages.length} 条消息` : '暂无消息'}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 no-drag">
           <ModelSelector
             providers={providers}
             models={models}
@@ -478,6 +490,7 @@ function ChatPanel({
       </div>
 
       <div className="flex-1 overflow-hidden flex">
+
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-7 py-6 space-y-6">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center max-w-xs mx-auto space-y-5">
@@ -833,6 +846,10 @@ export default function App() {
   const [prefilledText, setPrefilledText] = useState('')
   const [agentSessions, setAgentSessions] = useState<AgentTerminalSession[]>([])
   const [showManageHosts, setShowManageHosts] = useState(false)
+  const [editingTopicId, setEditingTopicId] = useState<string | null>(null)
+  const [editingTopicTitle, setEditingTopicTitle] = useState('')
+
+  const { requireConfirmation } = usePermissions()
 
   useEffect(() => {
     loadData()
@@ -905,6 +922,43 @@ export default function App() {
     setActiveView('chat')
   }
 
+  const handleStartRenameTopic = (topic: Topic) => {
+    setEditingTopicId(topic.id)
+    setEditingTopicTitle(topic.title)
+  }
+
+  const handleCommitRenameTopic = async () => {
+    if (!editingTopicId) return
+    const trimmedTitle = editingTopicTitle.trim()
+    if (!trimmedTitle) {
+      setEditingTopicId(null)
+      setEditingTopicTitle('')
+      return
+    }
+
+    await window.api.updateTopicTitle(editingTopicId, trimmedTitle)
+    setTopics((prev) =>
+      prev.map((topic) =>
+        topic.id === editingTopicId ? { ...topic, title: trimmedTitle } : topic
+      )
+    )
+    setSelectedTopic((prev) =>
+      prev && prev.id === editingTopicId ? { ...prev, title: trimmedTitle } : prev
+    )
+    setEditingTopicId(null)
+    setEditingTopicTitle('')
+  }
+
+  const handleDeleteTopic = async (topicId: string) => {
+    await window.api.deleteTopic(topicId)
+    const remainingTopics = topics.filter((topic) => topic.id !== topicId)
+    setTopics(remainingTopics)
+
+    if (selectedTopic?.id === topicId) {
+      setSelectedTopic(remainingTopics[0] || null)
+    }
+  }
+
   const handleResolveAuth = async (approved: boolean) => {
     if (pendingAuth) {
       await window.api.sendAgentAuthResponse(pendingAuth.requestId, approved)
@@ -948,19 +1002,16 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white text-gray-900">
-      <aside className="w-72 bg-gray-50/80 border-r border-gray-100 flex flex-col">
-        <div className="px-7 pt-8 pb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/30">
-              <TerminalIcon size={19} className="text-white" strokeWidth={2.5} />
+      <aside className="w-72 bg-gray-50/80 border-r border-gray-100 flex flex-col no-drag">
+        <div className="px-7 pt-8 pb-6 drag">
+          <div className="flex items-center gap-3 no-drag">
+            <div className="w-12 h-12 flex items-center justify-center -ml-1">
+              <img src={logo} alt="OpenTerm Logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <h1 className="text-lg font-black tracking-tight text-gray-900 leading-none">
                 OpenTerm
               </h1>
-              <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">
-                自主 AI 助手
-              </span>
             </div>
           </div>
         </div>
@@ -970,7 +1021,7 @@ export default function App() {
             active={activeView === 'hosts'}
             onClick={() => setActiveView('hosts')}
             icon={<LayoutGrid size={17} />}
-            label="主机画廊"
+            label="主机"
             count={hosts.length}
           />
           <NavItem
@@ -980,7 +1031,7 @@ export default function App() {
               if (!selectedTopic && topics.length > 0) setSelectedTopic(topics[0])
             }}
             icon={<MessageSquare size={17} />}
-            label="助手对话"
+            label="Agent助手"
             count={topics.length}
           />
           <NavItem
@@ -1012,13 +1063,22 @@ export default function App() {
                 </div>
               )}
               {topics.map((topic) => (
-                <button
+                <div
                   key={topic.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => {
                     setSelectedTopic(topic)
                     setPrefilledText('')
                   }}
-                  className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-semibold transition flex items-center gap-2.5 ${
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setSelectedTopic(topic)
+                      setPrefilledText('')
+                    }
+                  }}
+                  className={`group w-full text-left px-3 py-2.5 rounded-xl text-sm font-semibold transition flex items-center gap-2.5 ${
                     selectedTopic?.id === topic.id
                       ? 'bg-white text-blue-600 shadow-sm border border-gray-100'
                       : 'text-gray-500 hover:bg-white hover:text-gray-900 border border-transparent hover:border-gray-100'
@@ -1027,8 +1087,54 @@ export default function App() {
                   <div
                     className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${selectedTopic?.id === topic.id ? 'bg-blue-500' : 'bg-gray-300'}`}
                   />
-                  <span className="truncate">{topic.title}</span>
-                </button>
+                  {editingTopicId === topic.id ? (
+                    <input
+                      autoFocus
+                      value={editingTopicTitle}
+                      onChange={(e) => setEditingTopicTitle(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={handleCommitRenameTopic}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          handleCommitRenameTopic()
+                        }
+                        if (e.key === 'Escape') {
+                          e.preventDefault()
+                          setEditingTopicId(null)
+                          setEditingTopicTitle('')
+                        }
+                      }}
+                      className="flex-1 bg-transparent border-none outline-none text-sm font-semibold text-inherit"
+                    />
+                  ) : (
+                    <span className="truncate flex-1">{topic.title}</span>
+                  )}
+                  {editingTopicId !== topic.id && (
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleStartRenameTopic(topic)
+                        }}
+                        className="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-blue-600"
+                        title="重命名话题"
+                      >
+                        <Pencil size={12} />
+                      </span>
+                      <span
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          await handleDeleteTopic(topic.id)
+                        }}
+                        className="p-1 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-500"
+                        title="删除话题"
+                      >
+                        <Trash2 size={12} />
+                      </span>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </div>
@@ -1037,14 +1143,22 @@ export default function App() {
         <div className="p-5 mt-auto">
           <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                requireConfirmation ? 'bg-emerald-50 text-emerald-600' : 'bg-yellow-50 text-yellow-600'
+              }`}>
                 <ShieldAlert size={15} />
               </div>
               <div>
-                <div className="text-xs font-black text-gray-900">HITL 已激活</div>
-                <div className="text-[10px] text-gray-400">安全监控中</div>
+                <div className="text-xs font-black text-gray-900">
+                  {requireConfirmation ? '操作需确认' : '自动执行模式'}
+                </div>
+                <div className="text-[10px] text-gray-400">
+                  {requireConfirmation ? '高危操作会询问您' : 'Agent 将直接执行'}
+                </div>
               </div>
-              <div className="ml-auto w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+              <div className={`ml-auto w-2 h-2 rounded-full ${
+                requireConfirmation ? 'bg-emerald-400 animate-pulse' : 'bg-yellow-400'
+              }`} />
             </div>
           </div>
         </div>
@@ -1053,12 +1167,12 @@ export default function App() {
       <main className="flex-1 flex flex-col overflow-hidden">
         {activeView === 'hosts' && (
           <div className="flex-1 overflow-y-auto bg-gray-50/30">
-            <div className="sticky top-0 z-10 bg-gray-50/80 backdrop-blur-md border-b border-gray-100 px-10 py-5 flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-black text-gray-900">主机画廊</h2>
+            <div className="sticky top-0 z-10 bg-gray-50/80 backdrop-blur-md border-b border-gray-100 px-10 py-5 flex items-center justify-between drag">
+              <div className="no-drag">
+                <h2 className="text-2xl font-black text-gray-900">主机</h2>
                 <p className="text-sm text-gray-400 mt-0.5">管理您的远程 SSH 终点</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 no-drag">
                 <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm">
                   <Search size={15} className="text-gray-400" />
                   <input
@@ -1120,8 +1234,8 @@ export default function App() {
 
         {activeView === 'terminal' && selectedHost && terminalSessionId && (
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="h-11 bg-gray-900 text-white px-5 flex items-center justify-between border-b border-gray-800 flex-shrink-0">
-              <div className="flex items-center gap-3">
+            <div className="h-11 bg-gray-900 text-white px-5 flex items-center justify-between border-b border-gray-800 flex-shrink-0 drag">
+              <div className="flex items-center gap-3 no-drag">
                 <div className="flex gap-1.5">
                   <div className="w-3 h-3 bg-red-500 rounded-full" />
                   <div className="w-3 h-3 bg-yellow-400 rounded-full" />
@@ -1175,7 +1289,7 @@ export default function App() {
             <div className="w-20 h-20 bg-gradient-to-br from-blue-50 to-indigo-100 text-blue-500 rounded-3xl flex items-center justify-center mb-6 shadow-sm">
               <MessageSquare size={36} />
             </div>
-            <h2 className="text-2xl font-black text-gray-900">助手对话</h2>
+            <h2 className="text-2xl font-black text-gray-900">Agent助手</h2>
             <p className="text-gray-400 text-sm mt-2 mb-8 max-w-xs">
               开启一个新的 AI 会话来自主管理您的基础设施。
             </p>

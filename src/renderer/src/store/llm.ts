@@ -126,6 +126,23 @@ const llmSlice = createSlice({
         }
       }
     }
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(loadProvidersFromDB.pending, (state) => {
+        state.loading = true
+      })
+      .addCase(loadProvidersFromDB.fulfilled, (state, action) => {
+        state.providers = action.payload
+        state.loading = false
+      })
+      .addCase(loadProvidersFromDB.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.error.message || 'Failed to load providers'
+      })
+      .addCase(loadModelsFromDB.fulfilled, (state, action) => {
+        state.models = action.payload
+      })
   }
 })
 
@@ -157,7 +174,9 @@ export const loadProvidersFromDB = createAsyncThunk('llm/loadProviders', async (
   })
 
   const customProviders = dbProviders.filter(
-    (p) => !SYSTEM_PROVIDERS_CONFIG[p.id as keyof typeof SYSTEM_PROVIDERS_CONFIG]
+    (p) =>
+      !SYSTEM_PROVIDERS_CONFIG[p.id as keyof typeof SYSTEM_PROVIDERS_CONFIG] &&
+      !systemProviders.some((sp) => sp.name === p.name)
   )
 
   return [...mergedProviders, ...customProviders]
