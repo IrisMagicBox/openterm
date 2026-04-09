@@ -1,646 +1,392 @@
-import { ipcMain, WebContents } from 'electron'
-import {
-  hostDB,
-  topicDB,
-  messageDB,
-  permissionDB,
-  taskDB,
-  taskStepDB,
-  approvalDB,
-  artifactDB
-} from './db'
-import { commandExecutor } from './terminal'
-import { createAgentSession, executeAgentCommand, closeSession } from './ssh'
-import { logger } from './logger'
-import { ApprovalRiskLevel, Message, Task, TaskStep } from '../shared/types'
-import { getAIClient, getCurrentModel, SYSTEM_PROMPT } from './ai'
+import { WebContents, ipcMain } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
+import { 
+  topicDB, 
+  messageDB, 
+  hostDB, 
+  taskDB,
+  terminalSessionDB,
+  memoryDB
+} from './db'
+import { 
+  Message, 
+  TerminalSession, 
+  Task
+} from '../shared/types'
+import { AgentRunner, AgentContext } from './AgentRunner'
+import { commandExecutor } from './terminal'
+import { logger } from './logger'
 
-interface AgentSession {
-  sessionId: string
-  hostId: string
-  hostAlias: string
+let createAgentSessionRef: any = null
+
+export function setCreateAgentSession(fn: any) {
+  createAgentSessionRef = fn
+}
+
+export interface AgentSession extends TerminalSession {
+  paused: boolean
 }
 
 export class AgentService {
   private webContents?: WebContents
+  private topicSessions: Map<string, Map<string, AgentSession[]>> = new Map()
   private pendingRequests: Map<string, (approved: boolean) => void> = new Map()
-  private topicSessions: Map<string, Map<string, AgentSession>> = new Map()
 
-  constructor() {
-    this.setupHandlers()
+  setWebContents(webContents: WebContents) {
+    this.webContents = webContents
   }
 
-  private setupHandlers() {
-    ipcMain.removeHandler('agent:message')
-    ipcMain.handle('agent:message', async (event, topicId: string, content: string) => {
-      logger.info('Agent', `Received message for topic ${topicId}`, { content: content.slice(0, 50) + '...' })
-      this.webContents = event.sender
-      return this.processMessage(topicId, content)
-    })
+  async getTopicHosts(topicId: string) {
+    const topic = topicDB.getTopicById(topicId)
+    if (!topic) return []
+    return Promise.all(topic.hostIds.map((id) => hostDB.getHostById(id)))
+  }
 
-    ipcMain.removeHandler('agent:complete-command')
-    ipcMain.handle(
-      'agent:complete-command',
-      async (_event, topicId: string, hostId: string, partialCommand: string) => {
-        return this.completeCommand(topicId, hostId, partialCommand)
-      }
-    )
+  async addHostToTopic(topicId: string, hostId: string) {
+    const topic = topicDB.getTopicById(topicId)
+    if (!topic) return
+    if (!topic.hostIds.includes(hostId)) {
+      const newHostIds = [...topic.hostIds, hostId]
+      topicDB.updateTopicHosts(topicId, newHostIds)
+    }
+  }
 
-    ipcMain.removeHandler('agent:auth-response')
-    ipcMain.handle('agent:auth-response', (_, requestId: string, approved: boolean) => {
-      const resolve = this.pendingRequests.get(requestId)
-      if (resolve) {
-        resolve(approved)
-        this.pendingRequests.delete(requestId)
-      }
-    })
-
-    ipcMain.removeHandler('agent:get-sessions')
-    ipcMain.handle('agent:get-sessions', (_, topicId: string) => {
-      const sessions = this.topicSessions.get(topicId)
-      return sessions ? Array.from(sessions.values()) : []
-    })
-
-    ipcMain.removeHandler('agent:add-host')
-    ipcMain.handle('agent:add-host', async (event, topicId: string, hostId: string) => {
-      this.webContents = event.sender
-      const topic = topicDB.getTopicById(topicId)
-      if (!topic) throw new Error('Topic not found')
-
-      const host = hostDB.getHostById(hostId)
-      if (!host) throw new Error('Host not found')
-
-      if (!topic.hostIds.includes(hostId)) {
-        topicDB.updateTopicHosts(topicId, [...topic.hostIds, hostId])
-      }
-
-      await this.ensureSession(topicId, hostId, host.alias)
-      return true
-    })
-
-    ipcMain.removeHandler('agent:remove-host')
-    ipcMain.handle('agent:remove-host', (_, topicId: string, hostId: string) => {
-      const topic = topicDB.getTopicById(topicId)
-      if (!topic) throw new Error('Topic not found')
-
-      topicDB.updateTopicHosts(
-        topicId,
-        topic.hostIds.filter((id) => id !== hostId)
-      )
-
-      const sessions = this.topicSessions.get(topicId)
+  async removeHostFromTopic(topicId: string, hostId: string) {
+    const topic = topicDB.getTopicById(topicId)
+    if (!topic) return
+    const newHostIds = topic.hostIds.filter((id) => id !== hostId)
+    topicDB.updateTopicHosts(topicId, newHostIds)
+    
+    const hostMap = this.topicSessions.get(topicId)
+    if (hostMap) {
+      const sessions = hostMap.get(hostId)
       if (sessions) {
-        const session = sessions.get(hostId)
+        for (const session of sessions) {
+          commandExecutor.closeSession(session.id)
+        }
+        hostMap.delete(hostId)
+      }
+    }
+  }
+
+  async createTerminal(topicId: string, hostId: string, name?: string) {
+    const host = hostDB.getHostById(hostId)
+    if (!host) throw new Error('Host not found')
+    return this.ensureSession(topicId, hostId, host.alias, name, true)
+  }
+
+  async closeTerminal(id: string) {
+    commandExecutor.closeSession(id)
+    for (const hostMap of this.topicSessions.values()) {
+      for (const [hostId, sessions] of hostMap.entries()) {
+        const index = sessions.findIndex(s => s.id === id)
+        if (index !== -1) {
+          sessions.splice(index, 1)
+          if (sessions.length === 0) hostMap.delete(hostId)
+          return
+        }
+      }
+    }
+  }
+
+  async renameTerminal(id: string, name: string) {
+    for (const hostMap of this.topicSessions.values()) {
+      for (const sessions of hostMap.values()) {
+        const session = sessions.find(s => s.id === id)
         if (session) {
-          closeSession(session.sessionId)
-          sessions.delete(hostId)
+          session.name = name
+          return
         }
       }
-
-      return true
-    })
+    }
   }
 
-  private async ensureSession(topicId: string, hostId: string, hostAlias: string): Promise<string> {
-    logger.debug('Agent', `Ensuring session for host ${hostAlias} (${hostId}) in topic ${topicId}`)
-    let topicMap = this.topicSessions.get(topicId)
-    if (!topicMap) {
-      topicMap = new Map()
-      this.topicSessions.set(topicId, topicMap)
-    }
-
-    const existing = topicMap.get(hostId)
-    if (existing) {
-      if (commandExecutor.getSessionState(existing.sessionId)) {
-        logger.debug('Agent', `Found existing active session: ${existing.sessionId}`)
-        return existing.sessionId
-      }
-      logger.warn('Agent', `Session ${existing.sessionId} found in topicMap but missing in executor, re-creating`)
-      topicMap.delete(hostId)
-    }
-
-    if (!this.webContents) {
-      logger.error('Agent', 'WebContents not available for session creation')
-      throw new Error('WebContents not available')
-    }
-
-    const sessionId = await createAgentSession(hostId, this.webContents, topicId)
-    logger.info('Agent', `Created new agent session: ${sessionId} for host ${hostAlias}`)
-    topicMap.set(hostId, { sessionId, hostId, hostAlias })
-
-    if (this.webContents) {
-      this.webContents.send('agent:session-created', { topicId, hostId, hostAlias, sessionId })
-    }
-
-    return sessionId
-  }
-
-  private async requestAuthorization(command: string): Promise<boolean> {
-    if (!this.webContents) return false
-    const requestId = `auth_${Date.now()}`
-    this.webContents.send('agent:auth-request', requestId, command)
-
-    return new Promise((resolve) => {
-      this.pendingRequests.set(requestId, resolve)
-      setTimeout(() => {
-        if (this.pendingRequests.has(requestId)) {
-          resolve(false)
-          this.pendingRequests.delete(requestId)
+  async toggleTerminalPin(id: string, isPinned: boolean) {
+    for (const hostMap of this.topicSessions.values()) {
+      for (const sessions of hostMap.values()) {
+        const session = sessions.find(s => s.id === id)
+        if (session) {
+          session.isPinned = isPinned
+          return
         }
-      }, 60000)
-    })
-  }
-
-  private isCommandSafe(command: string): boolean {
-    const unsafeKeywords = [
-      'sudo',
-      'rm ',
-      'format',
-      'dd ',
-      'shutdown',
-      'reboot',
-      'mkfs',
-      'chmod',
-      'chown',
-      'wget',
-      'curl',
-      'mv ',
-      'cp ',
-      'tar ',
-      'kill',
-      'pkill',
-      'systemctl stop',
-      'systemctl disable'
-    ]
-    return !unsafeKeywords.some((kw) => command.toLowerCase().includes(kw))
-  }
-
-  private async shouldRequireConfirmation(command: string): Promise<boolean> {
-    const permissions = permissionDB.getPermissions()
-
-    // If requireConfirmation is disabled, never ask
-    if (!permissions.requireConfirmation) {
-      return false
-    }
-
-    // If autoExecuteSafeOperations is enabled and command is safe, skip confirmation
-    if (permissions.autoExecuteSafeOperations && this.isCommandSafe(command)) {
-      return false
-    }
-
-    // Otherwise, require confirmation for unsafe commands
-    return !this.isCommandSafe(command)
-  }
-
-  private async summarizeTopic(topicId: string, firstMessage: string) {
-    try {
-      const aiClient = getAIClient()
-      const model = getCurrentModel()
-      const response = await aiClient.chat.completions.create({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content:
-              "Summarize the user's goal or topic into a 2-4 word title in English based on their message. No full sentences, just a title."
-          },
-          { role: 'user', content: firstMessage }
-        ]
-      })
-
-      const title = response.choices[0].message.content?.trim().replace(/"/g, '') || 'New Session'
-      topicDB.updateTopicTitle(topicId, title)
-
-      if (this.webContents) {
-        this.webContents.send('topic-updated', { topicId, title })
       }
-    } catch (err) {
-      console.error('Summarization Error:', err)
     }
   }
 
-  private createTaskTitle(content: string): string {
-    const normalized = content.replace(/\s+/g, ' ').trim()
-    if (!normalized) return 'New Task'
-    if (normalized.length <= 60) return normalized
-    return `${normalized.slice(0, 57).trimEnd()}...`
+  async updateHostMetadata(hostId: string, updates: Partial<Pick<import('../shared/types').Host, 'alias' | 'tags'>>) {
+    hostDB.updateHost(hostId, updates)
+    // Notify frontend if host info changed
+    this.webContents?.send('host:updated', { hostId, ...updates })
   }
 
-  private createTaskForMessage(topicId: string, content: string, modelId: string): Task {
-    return taskDB.createTask({
+  async searchTopics(query: string) {
+    return topicDB.searchTopics(query)
+  }
+
+  async searchMemories(query: string, hostId?: string, topicId?: string) {
+    return memoryDB.searchMemories(query, { hostId, topicId })
+  }
+
+  async getSessions(topicId: string): Promise<AgentSession[]> {
+    const hostMap = this.topicSessions.get(topicId)
+    if (!hostMap) return []
+    const allSessions: AgentSession[] = []
+    for (const sessions of hostMap.values()) {
+      allSessions.push(...sessions)
+    }
+    return allSessions
+  }
+
+  async registerSession(session: AgentSession) {
+    let hostMap = this.topicSessions.get(session.topicId)
+    if (!hostMap) {
+      hostMap = new Map()
+      this.topicSessions.set(session.topicId, hostMap)
+    }
+
+    let sessions = hostMap.get(session.hostId)
+    if (!sessions) {
+      sessions = []
+      hostMap.set(session.hostId, sessions)
+    }
+
+    if (!sessions.find(s => s.id === session.id)) {
+      sessions.push(session)
+    }
+  }
+
+  private async ensureSession(topicId: string, hostId: string, hostAlias: string, name?: string, showInUI = false): Promise<AgentSession> {
+    const hostMap = this.topicSessions.get(topicId)
+    const sessions = hostMap?.get(hostId)
+    
+    // 1. If name is provided, find matching session
+    if (name) {
+      const match = sessions?.find(s => s.name === name)
+      if (match) return match
+    } else if (sessions && sessions.length > 0) {
+      // 2. Default to first session if no name provided
+      return sessions[0]
+    }
+
+    // 2. Create a new real session if none exists
+    if (!this.webContents) throw new Error('WebContents not initialized')
+    if (!createAgentSessionRef) throw new Error('SSH service not initialized')
+    
+    const sessionId = await createAgentSessionRef(hostId, this.webContents, topicId)
+
+    const session: AgentSession = {
+      id: sessionId,
       topicId,
-      title: this.createTaskTitle(content),
+      hostId,
+      hostAlias,
+      name: name || `${hostAlias} Terminal ${ (sessions?.length || 0) + 1}`,
+      status: 'active',
+      shellIntegrationReady: false,
+      isPinned: false,
+      visible: true,
+      paused: false,
+      createdAt: Date.now()
+    }
+    
+    await this.registerSession(session)
+
+    if (showInUI && this.webContents) {
+      this.webContents.send('agent:session-created', session)
+    }
+
+    return session
+  }
+
+  async handleMessage(topicId: string, content: string) {
+    return this.processMessage(topicId, content)
+  }
+
+  private async processMessage(topicId: string, content: string) {
+    const topic = topicDB.getTopicById(topicId)
+    if (!topic) throw new Error('Topic not found')
+
+    // 1. Create task for tracing
+    const task: Task = {
+      id: uuidv4(),
+      topicId,
+      title: content.slice(0, 50),
       goal: content,
-      status: 'planning',
-      selectedModelId: modelId
-    })
-  }
-
-  private createTaskStep(
-    taskId: string,
-    step: Omit<TaskStep, 'id' | 'taskId' | 'createdAt' | 'updatedAt'>
-  ): TaskStep {
-    return taskStepDB.createStep({
-      taskId,
-      ...step
-    })
-  }
-
-  private markTaskStatus(taskId: string, status: Task['status'], summary?: string) {
-    return taskDB.updateTask(taskId, { status, summary })
-  }
-
-  private getRiskLevel(command: string): ApprovalRiskLevel {
-    const lower = command.toLowerCase()
-    if (
-      lower.includes('rm ') ||
-      lower.includes('mkfs') ||
-      lower.includes('dd ') ||
-      lower.includes('shutdown') ||
-      lower.includes('reboot')
-    ) {
-      return 'critical'
+      status: 'running',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
     }
-    if (
-      lower.includes('sudo') ||
-      lower.includes('chmod') ||
-      lower.includes('chown') ||
-      lower.includes('systemctl stop') ||
-      lower.includes('systemctl disable')
-    ) {
-      return 'high'
-    }
-    return 'medium'
-  }
+    taskDB.createTask(task)
 
-  private async processMessage(topicId: string, content: string): Promise<Message> {
-    const notifyStep = (msg: Message) => {
-      if (this.webContents) this.webContents.send('agent:step', msg)
-    }
-
-    const userMessage: Message = {
+    // 2. Create user message
+    const userMsg: Message = {
       id: uuidv4(),
       topicId,
       role: 'user',
       content,
       timestamp: Date.now()
     }
-    messageDB.createMessage(userMessage)
-
-    const topic = topicDB.getTopicById(topicId)
-    if (topic && topic.title.includes('Session')) {
-      this.summarizeTopic(topicId, content)
+    messageDB.createMessage(userMsg)
+    
+    // Update topic title if it looks like a default one
+    if (topic && (topic.title.startsWith('Session ') || topic.title === '新建话题')) {
+      const newTitle = content.slice(0, 30) + (content.length > 30 ? '...' : '')
+      topicDB.updateTopicTitle(topicId, newTitle)
+      this.webContents?.send('topic:updated', { topicId, title: newTitle })
+    }
+    
+    if (this.webContents) {
+      this.webContents.send('agent:thinking', { topicId, thinking: true })
     }
 
-    const model = getCurrentModel()
-    const task = this.createTaskForMessage(topicId, content, model)
-    this.createTaskStep(task.id, {
-      type: 'note',
-      status: 'completed',
-      title: 'User request',
-      content,
-      startedAt: userMessage.timestamp,
-      endedAt: userMessage.timestamp
-    })
-
-    const history = messageDB.getMessages(topicId)
-    const hosts = hostDB.getHosts()
-    const hostContext = hosts
-      .map((h) => `${h.alias} (ID: ${h.id}, IP: ${h.ip}, User: ${h.username})`)
-      .join('\n')
-
-    const terminalContext = commandExecutor.buildTerminalContext(topicId)
-
-    const aiMessages: any[] = [
-      {
-        role: 'system',
-        content: `${SYSTEM_PROMPT}\n\nAvailable Hosts:\n${hostContext}${terminalContext ? '\n\n' + terminalContext : ''}`
-      },
-      ...history.map((m) => {
-        const msg: any = { role: m.role, content: m.content }
-        if (m.toolCalls) msg.tool_calls = m.toolCalls
-        if (m.toolCallId) msg.tool_call_id = m.toolCallId
-        if (m.name) msg.name = m.name
-        return msg
-      })
-    ]
-
-    const tools: any[] = [
-      {
-        type: 'function',
-        function: {
-          name: 'ssh_execute',
-          description:
-            'Execute a shell command on a remote host via SSH using an interactive shell session',
-          parameters: {
-            type: 'object',
-            properties: {
-              hostId: { type: 'string', description: 'The unique ID of the host' },
-              command: { type: 'string', description: 'The shell command to execute' }
-            },
-            required: ['hostId', 'command']
-          }
-        }
-      }
-    ]
-
     try {
-      const aiClient = getAIClient()
-      const response = await aiClient.chat.completions.create({
-        model,
-        messages: aiMessages,
-        tools,
-        tool_choice: 'auto'
-      })
+      if (!this.webContents) throw new Error('WebContents not initialized')
 
-      const assistantMessage = response.choices[0].message
-      let thought = assistantMessage.content || ''
-      const tool_calls = assistantMessage.tool_calls || []
-
-      if (tool_calls.length > 0) {
-        this.createTaskStep(task.id, {
-          type: 'plan',
-          status: 'completed',
-          title: 'Initial plan',
-          content:
-            assistantMessage.content ||
-            'The agent decided to execute remote commands to answer this request.',
-          metadata: {
-            toolCalls: tool_calls.map((tc: any) => ({
-              id: tc.id,
-              name: tc.function?.name
-            }))
-          }
-        })
-
-        const assistantToolCallMsg: Message = {
-          id: uuidv4(),
-          topicId,
-          role: 'assistant',
-          content: assistantMessage.content || '',
-          thought: assistantMessage.content || '',
-          toolCalls: tool_calls.map((tc: any) => ({
-            id: tc.id,
-            type: 'function',
-            function: {
-              name: tc.function.name,
-              arguments: tc.function.arguments
-            }
-          })),
-          timestamp: Date.now()
-        }
-        messageDB.createMessage(assistantToolCallMsg)
-        notifyStep(assistantToolCallMsg)
-
-        const toolResults = await Promise.all(
-          tool_calls.map(async (call: any) => {
-            const args = JSON.parse(call.function?.arguments || '{}')
-            let result = ''
-            const commandStartedAt = Date.now()
-            const commandStep = this.createTaskStep(task.id, {
-              type: 'command',
-              status: 'running',
-              hostId: args.hostId,
-              title: 'Remote command',
-              content: args.command || '',
-              metadata: {
-                toolCallId: call.id,
-                toolName: call.function?.name
-              },
-              startedAt: commandStartedAt
-            })
-
-            // Check if confirmation is required based on permission settings
-            const needsConfirmation = await this.shouldRequireConfirmation(args.command)
-            if (needsConfirmation) {
-              const approvalStep = this.createTaskStep(task.id, {
-                type: 'approval',
-                status: 'blocked',
-                hostId: args.hostId,
-                title: 'Awaiting approval',
-                content: args.command,
-                metadata: {
-                  toolCallId: call.id
-                }
-              })
-              const approval = approvalDB.createApproval({
-                taskId: task.id,
-                stepId: approvalStep.id,
-                command: args.command,
-                riskLevel: this.getRiskLevel(args.command),
-                reason: 'Agent requested approval before running a risky command.',
-                status: 'pending'
-              })
-              this.markTaskStatus(task.id, 'waiting_approval')
-              const approved = await this.requestAuthorization(args.command)
-              approvalDB.updateApprovalStatus(approval.id, approved ? 'approved' : 'rejected')
-              taskStepDB.updateStep(approvalStep.id, {
-                status: approved ? 'completed' : 'failed',
-                endedAt: Date.now(),
-                metadata: {
-                  toolCallId: call.id,
-                  decision: approved ? 'approved' : 'rejected'
-                }
-              })
-              if (!approved) {
-                result = 'Error: Command execution REJECTED by user for security reasons.'
-              }
-              this.markTaskStatus(task.id, 'running')
-            }
-
-            if (!result && this.webContents) {
-              try {
-                const host = hostDB.getHostById(args.hostId)
-                if (!host) {
-                  result = 'Error: Host not found'
-                } else {
-                  const sessionId = await this.ensureSession(topicId, args.hostId, host.alias)
-
-                  this.webContents.send('agent:terminal-show', {
-                    sessionId,
-                    hostId: args.hostId,
-                    hostAlias: host.alias,
-                    command: args.command
-                  })
-
-                  const commandResult = await executeAgentCommand(
-                    sessionId,
-                    args.command,
-                    this.webContents,
-                    topicId,
-                    task.id,
-                    commandStep.id
-                  )
-                  result = commandResult.content
-                }
-              } catch (err) {
-                result = `Error: ${err instanceof Error ? err.message : 'Unknown error'}`
-              }
-            }
-
-            const commandFinishedAt = Date.now()
-            taskStepDB.updateStep(commandStep.id, {
-              status: result.startsWith('Error:') ? 'failed' : 'completed',
-              rawOutput: result,
-              endedAt: commandFinishedAt
-            })
-            this.createTaskStep(task.id, {
-              type: 'result',
-              status: result.startsWith('Error:') ? 'failed' : 'completed',
-              hostId: args.hostId,
-              title: 'Command output',
-              content: result,
-              metadata: {
-                toolCallId: call.id
-              },
-              startedAt: commandFinishedAt,
-              endedAt: commandFinishedAt
-            })
-
-            const toolMsg: Message = {
-              id: uuidv4(),
-              topicId,
-              role: 'tool',
-              toolCallId: call.id,
-              name: 'ssh_execute',
-              content: result,
-              timestamp: Date.now()
-            }
-            messageDB.createMessage(toolMsg)
-            notifyStep(toolMsg)
-
-            return {
-              tool_call_id: call.id,
-              role: 'tool',
-              name: 'ssh_execute',
-              content: result
-            }
-          })
-        )
-
-        const secondResponse = await aiClient.chat.completions.create({
-          model,
-          messages: [...aiMessages, assistantMessage, ...toolResults]
-        })
-
-        const finalContent = secondResponse.choices[0].message.content || ''
-        const hasToolErrors = toolResults.some((item) => item.content.startsWith('Error:'))
-        this.createTaskStep(task.id, {
-          type: 'final',
-          status: hasToolErrors ? 'failed' : 'completed',
-          title: 'Final response',
-          content: finalContent,
-          startedAt: Date.now(),
-          endedAt: Date.now()
-        })
-        artifactDB.createArtifact({
-          taskId: task.id,
-          type: 'report',
-          title: 'Agent summary',
-          content: finalContent
-        })
-        this.markTaskStatus(task.id, hasToolErrors ? 'failed' : 'completed', finalContent)
-
-        const finalAssistantMsg: Message = {
-          id: uuidv4(),
-          topicId,
-          role: 'assistant',
-          content: finalContent,
-          thought,
-          timestamp: Date.now()
-        }
-        messageDB.createMessage(finalAssistantMsg)
-        notifyStep(finalAssistantMsg)
-        return finalAssistantMsg
-      }
-
-      this.createTaskStep(task.id, {
-        type: 'final',
-        status: 'completed',
-        title: 'Final response',
-        content: assistantMessage.content || "I couldn't process your request.",
-        startedAt: Date.now(),
-        endedAt: Date.now()
-      })
-      artifactDB.createArtifact({
-        taskId: task.id,
-        type: 'report',
-        title: 'Agent summary',
-        content: assistantMessage.content || "I couldn't process your request."
-      })
-      this.markTaskStatus(
-        task.id,
-        'completed',
-        assistantMessage.content || "I couldn't process your request."
-      )
-
-      const finalMsg: Message = {
-        id: uuidv4(),
+      const context: AgentContext = {
         topicId,
-        role: 'assistant',
-        content: assistantMessage.content || "I couldn't process your request.",
-        timestamp: Date.now()
+        taskId: task.id,
+        webContents: this.webContents,
+        agentService: this,
+        ensureSession: async (hostId, hostAlias, name) => {
+          const session = await this.ensureSession(topicId, hostId, hostAlias, name, true)
+          return session.id
+        },
+        requestAuthorization: async (command, riskLevel, reason) => {
+          const requestId = uuidv4()
+          this.webContents?.send('agent:auth-request', { requestId, command, riskLevel, reason })
+          return new Promise((resolve) => {
+            this.pendingRequests.set(requestId, resolve)
+          })
+        },
+        notifyStep: (msg) => {
+          if (this.webContents) {
+            this.webContents.send('agent:message', msg)
+          }
+        }
       }
-      messageDB.createMessage(finalMsg)
-      notifyStep(finalMsg)
-      return finalMsg
-    } catch (err) {
-      console.error('AI Error:', err)
-      const errorContent = `Sorry, there was an error: ${err instanceof Error ? err.message : 'Unknown error'}`
-      this.createTaskStep(task.id, {
-        type: 'final',
-        status: 'failed',
-        title: 'Execution failed',
-        content: errorContent,
-        startedAt: Date.now(),
-        endedAt: Date.now()
-      })
-      this.markTaskStatus(task.id, 'failed', errorContent)
+
+      const runner = new AgentRunner(context)
+      const messages = await messageDB.getMessages(topicId)
+      const result = await runner.run(messages)
+      
+      this.webContents?.send('agent:thinking', { topicId, thinking: false })
+      return result
+    } catch (error: any) {
+      this.webContents?.send('agent:thinking', { topicId, thinking: false })
+      logger.error('Agent', `Error processing message: ${error.message}`)
       const errorMsg: Message = {
         id: uuidv4(),
         topicId,
         role: 'assistant',
-        content: errorContent,
+        content: `抱歉，处理您的请求时出现错误: ${error.message}`,
         timestamp: Date.now()
       }
+      messageDB.createMessage(errorMsg)
+      if (this.webContents) {
+        this.webContents.send('agent:message', errorMsg)
+      }
       return errorMsg
+    } finally {
+      if (this.webContents) {
+        this.webContents.send('agent:thinking', false)
+      }
     }
   }
 
-  private async completeCommand(
-    topicId: string,
-    hostId: string,
-    partialCommand: string
-  ): Promise<string> {
+  async handleAuthResponse(requestId: string, approved: boolean) {
+    const resolve = this.pendingRequests.get(requestId)
+    if (resolve) {
+      resolve(approved)
+      this.pendingRequests.delete(requestId)
+    }
+  }
+
+  async completeCommand(topicId: string, hostId: string, partialCommand: string) {
     const host = hostDB.getHostById(hostId)
-    if (!host) {
-      throw new Error('Host not found')
-    }
-
-    const history = messageDB.getMessages(topicId).slice(-8)
-    const aiClient = getAIClient()
-    const model = getCurrentModel()
-    const response = await aiClient.chat.completions.create({
-      model,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You complete shell commands for a human operating a remote terminal. Return only the completed command text with no markdown, no explanation, and no trailing newline.'
-        },
-        {
-          role: 'user',
-          content: `Host: ${host.alias} (${host.username}@${host.ip}:${host.port || 22})
-Recent topic context:
-${history.map((message) => `${message.role}: ${message.content}`).join('\n')}
-
-Partial shell input:
-${partialCommand}`
-        }
-      ]
-    })
-
-    return response.choices[0].message.content?.trim() || partialCommand
+    if (!host) return null
+    const hostMap = this.topicSessions.get(topicId)
+    const sessions = hostMap?.get(hostId)
+    const session = sessions && sessions.length > 0 ? sessions[0] : await this.ensureSession(topicId, hostId, host.alias)
+    return commandExecutor.complete(session.id, partialCommand)
   }
+
+  async setPaused(id: string, paused: boolean) {
+    for (const hostMap of this.topicSessions.values()) {
+      for (const sessions of hostMap.values()) {
+        const session = sessions.find(s => s.id === id)
+        if (session) {
+          session.paused = paused
+          return
+        }
+      }
+    }
+  }
+
+  async isPaused(id: string): Promise<boolean> {
+    for (const hostMap of this.topicSessions.values()) {
+      for (const sessions of hostMap.values()) {
+        const session = sessions.find(s => s.id === id)
+        if (session) return session.paused
+      }
+    }
+    return false
+  }
+}
+
+export const agentService = new AgentService()
+
+export function setupAgentHandlers() {
+  ipcMain.removeHandler('agent:get-topic-hosts')
+  ipcMain.handle('agent:get-topic-hosts', (_, topicId: string) => 
+    agentService.getTopicHosts(topicId)
+  )
+
+  ipcMain.removeHandler('agent:add-host')
+  ipcMain.handle('agent:add-host', (_, topicId: string, hostId: string) => 
+    agentService.addHostToTopic(topicId, hostId)
+  )
+
+  ipcMain.removeHandler('agent:remove-host')
+  ipcMain.handle('agent:remove-host', (_, topicId: string, hostId: string) => 
+    agentService.removeHostFromTopic(topicId, hostId)
+  )
+
+  ipcMain.removeHandler('agent:message')
+  ipcMain.handle('agent:message', (_, topicId: string, content: string) => 
+    agentService.handleMessage(topicId, content)
+  )
+
+  ipcMain.removeHandler('agent:auth-response')
+  ipcMain.handle('agent:auth-response', (_, requestId: string, approved: boolean) => 
+    agentService.handleAuthResponse(requestId, approved)
+  )
+
+  ipcMain.removeHandler('agent:get-sessions')
+  ipcMain.handle('agent:get-sessions', (_, topicId: string) => 
+    agentService.getSessions(topicId)
+  )
+
+  ipcMain.removeHandler('agent:complete-command')
+  ipcMain.handle('agent:complete-command', (_, topicId: string, hostId: string, partial: string) => 
+    agentService.completeCommand(topicId, hostId, partial)
+  )
+
+  ipcMain.removeHandler('agent:create-terminal')
+  ipcMain.handle('agent:create-terminal', (_, topicId: string, hostId: string, name?: string) => 
+    agentService.createTerminal(topicId, hostId, name)
+  )
+
+  ipcMain.removeHandler('agent:close-terminal')
+  ipcMain.handle('agent:close-terminal', (_, id: string) => 
+    agentService.closeTerminal(id)
+  )
+
+  ipcMain.removeHandler('agent:rename-terminal')
+  ipcMain.handle('agent:rename-terminal', (_, id: string, name: string) => 
+    agentService.renameTerminal(id, name)
+  )
+
+  ipcMain.removeHandler('agent:toggle-terminal-pin')
+  ipcMain.handle('agent:toggle-terminal-pin', (_, id: string, isPinned: boolean) => 
+    agentService.toggleTerminalPin(id, isPinned)
+  )
 }

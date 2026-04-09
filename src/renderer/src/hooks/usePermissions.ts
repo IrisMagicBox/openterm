@@ -19,7 +19,7 @@ export function usePermissions() {
     try {
       setLoading(true)
       const savedPermissions = await window.api.getPermissions()
-      setPermissions(savedPermissions)
+      setPermissions(savedPermissions as any)
     } catch (error) {
       console.error('Failed to load permissions:', error)
       setPermissions(DEFAULT_PERMISSIONS)

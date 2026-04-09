@@ -30,24 +30,31 @@ const api = {
   getArtifacts: (taskId: string) => ipcRenderer.invoke('get-artifacts', taskId),
   createArtifact: (artifact: any) => ipcRenderer.invoke('create-artifact', artifact),
 
+  // Host Pool Management
+  getTopicHosts: (topicId: string) => ipcRenderer.invoke('agent:get-topic-hosts', topicId),
+  addHostToTopic: (topicId: string, hostId: string) =>
+    ipcRenderer.invoke('agent:add-host', topicId, hostId),
+  removeHostFromTopic: (topicId: string, hostId: string) =>
+    ipcRenderer.invoke('agent:remove-host', topicId, hostId),
+
   // SSH Terminal APIs
   connectSSH: (hostId: string) => ipcRenderer.invoke('ssh:connect', hostId),
-  sendSSHInput: (sessionId: string, data: string, topicId?: string) =>
-    ipcRenderer.send('ssh:input', sessionId, data, topicId),
-  resizeSSH: (sessionId: string, cols: number, rows: number) =>
-    ipcRenderer.send('ssh:resize', sessionId, cols, rows),
-  onSSHData: (sessionId: string, callback: (data: string) => void) => {
+  sendSSHInput: (id: string, data: string, topicId?: string) =>
+    ipcRenderer.send('ssh:input', id, data, topicId),
+  resizeSSH: (id: string, cols: number, rows: number) =>
+    ipcRenderer.send('ssh:resize', id, cols, rows),
+  onSSHData: (id: string, callback: (data: string) => void) => {
     const listener = (_event, data: string) => callback(data)
-    ipcRenderer.on(`ssh:data:${sessionId}`, listener)
-    return () => ipcRenderer.removeListener(`ssh:data:${sessionId}`, listener)
+    ipcRenderer.on(`ssh:data:${id}`, listener)
+    return () => ipcRenderer.removeListener(`ssh:data:${id}`, listener)
   },
-  onSSHClosed: (sessionId: string, callback: () => void) => {
+  onSSHClosed: (id: string, callback: () => void) => {
     const listener = () => callback()
-    ipcRenderer.on(`ssh:closed:${sessionId}`, listener)
-    return () => ipcRenderer.removeListener(`ssh:closed:${sessionId}`, listener)
+    ipcRenderer.on(`ssh:closed:${id}`, listener)
+    return () => ipcRenderer.removeListener(`ssh:closed:${id}`, listener)
   },
-  getSSHBuffer: (sessionId: string) => ipcRenderer.invoke('ssh:get-buffer', sessionId),
-  attachSSH: (sessionId: string) => ipcRenderer.send('ssh:attach', sessionId),
+  getSSHBuffer: (id: string) => ipcRenderer.invoke('ssh:get-buffer', id),
+  attachSSH: (id: string) => ipcRenderer.send('ssh:attach', id),
 
   // Agent APIs
   sendMessage: (topicId: string, content: string) =>
@@ -55,14 +62,13 @@ const api = {
   completeAgentCommand: (topicId: string, hostId: string, partialCommand: string) =>
     ipcRenderer.invoke('agent:complete-command', topicId, hostId, partialCommand),
   getAgentSessions: (topicId: string) => ipcRenderer.invoke('agent:get-sessions', topicId),
-  addHostToTopic: (topicId: string, hostId: string) =>
-    ipcRenderer.invoke('agent:add-host', topicId, hostId),
-  removeHostFromTopic: (topicId: string, hostId: string) =>
-    ipcRenderer.invoke('agent:remove-host', topicId, hostId),
 
   // Agent Authorization (HITL)
-  onAgentAuthRequest: (callback: (requestId: string, command: string) => void) => {
-    const listener = (_event, requestId: string, command: string) => callback(requestId, command)
+  onAgentAuthRequest: (
+    callback: (requestId: string, command: string, riskLevel?: string, reason?: string) => void
+  ) => {
+    const listener = (_event, requestId: string, command: string, riskLevel?: string, reason?: string) =>
+      callback(requestId, command, riskLevel, reason)
     ipcRenderer.on('agent:auth-request', listener)
     return () => ipcRenderer.removeListener('agent:auth-request', listener)
   },
@@ -70,19 +76,18 @@ const api = {
     ipcRenderer.invoke('agent:auth-response', requestId, approved),
   onTopicUpdated: (callback: (data: { topicId: string; title: string }) => void) => {
     const listener = (_event, data: any) => callback(data)
-    ipcRenderer.on('topic-updated', listener)
-    return () => ipcRenderer.removeListener('topic-updated', listener)
+    ipcRenderer.on('topic:updated', listener)
+    return () => ipcRenderer.removeListener('topic:updated', listener)
+  },
+  onAgentThinking: (
+    callback: (data: { topicId: string; thinking: boolean }) => void
+  ) => {
+    const listener = (_event, data: any) => callback(data)
+    ipcRenderer.on('agent:thinking', listener)
+    return () => ipcRenderer.removeListener('agent:thinking', listener)
   },
   onAgentStep: (
-    callback: (step: {
-      topicId: string
-      role: 'assistant' | 'tool'
-      content: string
-      toolCallId?: string
-      name?: string
-      thought?: string
-      toolCalls?: any[]
-    }) => void
+    callback: (step: any) => void
   ) => {
     const listener = (_event, step: any) => callback(step)
     ipcRenderer.on('agent:step', listener)
@@ -90,29 +95,19 @@ const api = {
   },
 
   onAgentTerminalShow: (
-    callback: (data: {
-      sessionId: string
-      hostId: string
-      hostAlias: string
-      command: string
-    }) => void
+    callback: (data: any) => void
   ) => {
     const listener = (_event, data: any) => callback(data)
     ipcRenderer.on('agent:terminal-show', listener)
     return () => ipcRenderer.removeListener('agent:terminal-show', listener)
   },
-  onAgentTerminalHide: (callback: (data: { sessionId: string }) => void) => {
+  onAgentTerminalHide: (callback: (data: { id: string }) => void) => {
     const listener = (_event, data: any) => callback(data)
     ipcRenderer.on('agent:terminal-hide', listener)
     return () => ipcRenderer.removeListener('agent:terminal-hide', listener)
   },
   onAgentSessionCreated: (
-    callback: (data: {
-      topicId: string
-      hostId: string
-      hostAlias: string
-      sessionId: string
-    }) => void
+    callback: (data: any) => void
   ) => {
     const listener = (_event, data: any) => callback(data)
     ipcRenderer.on('agent:session-created', listener)
@@ -120,50 +115,53 @@ const api = {
   },
 
   onTerminalCommandStart: (
-    sessionId: string,
-    callback: (data: { inputId: string; command: string; source: string }) => void
+    id: string,
+    callback: (data: any) => void
   ) => {
     const listener = (_event, data: any) => callback(data)
-    ipcRenderer.on(`terminal:command-start:${sessionId}`, listener)
-    return () => ipcRenderer.removeListener(`terminal:command-start:${sessionId}`, listener)
+    ipcRenderer.on(`terminal:command-start:${id}`, listener)
+    return () => ipcRenderer.removeListener(`terminal:command-start:${id}`, listener)
   },
 
   onTerminalCommandEnd: (
-    sessionId: string,
-    callback: (data: {
-      inputId: string
-      outputId: string
-      exitCode: number
-      durationMs: number
-      isTruncated: boolean
-    }) => void
+    id: string,
+    callback: (data: any) => void
   ) => {
     const listener = (_event, data: any) => callback(data)
-    ipcRenderer.on(`terminal:command-end:${sessionId}`, listener)
-    return () => ipcRenderer.removeListener(`terminal:command-end:${sessionId}`, listener)
+    ipcRenderer.on(`terminal:command-end:${id}`, listener)
+    return () => ipcRenderer.removeListener(`terminal:command-end:${id}`, listener)
   },
 
   createAgentSSHSession: (hostId: string, topicId?: string) =>
     ipcRenderer.invoke('ssh:agent:create', hostId, topicId),
-  executeAgentSSHCommand: (sessionId: string, command: string) =>
-    ipcRenderer.invoke('ssh:agent:execute', sessionId, command),
-  closeAgentSSHSession: (sessionId: string) => ipcRenderer.invoke('ssh:agent:close', sessionId),
-  setAgentSessionPaused: (sessionId: string, paused: boolean) =>
-    ipcRenderer.invoke('ssh:agent:set-paused', sessionId, paused),
-  isAgentSessionPaused: (sessionId: string) => ipcRenderer.invoke('ssh:agent:is-paused', sessionId),
-  onSSHReady: (sessionId: string, callback: (hostAlias: string) => void) => {
+  executeAgentSSHCommand: (id: string, command: string) =>
+    ipcRenderer.invoke('ssh:agent:execute', id, command),
+  closeAgentSSHSession: (id: string) => ipcRenderer.invoke('ssh:agent:close', id),
+  setAgentSessionPaused: (id: string, paused: boolean) =>
+    ipcRenderer.invoke('ssh:agent:set-paused', id, paused),
+  isAgentSessionPaused: (id: string) => ipcRenderer.invoke('ssh:agent:is-paused', id),
+  onSSHReady: (id: string, callback: (hostAlias: string) => void) => {
     const listener = (_event, hostAlias: string) => callback(hostAlias)
-    ipcRenderer.on(`ssh:ready:${sessionId}`, listener)
-    return () => ipcRenderer.removeListener(`ssh:ready:${sessionId}`, listener)
+    ipcRenderer.on(`ssh:ready:${id}`, listener)
+    return () => ipcRenderer.removeListener(`ssh:ready:${id}`, listener)
   },
-  onSSHCommand: (sessionId: string, callback: (command: string) => void) => {
+  onSSHCommand: (id: string, callback: (command: string) => void) => {
     const listener = (_event, command: string) => callback(command)
-    ipcRenderer.on(`ssh:command:${sessionId}`, listener)
-    return () => ipcRenderer.removeListener(`ssh:command:${sessionId}`, listener)
+    ipcRenderer.on(`ssh:command:${id}`, listener)
+    return () => ipcRenderer.removeListener(`ssh:command:${id}`, listener)
   },
 
+  // Multi-Terminal Management
+  createAgentTerminal: (topicId: string, hostId: string, name?: string) =>
+    ipcRenderer.invoke('agent:create-terminal', topicId, hostId, name),
+  closeAgentTerminal: (id: string) => ipcRenderer.invoke('agent:close-terminal', id),
+  renameAgentTerminal: (id: string, name: string) =>
+    ipcRenderer.invoke('agent:rename-terminal', id, name),
+  toggleTerminalPin: (id: string, isPinned: boolean) =>
+    ipcRenderer.invoke('agent:toggle-terminal-pin', id, isPinned),
+
   getModelSettings: () => ipcRenderer.invoke('get-model-settings'),
-  saveModelSettings: (settings: { apiKey?: string; baseURL?: string; model?: string }) =>
+  saveModelSettings: (settings: any) =>
     ipcRenderer.invoke('save-model-settings', settings),
 
   getProviders: () => ipcRenderer.invoke('get-providers'),
@@ -179,10 +177,7 @@ const api = {
 
   // Permission Settings APIs
   getPermissions: () => ipcRenderer.invoke('get-permissions'),
-  savePermissions: (permissions: {
-    requireConfirmation?: boolean
-    autoExecuteSafeOperations?: boolean
-  }) => ipcRenderer.invoke('save-permissions', permissions),
+  savePermissions: (permissions: any) => ipcRenderer.invoke('save-permissions', permissions),
   onDebugLog: (callback: (entry: any) => void) => {
     const listener = (_event, entry: any) => callback(entry)
     ipcRenderer.on('debug:log', listener)
@@ -203,3 +198,5 @@ if (process.contextIsolated) {
   // @ts-ignore (define in dts)
   window.api = api
 }
+
+export {}

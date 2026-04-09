@@ -30,29 +30,24 @@ import {
   Command
 } from 'lucide-react'
 import { TerminalView } from './components/TerminalView'
-import logo from './assets/logo.png'
+import { TopicHub } from './components/TopicHub'
+import { TaskStepTimeline } from './components/TaskStepTimeline'
+// import logo from './assets/logo.png'
+// const logo = ""; // Removed unused placeholder
 import { AuthModal } from './components/AuthModal'
-import { Host, Topic, Message } from '../../shared/types'
+import { 
+  Host, 
+  Topic, 
+  Message, 
+  TerminalSession 
+} from '../../shared/types'
 import { MarkdownRenderer } from './components/MarkdownRenderer'
 import { SettingsPage } from './components/settings'
 import { ModelSelector } from './components/ModelSelector'
 import { useProvider } from './hooks/useProvider'
 import { usePermissions } from './hooks/usePermissions'
 
-type View = 'hosts' | 'terminal' | 'chat' | 'settings'
-
-interface AgentTerminalSession {
-  sessionId: string
-  hostId: string
-  hostAlias: string
-  command?: string
-  visible: boolean
-  paused?: boolean
-  commandStatus?: 'idle' | 'running' | 'completed' | 'failed'
-  commandStartTime?: number
-  commandExitCode?: number
-  commandDurationMs?: number
-}
+type View = 'hosts' | 'terminal'| 'chat' | 'settings'
 
 interface CommandSuggestion {
   partial: string
@@ -425,6 +420,7 @@ function ChatPanel({
   topic,
   hosts,
   prefill,
+  thinking,
   onManageHosts,
   agentSessions,
   onCloseAgentTerminal,
@@ -432,25 +428,35 @@ function ChatPanel({
   terminalWidth,
   setTerminalWidth,
   terminalFontSize,
-  setTerminalFontSize
+  setTerminalFontSize,
+  onRemoveHostFromTopic,
+  onCreateTerminal,
+  onCloseTerminal,
+  onRenameTerminal,
+  onToggleTerminalPin
 }: {
   topic: Topic
   hosts: Host[]
   prefill?: string
+  thinking?: boolean
   onManageHosts: () => void
-  agentSessions: AgentTerminalSession[]
+  agentSessions: TerminalSession[]
   onCloseAgentTerminal: (sessionId: string) => void
   onToggleAgentTerminalPaused: (sessionId: string, paused: boolean) => Promise<void>
   terminalWidth: number
   setTerminalWidth: (width: number) => void
   terminalFontSize: number
   setTerminalFontSize: (size: number) => void
+  onRemoveHostFromTopic: (hostId: string) => Promise<void>
+  onCreateTerminal: (hostId: string) => Promise<void>
+  onCloseTerminal: (sessionId: string) => Promise<void>
+  onRenameTerminal: (sessionId: string, name: string) => Promise<void>
+  onToggleTerminalPin: (sessionId: string, isPinned: boolean) => Promise<void>
 }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState(prefill || '')
   const [showMentions, setShowMentions] = useState(false)
   const [mentionFilter, setMentionFilter] = useState('')
-  const [isThinking, setIsThinking] = useState(false)
   const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({})
   const [topicHosts, setTopicHosts] = useState<Host[]>([])
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
@@ -491,7 +497,7 @@ function ChatPanel({
 
   const { providers, models } = useProvider()
 
-  const filteredHosts = hosts.filter(
+  const filteredHosts = topicHosts.filter(
     (h) =>
       h.alias.toLowerCase().includes(mentionFilter.toLowerCase()) || h.ip.includes(mentionFilter)
   )
@@ -522,7 +528,7 @@ function ChatPanel({
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [messages, isThinking])
+  }, [messages, thinking])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -557,7 +563,7 @@ function ChatPanel({
   }
 
   const handleSend = async () => {
-    if (!inputValue.trim() || isThinking) return
+    if (!inputValue.trim() || thinking) return
     const userContent = inputValue
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -568,7 +574,6 @@ function ChatPanel({
     }
     setMessages((prev) => [...prev, userMsg])
     setInputValue('')
-    setIsThinking(true)
     try {
       const response = await window.api.sendMessage(topic.id, userContent)
       setMessages((prev) => {
@@ -586,18 +591,16 @@ function ChatPanel({
         id: Date.now().toString(),
         topicId: topic.id,
         role: 'assistant',
-        content: 'Sorry, something went wrong. Please check connectivity and try again.',
+        content: '抱歉，出错了。请检查连接并重试。',
         timestamp: Date.now()
       }
       setMessages((prev) => [...prev, errMsg])
-    } finally {
-      setIsThinking(false)
     }
   }
 
   const visibleSessions = agentSessions.filter((session) => session.visible)
   const focusedSession =
-    visibleSessions.find((session) => session.sessionId === focusedSessionId) || visibleSessions[0]
+    visibleSessions.find((session) => session.id === focusedSessionId) || visibleSessions[0]
 
   useEffect(() => {
     if (visibleSessions.length === 0) {
@@ -607,15 +610,15 @@ function ChatPanel({
 
     if (
       !focusedSessionId ||
-      !visibleSessions.some((session) => session.sessionId === focusedSessionId)
+      !visibleSessions.some((session) => session.id === focusedSessionId)
     ) {
-      setFocusedSessionId(visibleSessions[0].sessionId)
+      setFocusedSessionId(visibleSessions[0].id)
     }
   }, [focusedSessionId, visibleSessions])
 
   const openCommandPalette = () => {
     if (visibleSessions.length > 0 && !focusedSession) {
-      setFocusedSessionId(visibleSessions[0].sessionId)
+      setFocusedSessionId(visibleSessions[0].id)
     }
     setCommandPaletteOpen(true)
   }
@@ -636,7 +639,7 @@ function ChatPanel({
     setCommandPaletteOpen(false)
     setCommandPaletteValue('')
     setInputValue('')
-    setIsThinking(true)
+    // setIsThinking removed
 
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -653,7 +656,7 @@ function ChatPanel({
     } catch (error) {
       console.error('Command palette agent error:', error)
     } finally {
-      setIsThinking(false)
+      // setIsThinking removed
     }
   }
 
@@ -690,7 +693,7 @@ function ChatPanel({
               setSelectedProviderId(providerId)
               setSelectedModelId(modelId)
             }}
-            disabled={isThinking}
+            disabled={thinking}
           />
           {topicHosts.length > 0 && (
             <div className="flex -space-x-2">
@@ -705,13 +708,6 @@ function ChatPanel({
               ))}
             </div>
           )}
-          <button
-            onClick={onManageHosts}
-            className="p-2 bg-gray-100 hover:bg-blue-50 text-gray-500 hover:text-blue-600 rounded-xl transition"
-            title="管理主机"
-          >
-            <Server size={16} />
-          </button>
         </div>
       </div>
 
@@ -745,7 +741,7 @@ function ChatPanel({
             </div>
           )}
 
-          {messages.filter(msg => msg.role !== 'tool').map((msg) => (
+          {messages.map((msg) => (
             <div
               key={msg.id}
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -781,6 +777,10 @@ function ChatPanel({
                     </div>
                   )}
 
+                  {msg.metadata?.taskId && (
+                    <TaskStepTimeline taskId={msg.metadata.taskId} />
+                  )}
+
                   {msg.toolCalls && msg.toolCalls.length > 0 && (
                     <div className="space-y-1.5">
                       {msg.toolCalls.map((tool) => {
@@ -810,34 +810,53 @@ function ChatPanel({
                       msg.role === 'user'
                         ? 'bg-blue-600 text-white rounded-br-sm'
                         : msg.role === 'tool'
-                          ? 'bg-gray-900 text-emerald-400 font-mono text-[11px] border border-gray-800 rounded-bl-sm max-w-full overflow-x-auto shadow-xl'
+                          ? 'bg-gray-900 border border-gray-800 rounded-bl-sm max-w-full overflow-x-auto shadow-xl'
                           : 'bg-gray-50 border border-gray-100 text-gray-800 rounded-bl-sm'
-                    }`}
+                    } ${msg.metadata?.isVerifying ? 'ring-2 ring-emerald-500/20 bg-emerald-50/10' : ''}`}
                   >
                     {msg.role === 'user' ? (
                       <div className="whitespace-pre-wrap">{msg.content}</div>
                     ) : msg.role === 'tool' ? (
                       <div className="space-y-2">
-                        <button
-                          onClick={() => setExpandedThoughts((p) => ({ ...p, [msg.id]: !p[msg.id] }))}
-                          className="flex items-center gap-2 text-[10px] font-black text-emerald-400/70 hover:text-emerald-400 transition uppercase tracking-widest no-drag"
-                        >
-                          {expandedThoughts[msg.id] ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                          终端原始输出
-                        </button>
+                        <div className="flex items-center justify-between">
+                           <button
+                             onClick={() => setExpandedThoughts((p) => ({ ...p, [msg.id]: !p[msg.id] }))}
+                             className="flex items-center gap-2 text-[10px] font-black text-emerald-400/70 hover:text-emerald-400 transition uppercase tracking-widest no-drag"
+                           >
+                             {expandedThoughts[msg.id] ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                             终端原始输出
+                           </button>
+                           {msg.metadata?.isVerifying && (
+                             <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                                验证凭证
+                             </span>
+                           )}
+                        </div>
                         {expandedThoughts[msg.id] && (
-                          <div className="mt-2 border-t border-gray-800 pt-2 break-all whitespace-pre-wrap">
+                          <div className="mt-2 border-t border-gray-800 pt-2 break-all text-emerald-400 font-mono text-[11px] whitespace-pre-wrap">
                             {msg.content}
                           </div>
                         )}
                         {!expandedThoughts[msg.id] && (
                           <div className="text-[10px] italic text-emerald-400/40">
-                            输出内容已在终端显示，点击展开查看原始文本...
+                             输出内容已提纯并同步至终端视图。点击查看原始文本...
                           </div>
                         )}
                       </div>
                     ) : (
-                      <MarkdownRenderer content={msg.content} />
+                      <div className="space-y-3">
+                        {msg.metadata?.memoryRecalled && (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 w-fit rounded-full text-[10px] font-black tracking-widest uppercase mb-1">
+                            <Zap size={10} /> 已调取经验记忆
+                          </div>
+                        )}
+                        {msg.metadata?.isVerifying && (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 w-fit rounded-full text-[10px] font-black tracking-widest uppercase mb-1">
+                            <CheckCircle2 size={10} /> 任务目标验证通过
+                          </div>
+                        )}
+                        <MarkdownRenderer content={msg.content} />
+                      </div>
                     )}
                   </div>
                 </div>
@@ -845,7 +864,7 @@ function ChatPanel({
             </div>
           ))}
 
-          {isThinking && (
+          {thinking && (
             <div className="flex justify-start">
               <div className="flex items-end gap-2.5">
                 <div className="w-8 h-8 rounded-2xl bg-gray-100 text-gray-500 flex items-center justify-center animate-pulse">
@@ -858,7 +877,11 @@ function ChatPanel({
                     <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:300ms]"></span>
                   </div>
                   <span className="text-[10px] font-black text-blue-600/50 uppercase tracking-widest ml-1">
-                    Analyzing
+                    {messages.length > 0 && messages[messages.length - 1].metadata?.agentStatus === 'verifying' 
+                      ? '正在验证目标...' 
+                      : messages.length > 0 && messages[messages.length - 1].metadata?.agentStatus === 'executing'
+                        ? '正在执行操作...'
+                        : '思考并分析中...'}
                   </span>
                 </div>
               </div>
@@ -876,237 +899,285 @@ function ChatPanel({
               style={{ width: terminalWidth }}
               className="border-l border-gray-100 bg-gray-50 flex flex-col shrink-0"
             >
-            <div className="px-4 py-3 border-b border-gray-100 bg-white space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
-                  <Monitor size={12} />
-                  共驾终端
-                </h3>
-                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-blue-50 text-blue-600">
-                  {visibleSessions.length} 个活动终端
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-black text-gray-900">
-                    {focusedSession ? focusedSession.hostAlias : '未选择终端'}
+              <div className="px-4 py-3 border-b border-gray-100 bg-white space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
+                    <Monitor size={12} />
+                    共驾终端
+                  </h3>
+                  <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-blue-50 text-blue-600">
+                    {visibleSessions.length} 个活动终端
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-black text-gray-900">
+                      {focusedSession ? focusedSession.hostAlias : '未选择终端'}
+                    </div>
+                    <div className="text-[11px] text-gray-400 mt-0.5">
+                      {focusedSession
+                        ? focusedSession.paused
+                          ? '当前由人工接管，Agent 已暂停'
+                          : '当前由 Agent 驱动，可随时接管'
+                        : '点击任一终端后即可接管或自然语言下达指令'}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-gray-400 mt-0.5">
-                    {focusedSession
-                      ? focusedSession.paused
-                        ? '当前由人工接管，Agent 已暂停'
-                        : '当前由 Agent 驱动，可随时接管'
-                      : '点击任一终端后即可接管或自然语言下达指令'}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => setCommandAssistEnabled((value) => !value)}
+                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition ${
+                        commandAssistEnabled
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-gray-100 text-gray-500 border border-gray-200'
+                      }`}
+                      title="终端中按 Tab 使用 Agent 补全当前命令"
+                    >
+                      Tab补全
+                    </button>
+                    <button
+                      onClick={openCommandPalette}
+                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition bg-gray-900 text-white hover:bg-black"
+                      title="Command+K"
+                    >
+                      Cmd+K
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => setCommandAssistEnabled((value) => !value)}
-                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition ${
-                      commandAssistEnabled
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        : 'bg-gray-100 text-gray-500 border border-gray-200'
-                    }`}
-                    title="终端中按 Tab 使用 Agent 补全当前命令"
-                  >
-                    Tab补全
-                  </button>
-                  <button
-                    onClick={openCommandPalette}
-                    className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition bg-gray-900 text-white hover:bg-black"
-                    title="Command+K"
-                  >
-                    Cmd+K
-                  </button>
-                </div>
               </div>
-            </div>
-            <div
-              className={`flex-1 min-h-0 overflow-y-auto p-3 grid gap-3 auto-rows-fr ${visibleSessions.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
-            >
-              {visibleSessions.map((session) => (
-                <div
-                  key={session.sessionId}
-                  onClick={() => setFocusedSessionId(session.sessionId)}
-                  className={`bg-white rounded-2xl border overflow-hidden shadow-sm transition cursor-pointer flex flex-col ${focusedSession?.sessionId === session.sessionId ? 'border-blue-300 ring-2 ring-blue-100 shadow-blue-100/70' : 'border-gray-200 hover:border-gray-300'}`}
-                >
-                  <div
-                    className={`px-3 py-2.5 text-white flex items-center justify-between gap-2 ${focusedSession?.sessionId === session.sessionId ? 'bg-slate-950' : 'bg-gray-900'}`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0 shrink">
-                      <TerminalIcon
-                        size={12}
-                        className={session.paused ? 'text-amber-300' : 'text-emerald-400'}
-                      />
-                      <span className="text-xs font-bold truncate">{session.hostAlias}</span>
-                      {focusedSession?.sessionId === session.sessionId && (
-                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/10 text-blue-100">
-                          当前
-                        </span>
+              <div className="flex-1 min-h-0 flex bg-gray-50/50">
+                {/* Stage Manager Rail */}
+                <div className="w-16 border-r border-gray-100 flex flex-col items-center py-4 gap-4 overflow-y-auto no-scrollbar bg-white/40">
+                  {agentSessions.map(session => (
+                    <div 
+                      key={session.id}
+                      onClick={() => {
+                        onToggleTerminalPin(session.id, true)
+                        setFocusedSessionId(session.id)
+                      }}
+                      className={`relative w-10 h-10 rounded-xl border flex items-center justify-center cursor-pointer transition-all shadow-sm ${
+                        session.id === focusedSessionId 
+                        ? 'bg-blue-600 border-blue-600 text-white scale-110 z-10' 
+                        : (session.isPinned ? 'bg-white border-blue-200 text-blue-600' : 'bg-gray-100 border-gray-200 text-gray-400 opacity-60 hover:opacity-100 hover:scale-105')
+                      }`}
+                      title={`${session.hostAlias} (${session.name || '终端'})`}
+                    >
+                      <TerminalIcon size={16} />
+                      {session.commandStatus === 'running' && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-white animate-pulse" />
+                      )}
+                      {!session.isPinned && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/5 opacity-0 hover:opacity-100 rounded-xl transition-opacity">
+                          <Plus size={14} className="text-gray-500" />
+                        </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <div className="flex bg-white/10 rounded-lg overflow-hidden border border-white/5 mr-1">
-                        <button
-                          onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
-                          className="px-2 py-1 text-[10px] font-black hover:bg-white/10 text-white/70 hover:text-white transition-colors"
-                          title="缩小 (Cmd -)"
-                        >
-                          -
-                        </button>
-                        <div className="w-[1px] bg-white/5" />
-                        <button
-                          onClick={() => setTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
-                          className="px-2 py-1 text-[10px] font-black hover:bg-white/10 text-white/70 hover:text-white transition-colors"
-                          title="放大 (Cmd +)"
-                        >
-                          +
-                        </button>
-                      </div>
-                      <button
-                        onClick={() =>
-                          onToggleAgentTerminalPaused(session.sessionId, !session.paused)
-                        }
-                        className={`px-2 py-1 rounded-lg text-[11px] font-bold transition ${
-                          session.paused
-                            ? 'bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30'
-                            : 'bg-amber-500/20 text-amber-100 hover:bg-amber-500/30'
-                        }`}
-                        title={session.paused ? '恢复 Agent 控制' : '暂停 Agent，人工接管'}
-                      >
-                        {session.paused ? <Play size={12} /> : <Pause size={12} />}
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onCloseAgentTerminal(session.sessionId)
-                        }}
-                        className="p-1 hover:bg-gray-700 rounded transition"
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  </div>
-                  {session.commandStatus === 'running' && (
-                    <div className="px-3 py-2 bg-blue-50 border-b border-blue-100">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                          <span className="text-[11px] font-bold text-blue-700">
-                            {session.command}
-                          </span>
-                          <span className="text-[10px] text-blue-500">
-                            {session.commandStartTime
-                              ? `${Math.floor((Date.now() - session.commandStartTime) / 1000)}s`
-                              : ''}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-blue-600 font-medium">执行中...</span>
-                      </div>
-                    </div>
-                  )}
-                  {session.commandStatus === 'completed' && (
-                    <div className="px-3 py-2 bg-emerald-50 border-b border-emerald-100">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-                          <span className="text-[11px] font-bold text-emerald-700">
-                            {session.command}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-emerald-600">
-                          exit {session.commandExitCode} · {session.commandDurationMs}ms
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                  {session.commandStatus === 'failed' && (
-                    <div className="px-3 py-2 bg-red-50 border-b border-red-100">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 bg-red-500 rounded-full" />
-                          <span className="text-[11px] font-bold text-red-700">
-                            {session.command}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-red-600">
-                          exit {session.commandExitCode} · {session.commandDurationMs}ms
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex-1 min-h-0 bg-[#1a1b1e] relative">
-                    <TerminalView
-                      sessionId={session.sessionId}
-                      topicId={topic.id}
-                      hostId={session.hostId}
-                      fontSize={terminalFontSize}
-                      commandAssistEnabled={commandAssistEnabled}
-                      onFocusSession={() => handleFocusSession(session.sessionId)}
-                      onSuggestionChange={(suggestion) =>
-                        handleSuggestionChange(session.sessionId, suggestion)
-                      }
-                      onClose={onCloseAgentTerminal ? () => onCloseAgentTerminal(session.sessionId) : () => {}}
-                    />
-                    {session.paused && (
-                      <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-amber-500/90 text-white text-[10px] font-black shadow-sm">
-                        人工接管中
-                      </div>
-                    )}
-                  </div>
-                  <div className="px-3 py-2.5 bg-gray-50 border-t border-gray-100 space-y-2">
-                    <div className="flex items-center justify-between gap-2 text-[10px]">
-                      <span
-                        className={`font-black ${session.paused ? 'text-amber-600' : 'text-emerald-600'}`}
-                      >
-                        {session.paused ? '键盘已交给你' : 'Agent 正在控制'}
-                      </span>
-                      <span className="text-gray-400">
-                        {focusedSession?.sessionId === session.sessionId
-                          ? 'Cmd+K 将作用于此终端'
-                          : '点击以选中'}
-                      </span>
-                    </div>
-                    <code className="text-[10px] font-mono text-gray-600 truncate block bg-white border border-gray-200 rounded-lg px-2 py-1.5">
-                      {session.command}
-                    </code>
-                    {commandSuggestions[session.sessionId] && (
-                      <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-2">
-                        <div className="text-[10px] font-black text-blue-600">Tab 建议</div>
-                        <code className="mt-1 block text-[10px] font-mono text-blue-900 break-all">
-                          {commandSuggestions[session.sessionId]?.completion}
-                        </code>
-                        <div className="mt-1 text-[10px] text-blue-500">
-                          再按一次 `Tab` 接受建议
-                        </div>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-[10px] text-gray-400">
-                        {commandAssistEnabled ? 'Tab 补全已启用' : 'Tab 补全已关闭'}
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setFocusedSessionId(session.sessionId)
-                          openCommandPalette()
-                        }}
-                        className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition ${
-                          focusedSession?.sessionId === session.sessionId
-                            ? 'bg-blue-600 text-white hover:bg-blue-700'
-                            : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-                        }`}
-                      >
-                        自然语言执行
-                      </button>
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
+
+                {/* Grid View */}
+                <div
+                  className={`flex-1 min-h-0 overflow-y-auto p-4 grid gap-4 auto-rows-fr ${visibleSessions.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
+                >
+                  {visibleSessions.slice(0, 4).map((session) => (
+                    <div
+                      key={session.id}
+                    onClick={() => setFocusedSessionId(session.id)}
+                    className={`bg-white rounded-2xl border overflow-hidden shadow-sm transition cursor-pointer flex flex-col ${focusedSession?.id === session.id ? 'border-blue-300 ring-2 ring-blue-100 shadow-blue-100/70' : 'border-gray-200 hover:border-gray-300'}`}
+                  >
+                    <div
+                      className={`px-3 py-2.5 text-white flex items-center justify-between gap-2 ${focusedSession?.id === session.id ? 'bg-slate-950' : 'bg-gray-900'}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 shrink">
+                        <TerminalIcon
+                          size={12}
+                          className={session.paused ? 'text-amber-300' : 'text-emerald-400'}
+                        />
+                        <span className="text-xs font-bold truncate">{session.hostAlias}</span>
+                        {focusedSession?.id === session.id && (
+                          <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/10 text-blue-100">
+                            当前
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex bg-white/10 rounded-lg overflow-hidden border border-white/5 mr-1">
+                          <button
+                            onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
+                            className="px-2 py-1 text-[10px] font-black hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                            title="缩小 (Cmd -)"
+                          >
+                            -
+                          </button>
+                          <div className="w-[1px] bg-white/5" />
+                          <button
+                            onClick={() => setTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
+                            className="px-2 py-1 text-[10px] font-black hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                            title="放大 (Cmd +)"
+                          >
+                            +
+                          </button>
+                        </div>
+                        <button
+                          onClick={() =>
+                            onToggleAgentTerminalPaused(session.id, !session.paused)
+                          }
+                          className={`px-2 py-1 rounded-lg text-[11px] font-bold transition ${
+                            session.paused
+                              ? 'bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30'
+                              : 'bg-amber-500/20 text-amber-100 hover:bg-amber-500/30'
+                          }`}
+                          title={session.paused ? '恢复 Agent 控制' : '暂停 Agent，人工接管'}
+                        >
+                          {session.paused ? <Play size={12} /> : <Pause size={12} />}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onCloseAgentTerminal(session.id)
+                          }}
+                          className="p-1 hover:bg-gray-700 rounded transition"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    </div>
+                    {session.commandStatus === 'running' && (
+                      <div className="px-3 py-2 bg-blue-50 border-b border-blue-100">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                            <span className="text-[11px] font-bold text-blue-700">
+                              {session.command}
+                            </span>
+                            <span className="text-[10px] text-blue-500">
+                              {session.commandStartTime
+                                ? `${Math.floor((Date.now() - session.commandStartTime) / 1000)}s`
+                                : ''}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-blue-600 font-medium">执行中...</span>
+                        </div>
+                      </div>
+                    )}
+                    {session.commandStatus === 'completed' && (
+                      <div className="px-3 py-2 bg-emerald-50 border-b border-emerald-100">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                            <span className="text-[11px] font-bold text-emerald-700">
+                              {session.command}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-emerald-600">
+                            exit {session.commandExitCode} · {session.commandDurationMs}ms
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {session.commandStatus === 'failed' && (
+                      <div className="px-3 py-2 bg-red-50 border-b border-red-100">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 bg-red-500 rounded-full" />
+                            <span className="text-[11px] font-bold text-red-700">
+                              {session.command}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-red-600">
+                            exit {session.commandExitCode} · {session.commandDurationMs}ms
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex-1 min-h-0 bg-[#1a1b1e] relative">
+                      <TerminalView
+                        id={session.id}
+                        topicId={topic.id}
+                        hostId={session.hostId}
+                        fontSize={terminalFontSize}
+                        commandAssistEnabled={commandAssistEnabled}
+                        onFocusSession={() => handleFocusSession(session.id)}
+                        onSuggestionChange={(suggestion) =>
+                          handleSuggestionChange(session.id, suggestion)
+                        }
+                        onClose={() => onCloseTerminal(session.id)}
+                        command={session.command}
+                        commandStatus={session.commandStatus}
+                      />
+                      {session.paused && (
+                        <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-amber-500/90 text-white text-[10px] font-black shadow-sm">
+                          人工接管中
+                        </div>
+                      )}
+                    </div>
+                    <div className="px-3 py-2.5 bg-gray-50 border-t border-gray-100 space-y-2">
+                      <div className="flex items-center justify-between gap-2 text-[10px]">
+                        <span
+                          className={`font-black ${session.paused ? 'text-amber-600' : 'text-emerald-600'}`}
+                        >
+                          {session.paused ? '键盘已交给你' : 'Agent 正在控制'}
+                        </span>
+                        <span className="text-gray-400">
+                          {focusedSession?.id === session.id
+                            ? 'Cmd+K 将作用于此终端'
+                            : '点击以选中'}
+                        </span>
+                      </div>
+                      <code className="text-[10px] font-mono text-gray-600 truncate block bg-white border border-gray-200 rounded-lg px-2 py-1.5">
+                        {session.command || '(no active command)'}
+                      </code>
+                      {commandSuggestions[session.id] && (
+                        <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-2">
+                          <div className="text-[10px] font-black text-blue-600">Tab 建议</div>
+                          <code className="mt-1 block text-[10px] font-mono text-blue-900 break-all">
+                            {commandSuggestions[session.id]?.completion}
+                          </code>
+                          <div className="mt-1 text-[10px] text-blue-500">
+                            再按一次 `Tab` 接受建议
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[10px] text-gray-400">
+                          {commandAssistEnabled ? 'Tab 补全已启用' : 'Tab 补全已关闭'}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setFocusedSessionId(session.id)
+                            setCommandPaletteOpen(true)
+                          }}
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition ${
+                            focusedSession?.id === session.id
+                              ? 'bg-blue-600 text-white hover:bg-blue-700'
+                              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          自然语言执行
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            </div>
-          </>
-        )}
+          </div>
+        </>
+      )}
+
+        <TopicHub
+          topicId={topic.id}
+          hosts={topicHosts}
+          sessions={agentSessions}
+          onAddHost={onManageHosts}
+          onRemoveHost={onRemoveHostFromTopic}
+          onCreateTerminal={onCreateTerminal}
+          onCloseTerminal={onCloseTerminal}
+          onRenameTerminal={onRenameTerminal}
+          onTogglePin={onToggleTerminalPin}
+          focusedSessionId={focusedSessionId}
+          onFocusSession={handleFocusSession}
+        />
       </div>
 
       <div className="px-7 py-5 border-t border-gray-100 relative">
@@ -1137,19 +1208,19 @@ function ChatPanel({
         )}
 
         <div
-          className={`flex items-center gap-3 bg-gray-50 border rounded-2xl px-3 py-2 transition-all ${isThinking ? 'opacity-60' : 'focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-50 border-gray-200'}`}
+          className={`flex items-center gap-3 bg-gray-50 border rounded-2xl px-3 py-2 transition-all ${thinking ? 'opacity-60' : 'focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-50 border-gray-200'}`}
         >
           <input
             value={inputValue}
             onChange={handleInputChange}
             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            disabled={isThinking}
-            placeholder={isThinking ? '助手正在工作中...' : '给助手发送消息或输入 @ 来指定主机...'}
+            disabled={thinking}
+            placeholder={thinking ? '助手正在工作中...' : '给助手发送消息或输入 @ 来指定主机...'}
             className="flex-1 bg-transparent px-2 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none disabled:cursor-not-allowed font-medium"
           />
           <button
             onClick={handleSend}
-            disabled={!inputValue.trim() || isThinking}
+            disabled={!inputValue.trim() || thinking}
             className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 transition-all active:scale-95 shadow-md shadow-blue-500/20"
           >
             <Send size={16} />
@@ -1291,13 +1362,17 @@ export default function App() {
   const [selectedHost, setSelectedHost] = useState<Host | null>(null)
   const [terminalSessionId, setTerminalSessionId] = useState<string | null>(null)
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null)
+  const [thinkingTopics, setThinkingTopics] = useState<Set<string>>(new Set())
   const [showAddHost, setShowAddHost] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [pendingAuth, setPendingAuth] = useState<{ requestId: string; command: string } | null>(
-    null
-  )
+  const [pendingAuth, setPendingAuth] = useState<{ 
+    requestId: string; 
+    command: string;
+    riskLevel?: string;
+    reason?: string;
+  } | null>(null)
   const [prefilledText, setPrefilledText] = useState('')
-  const [agentSessions, setAgentSessions] = useState<AgentTerminalSession[]>([])
+  const [agentSessions, setAgentSessions] = useState<TerminalSession[]>([])
   const [showManageHosts, setShowManageHosts] = useState(false)
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null)
   const [editingTopicTitle, setEditingTopicTitle] = useState('')
@@ -1348,8 +1423,8 @@ export default function App() {
 
   useEffect(() => {
     loadData()
-    const unlistenAuth = window.api.onAgentAuthRequest((requestId, command) =>
-      setPendingAuth({ requestId, command })
+    const unlistenAuth = window.api.onAgentAuthRequest((requestId, command, riskLevel, reason) =>
+      setPendingAuth({ requestId, command, riskLevel, reason })
     )
     const unlistenTopic = window.api.onTopicUpdated(({ topicId, title }) => {
       setTopics((prev) => prev.map((t) => (t.id === topicId ? { ...t, title } : t)))
@@ -1358,12 +1433,21 @@ export default function App() {
       }
     })
 
+    const unlistenThinking = window.api.onAgentThinking(({ topicId, thinking }) => {
+      setThinkingTopics((prev) => {
+        const next = new Set(prev)
+        if (thinking) next.add(topicId)
+        else next.delete(topicId)
+        return next
+      })
+    })
+
     const unlistenTerminalShow = window.api.onAgentTerminalShow((data) => {
       setAgentSessions((prev) => {
-        const exists = prev.find((s) => s.sessionId === data.sessionId)
+        const exists = prev.find((s) => s.id === data.id)
         if (exists) {
           return prev.map((s) =>
-            s.sessionId === data.sessionId
+            s.id === data.id
               ? { ...s, ...data, visible: true, paused: s.paused ?? false }
               : s
           )
@@ -1372,15 +1456,15 @@ export default function App() {
       })
     })
 
-    const unlistenTerminalHide = window.api.onAgentTerminalHide(({ sessionId }) => {
+    const unlistenTerminalHide = window.api.onAgentTerminalHide(({ id }) => {
       setAgentSessions((prev) =>
-        prev.map((s) => (s.sessionId === sessionId ? { ...s, visible: false } : s))
+        prev.map((s) => (s.id === id ? { ...s, visible: false } : s))
       )
     })
 
     const unlistenSessionCreated = window.api.onAgentSessionCreated((data) => {
       setAgentSessions((prev) => {
-        const exists = prev.find((s) => s.sessionId === data.sessionId)
+        const exists = prev.find((s) => s.id === data.id)
         if (exists) return prev
         return [...prev, { ...data, visible: true, paused: false }]
       })
@@ -1389,6 +1473,7 @@ export default function App() {
     return () => {
       unlistenAuth()
       unlistenTopic()
+      unlistenThinking()
       unlistenTerminalShow()
       unlistenTerminalHide()
       unlistenSessionCreated()
@@ -1401,10 +1486,10 @@ export default function App() {
     agentSessions.forEach((session) => {
       // Use a set to track which sessions we already have listeners for if needed,
       // but for now, we'll just ensure this effect is more targeted.
-      const unsubStart = window.api.onTerminalCommandStart(session.sessionId, (data) => {
+      const unsubStart = window.api.onTerminalCommandStart(session.id, (data) => {
         setAgentSessions((prev) =>
           prev.map((s) =>
-            s.sessionId === session.sessionId
+            s.id === session.id
               ? {
                   ...s,
                   command: data.command,
@@ -1418,10 +1503,10 @@ export default function App() {
         )
       })
 
-      const unsubEnd = window.api.onTerminalCommandEnd(session.sessionId, (data) => {
+      const unsubEnd = window.api.onTerminalCommandEnd(session.id, (data) => {
         setAgentSessions((prev) =>
           prev.map((s) =>
-            s.sessionId === session.sessionId
+            s.id === session.id
               ? {
                   ...s,
                   commandStatus: data.exitCode === 0 ? 'completed' : 'failed',
@@ -1439,7 +1524,7 @@ export default function App() {
     return () => {
       unsubscribers.forEach((fn) => fn())
     }
-  }, [agentSessions.map((s) => s.sessionId).join(',')])
+  }, [agentSessions.map((s) => s.id).join(',')])
 
   const loadData = async () => {
     const [loadedHosts, loadedTopics] = await Promise.all([
@@ -1458,6 +1543,57 @@ export default function App() {
   const handleDeleteHost = async (id: string) => {
     await window.api.deleteHost(id)
     setHosts((prev) => prev.filter((h) => h.id !== id))
+  }
+
+  const handleAddHostToTopic = async (hostId: string) => {
+    if (!selectedTopic) return
+    await window.api.addHostToTopic(selectedTopic.id, hostId)
+    setTopics((prev) =>
+      prev.map((t) => (t.id === selectedTopic.id ? { ...t, hostIds: [...t.hostIds, hostId] } : t))
+    )
+    setSelectedTopic((prev) => (prev ? { ...prev, hostIds: [...prev.hostIds, hostId] } : null))
+    await loadData()
+  }
+
+  const handleRemoveHostFromTopic = async (hostId: string) => {
+    if (!selectedTopic) return
+    await window.api.removeHostFromTopic(selectedTopic.id, hostId)
+    setTopics((prev) =>
+      prev.map((t) =>
+        t.id === selectedTopic.id ? { ...t, hostIds: t.hostIds.filter((id) => id !== hostId) } : t
+      )
+    )
+    setSelectedTopic((prev) =>
+      prev ? { ...prev, hostIds: prev.hostIds.filter((id) => id !== hostId) } : null
+    )
+    await loadData()
+  }
+
+  const handleCreateTerminal = async (hostId: string) => {
+    if (!selectedTopic) return
+    await window.api.createAgentTerminal(selectedTopic.id, hostId)
+  }
+
+  const handleCloseTerminal = async (id: string) => {
+    await window.api.closeAgentTerminal(id)
+    setAgentSessions(prev => prev.filter(s => s.id !== id))
+  }
+
+  const handleRenameTerminal = async (id: string, name: string) => {
+    await window.api.renameAgentTerminal(id, name)
+    setAgentSessions(prev => prev.map(s => s.id === id ? { ...s, name } : s))
+  }
+
+  const handleToggleTerminalPin = async (id: string, isPinned: boolean) => {
+    await window.api.toggleTerminalPin(id, isPinned)
+    setAgentSessions(prev => prev.map(s => s.id === id ? { ...s, isPinned } : s))
+  }
+
+  const handleToggleAgentTerminalPaused = async (id: string, paused: boolean) => {
+    await window.api.setAgentSessionPaused(id, paused)
+    setAgentSessions((prev) =>
+      prev.map((session) => (session.id === id ? { ...session, paused } : session))
+    )
   }
 
   const handleCreateTopic = async (initialText?: string) => {
@@ -1511,40 +1647,6 @@ export default function App() {
     }
   }
 
-  const handleAddHostToTopic = async (hostId: string) => {
-    if (!selectedTopic) return
-    await window.api.addHostToTopic(selectedTopic.id, hostId)
-    setTopics((prev) =>
-      prev.map((t) => (t.id === selectedTopic.id ? { ...t, hostIds: [...t.hostIds, hostId] } : t))
-    )
-    setSelectedTopic((prev) => (prev ? { ...prev, hostIds: [...prev.hostIds, hostId] } : null))
-  }
-
-  const handleRemoveHostFromTopic = async (hostId: string) => {
-    if (!selectedTopic) return
-    await window.api.removeHostFromTopic(selectedTopic.id, hostId)
-    setTopics((prev) =>
-      prev.map((t) =>
-        t.id === selectedTopic.id ? { ...t, hostIds: t.hostIds.filter((id) => id !== hostId) } : t
-      )
-    )
-    setSelectedTopic((prev) =>
-      prev ? { ...prev, hostIds: prev.hostIds.filter((id) => id !== hostId) } : null
-    )
-  }
-
-  const handleCloseAgentTerminal = (sessionId: string) => {
-    setAgentSessions((prev) => prev.filter((s) => s.sessionId !== sessionId))
-    window.api.closeAgentSSHSession(sessionId)
-  }
-
-  const handleToggleAgentTerminalPaused = async (sessionId: string, paused: boolean) => {
-    await window.api.setAgentSessionPaused(sessionId, paused)
-    setAgentSessions((prev) =>
-      prev.map((session) => (session.sessionId === sessionId ? { ...session, paused } : session))
-    )
-  }
-
   const filteredHosts = hosts.filter(
     (h) =>
       h.alias.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1557,8 +1659,8 @@ export default function App() {
       <aside className="w-72 bg-gray-50/80 border-r border-gray-100 flex flex-col no-drag">
         <div className="px-7 pt-8 pb-6 drag">
           <div className="flex items-center gap-3 no-drag">
-            <div className="w-12 h-12 flex items-center justify-center -ml-1">
-              <img src={logo} alt="OpenTerm Logo" className="w-full h-full object-contain" />
+            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center -ml-1 ring-1 ring-blue-100 shadow-sm">
+              <Bot size={24} />
             </div>
             <div>
               <h1 className="text-lg font-black tracking-tight text-gray-900 leading-none">
@@ -1772,7 +1874,8 @@ export default function App() {
                       host={host}
                       onConnect={async () => {
                         try {
-                          const sessionId = await window.api.connectSSH(host.id)
+                          const topicId = selectedTopic?.id || ''
+                          const sessionId = await window.api.connectSSH(host.id, topicId)
                           setSelectedHost(host)
                           setTerminalSessionId(sessionId)
                           setActiveView('terminal')
@@ -1839,7 +1942,7 @@ export default function App() {
             </div>
             <div className="flex-1 bg-[#1a1b1e]">
               <TerminalView
-                sessionId={terminalSessionId}
+                id={terminalSessionId || ''}
                 fontSize={terminalFontSize}
                 onClose={() => {
                   setActiveView('hosts')
@@ -1856,14 +1959,20 @@ export default function App() {
             topic={selectedTopic}
             hosts={hosts}
             prefill={prefilledText}
+            thinking={thinkingTopics.has(selectedTopic.id)}
             onManageHosts={() => setShowManageHosts(true)}
             agentSessions={agentSessions}
-            onCloseAgentTerminal={handleCloseAgentTerminal}
+            onCloseAgentTerminal={handleCloseTerminal}
             onToggleAgentTerminalPaused={handleToggleAgentTerminalPaused}
             terminalWidth={terminalWidth}
             setTerminalWidth={setTerminalWidth}
             terminalFontSize={terminalFontSize}
             setTerminalFontSize={setTerminalFontSize}
+            onRemoveHostFromTopic={handleRemoveHostFromTopic}
+            onCreateTerminal={handleCreateTerminal}
+            onCloseTerminal={handleCloseTerminal}
+            onRenameTerminal={handleRenameTerminal}
+            onToggleTerminalPin={handleToggleTerminalPin}
           />
         )}
 
@@ -1895,6 +2004,8 @@ export default function App() {
         <AuthModal
           requestId={pendingAuth.requestId}
           command={pendingAuth.command}
+          riskLevel={pendingAuth.riskLevel}
+          reason={pendingAuth.reason}
           onResolve={handleResolveAuth}
         />
       )}

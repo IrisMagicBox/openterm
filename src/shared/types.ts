@@ -105,6 +105,16 @@ export interface Message {
   toolCalls?: ToolCall[]
   toolCallId?: string
   name?: string
+  metadata?: {
+    isVerifying?: boolean
+    isReflection?: boolean
+    policyReason?: string
+    riskLevel?: ApprovalRiskLevel
+    memoryRecalled?: boolean
+    agentStatus?: 'thinking' | 'executing' | 'verifying' | 'reflecting'
+    taskId?: string
+    steps?: TaskStep[]
+  }
 }
 
 export interface ToolCall {
@@ -128,11 +138,20 @@ export interface TerminalSession {
   topicId: string
   hostId: string
   hostAlias: string
+  name?: string
   status: TerminalSessionStatus
   shellType?: string
   shellIntegrationReady: boolean
   isLocked?: boolean
   lockedBy?: 'agent' | 'user' | null
+  isPinned?: boolean
+  visible?: boolean
+  paused?: boolean
+  command?: string
+  commandStatus?: 'idle' | 'running' | 'completed' | 'failed'
+  commandExitCode?: number
+  commandDurationMs?: number
+  commandStartTime?: number
   createdAt: number
   closedAt?: number
 }
@@ -278,3 +297,15 @@ export type SystemProviderId =
   | 'github'
   | 'copilot'
   | 'coreshub'
+
+export type MemoryType = 'habit' | 'host_fact' | 'experience'
+
+export interface MemoryEntry {
+  id: string
+  type: MemoryType
+  content: string
+  hostId?: string
+  topicId?: string
+  importance: number
+  timestamp: number
+}

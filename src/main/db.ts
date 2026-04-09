@@ -15,7 +15,8 @@ import {
   Artifact,
   TerminalSession,
   TerminalSessionStatus,
-  TerminalIO
+  TerminalIO,
+  MemoryEntry
 } from '../shared/types'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -191,6 +192,18 @@ export const initializeDB = () => {
       FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE SET NULL,
       FOREIGN KEY (stepId) REFERENCES task_steps(id) ON DELETE SET NULL
     );
+
+    CREATE TABLE IF NOT EXISTS memories (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      content TEXT NOT NULL,
+      hostId TEXT,
+      topicId TEXT,
+      importance INTEGER DEFAULT 3,
+      timestamp INTEGER NOT NULL,
+      FOREIGN KEY (hostId) REFERENCES hosts(id) ON DELETE SET NULL,
+      FOREIGN KEY (topicId) REFERENCES topics(id) ON DELETE SET NULL
+    );
   `)
 
   const tableInfo = db.prepare('PRAGMA table_info(messages)').all() as any[]
@@ -316,6 +329,14 @@ export const hostDB = {
       ...row,
       tags: parseJSON(row.tags, [])
     }
+  },
+
+  updateHost: (id: string, updates: Partial<Pick<Host, 'alias' | 'tags'>>) => {
+    const existing = hostDB.getHostById(id)
+    if (!existing) return
+    const alias = updates.alias !== undefined ? updates.alias : existing.alias
+    const tagsStr = updates.tags !== undefined ? JSON.stringify(updates.tags) : JSON.stringify(existing.tags)
+    db.prepare('UPDATE hosts SET alias = ?, tags = ? WHERE id = ?').run(alias, tagsStr, id)
   }
 }
 
@@ -363,6 +384,16 @@ export const topicDB = {
       ...row,
       hostIds: parseJSON(row.hostIds, [])
     }
+  },
+
+  searchTopics: (query: string): Topic[] => {
+    const rows = db.prepare(
+      "SELECT * FROM topics WHERE title LIKE ? OR id IN (SELECT topicId FROM tasks WHERE summary LIKE ? OR goal LIKE ?) ORDER BY lastMessageAt DESC LIMIT 10"
+    ).all(`%${query}%`, `%${query}%`, `%${query}%`) as any[]
+    return rows.map((row) => ({
+      ...row,
+      hostIds: parseJSON(row.hostIds, [])
+    }))
   }
 }
 
@@ -698,6 +729,73 @@ export const artifactDB = {
 
     db.prepare('UPDATE tasks SET updatedAt = ? WHERE id = ?').run(updatedAt, createdArtifact.taskId)
     return createdArtifact
+  }
+}
+
+export const memoryDB = {
+  getMemories: (hostId?: string): MemoryEntry[] => {
+    const query = hostId
+      ? 'SELECT * FROM memories WHERE hostId = ? OR hostId IS NULL ORDER BY importance DESC, timestamp DESC'
+      : 'SELECT * FROM memories ORDER BY importance DESC, timestamp DESC'
+    const rows = db.prepare(query).all(hostId ? [hostId] : []) as any[]
+    return rows.map((row) => ({
+      ...row,
+      importance: Number(row.importance)
+    }))
+  },
+
+  createMemory: (memory: Omit<MemoryEntry, 'id' | 'timestamp'>): MemoryEntry => {
+    const id = uuidv4()
+    const timestamp = Date.now()
+    const entry: MemoryEntry = { ...memory, id, timestamp }
+
+    db.prepare(
+      `
+      INSERT INTO memories (id, type, content, hostId, topicId, importance, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `
+    ).run(id, entry.type, entry.content, entry.hostId || null, entry.topicId || null, entry.importance, timestamp)
+
+    return entry
+  },
+
+  deleteMemory: (id: string) => {
+    db.prepare('DELETE FROM memories WHERE id = ?').run(id)
+  },
+
+  searchRelevantMemories: (query: string, hostId?: string): MemoryEntry[] => {
+    const all = memoryDB.getMemories(hostId)
+    if (!query) return all.slice(0, 5)
+    
+    return all.filter(m => 
+      m.content.toLowerCase().includes(query.toLowerCase())
+    ).slice(0, 10)
+  },
+
+  searchMemories: (query: string, scope?: { hostId?: string; topicId?: string }): MemoryEntry[] => {
+    let sql = 'SELECT * FROM memories WHERE 1=1'
+    const params: any[] = []
+    
+    if (scope?.hostId) {
+      sql += ' AND (hostId = ? OR hostId IS NULL)'
+      params.push(scope.hostId)
+    }
+    if (scope?.topicId) {
+      sql += ' AND (topicId = ? OR topicId IS NULL)'
+      params.push(scope.topicId)
+    }
+    
+    sql += ' AND content LIKE ?'
+    params.push(`%${query}%`)
+    
+    sql += ' ORDER BY importance DESC, timestamp DESC LIMIT 20'
+    
+    const rows = db.prepare(sql).all(params) as any[]
+    return rows.map((row) => ({
+      ...row,
+      importance: Number(row.importance),
+      timestamp: Number(row.timestamp)
+    }))
   }
 }
 
@@ -1081,6 +1179,10 @@ export const terminalSessionDB = {
       ready ? 1 : 0,
       id
     )
+  },
+
+  updateSessionName: (id: string, name: string): void => {
+    db.prepare('UPDATE terminal_sessions SET name = ? WHERE id = ?').run(name, id)
   },
 
   closeSession: (id: string): void => {

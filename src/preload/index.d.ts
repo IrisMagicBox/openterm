@@ -10,7 +10,8 @@ import {
   Task,
   TaskStep,
   Approval,
-  Artifact
+  Artifact,
+  TerminalSession
 } from '../shared/types'
 
 declare global {
@@ -59,13 +60,18 @@ declare global {
           Partial<Pick<Artifact, 'id' | 'createdAt' | 'updatedAt'>>
       ) => Promise<Artifact>
 
+      // Host Pool Management
+      getTopicHosts: (topicId: string) => Promise<Host[]>
+      addHostToTopic: (topicId: string, hostId: string) => Promise<boolean>
+      removeHostFromTopic: (topicId: string, hostId: string) => Promise<boolean>
+
       connectSSH: (hostId: string) => Promise<string>
-      sendSSHInput: (sessionId: string, data: string, topicId?: string) => void
-      resizeSSH: (sessionId: string, cols: number, rows: number) => void
-      onSSHData: (sessionId: string, callback: (data: string) => void) => () => void
-      onSSHClosed: (sessionId: string, callback: () => void) => () => void
-      getSSHBuffer: (sessionId: string) => Promise<string>
-      attachSSH: (sessionId: string) => void
+      sendSSHInput: (id: string, data: string, topicId?: string) => void
+      resizeSSH: (id: string, cols: number, rows: number) => void
+      onSSHData: (id: string, callback: (data: string) => void) => () => void
+      onSSHClosed: (id: string, callback: () => void) => () => void
+      getSSHBuffer: (id: string) => Promise<string>
+      attachSSH: (id: string) => void
 
       sendMessage: (topicId: string, content: string) => Promise<Message>
       completeAgentCommand: (
@@ -75,39 +81,29 @@ declare global {
       ) => Promise<string>
       getAgentSessions: (
         topicId: string
-      ) => Promise<{ sessionId: string; hostId: string; hostAlias: string }[]>
-      addHostToTopic: (topicId: string, hostId: string) => Promise<boolean>
-      removeHostFromTopic: (topicId: string, hostId: string) => Promise<boolean>
-
-      onAgentAuthRequest: (callback: (requestId: string, command: string) => void) => () => void
+      ) => Promise<TerminalSession[]>
+      
+      onAgentAuthRequest: (
+        callback: (requestId: string, command: string, riskLevel?: string, reason?: string) => void
+      ) => () => void
       sendAgentAuthResponse: (requestId: string, approved: boolean) => Promise<void>
       onTopicUpdated: (callback: (data: { topicId: string; title: string }) => void) => () => void
       onAgentStep: (callback: (step: Message) => void) => () => void
 
       onAgentTerminalShow: (
-        callback: (data: {
-          sessionId: string
-          hostId: string
-          hostAlias: string
-          command: string
-        }) => void
+        callback: (data: TerminalSession) => void
       ) => () => void
-      onAgentTerminalHide: (callback: (data: { sessionId: string }) => void) => () => void
+      onAgentTerminalHide: (callback: (data: { id: string }) => void) => () => void
       onAgentSessionCreated: (
-        callback: (data: {
-          topicId: string
-          hostId: string
-          hostAlias: string
-          sessionId: string
-        }) => void
+        callback: (data: TerminalSession) => void
       ) => () => void
 
       onTerminalCommandStart: (
-        sessionId: string,
+        id: string,
         callback: (data: { inputId: string; command: string; source: string }) => void
       ) => () => void
       onTerminalCommandEnd: (
-        sessionId: string,
+        id: string,
         callback: (data: {
           inputId: string
           outputId: string
@@ -119,17 +115,23 @@ declare global {
 
       createAgentSSHSession: (hostId: string, topicId?: string) => Promise<string>
       executeAgentSSHCommand: (
-        sessionId: string,
+        id: string,
         command: string,
         topicId?: string,
         taskId?: string,
         stepId?: string
       ) => Promise<{ content: string; exitCode: number; durationMs: number }>
-      closeAgentSSHSession: (sessionId: string) => Promise<void>
-      setAgentSessionPaused: (sessionId: string, paused: boolean) => Promise<boolean>
-      isAgentSessionPaused: (sessionId: string) => Promise<boolean>
-      onSSHReady: (sessionId: string, callback: (hostAlias: string) => void) => () => void
-      onSSHCommand: (sessionId: string, callback: (command: string) => void) => () => void
+      closeAgentSSHSession: (id: string) => Promise<void>
+      setAgentSessionPaused: (id: string, paused: boolean) => Promise<boolean>
+      isAgentSessionPaused: (id: string) => Promise<boolean>
+      onSSHReady: (id: string, callback: (hostAlias: string) => void) => () => void
+      onSSHCommand: (id: string, callback: (command: string) => void) => () => void
+
+      // Multi-Terminal Management
+      createAgentTerminal: (topicId: string, hostId: string, name?: string) => Promise<TerminalSession>
+      closeAgentTerminal: (id: string) => Promise<void>
+      renameAgentTerminal: (id: string, name: string) => Promise<void>
+      toggleTerminalPin: (id: string, isPinned: boolean) => Promise<void>
 
       getModelSettings: () => Promise<ModelSettings>
       saveModelSettings: (settings: Partial<ModelSettings>) => Promise<void>

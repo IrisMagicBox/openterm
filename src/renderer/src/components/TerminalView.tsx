@@ -5,7 +5,7 @@ import { ClipboardAddon } from '@xterm/addon-clipboard'
 import '@xterm/xterm/css/xterm.css'
 
 interface TerminalViewProps {
-  sessionId: string
+  id: string
   onClose: () => void
   topicId?: string
   hostId?: string
@@ -16,7 +16,7 @@ interface TerminalViewProps {
 }
 
 export function TerminalView({
-  sessionId,
+  id,
   onClose,
   topicId,
   hostId,
@@ -90,11 +90,11 @@ export function TerminalView({
     xtermRef.current = term
 
     // Initial resize and attach
-    window.api.resizeSSH(sessionId, term.cols, term.rows)
-    window.api.attachSSH(sessionId)
+    window.api.resizeSSH(id, term.cols, term.rows)
+    window.api.attachSSH(id)
 
     let isBufferLoaded = false
-    const cleanupData = window.api.onSSHData(sessionId, (data) => {
+    const cleanupData = window.api.onSSHData(id, (data) => {
       if (isBufferLoaded) {
         term.write(data)
       }
@@ -102,7 +102,7 @@ export function TerminalView({
 
     // Load initial buffer
     window.api
-      .getSSHBuffer(sessionId)
+      .getSSHBuffer(id)
       .then((buffer) => {
         if (buffer) {
           term.write(buffer)
@@ -115,7 +115,7 @@ export function TerminalView({
         isBufferLoaded = true
       })
 
-    const cleanupClosed = window.api.onSSHClosed(sessionId, () => {
+    const cleanupClosed = window.api.onSSHClosed(id, () => {
       onCloseRef.current?.()
     })
 
@@ -134,7 +134,7 @@ export function TerminalView({
             const suffix = pendingSuggestionRef.current.completion.slice(partialCommand.length)
             if (suffix) {
               currentLineRef.current = pendingSuggestionRef.current.completion
-              window.api.sendSSHInput(sessionId, suffix, topicId)
+              window.api.sendSSHInput(id, suffix, topicId || '')
             }
             pendingSuggestionRef.current = null
             onSuggestionChangeRef.current?.(null)
@@ -171,11 +171,11 @@ export function TerminalView({
         pendingSuggestionRef.current = null
         onSuggestionChangeRef.current?.(null)
       }
-      window.api.sendSSHInput(sessionId, data, topicId)
+      window.api.sendSSHInput(id, data, topicId || '')
     })
 
     term.onResize(({ cols, rows }) => {
-      window.api.resizeSSH(sessionId, cols, rows)
+      window.api.resizeSSH(id, cols, rows)
     })
 
     const resizeObserver = new ResizeObserver(() => {
@@ -204,7 +204,7 @@ export function TerminalView({
       onSuggestionChangeRef.current?.(null)
       term.dispose()
     }
-  }, [sessionId, topicId, hostId])
+  }, [id, topicId, hostId])
 
   useEffect(() => {
     if (xtermRef.current) {

@@ -2,7 +2,7 @@ import { WebContents } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
 import { logger } from './logger'
 import { TerminalSession, TerminalIO, CommandResult } from '../shared/types'
-import { terminalSessionDB, terminalIODB } from './db'
+import { terminalSessionDB, terminalIODB, topicDB, hostDB } from './db'
 
 interface ActiveCommand {
   inputId: string
@@ -123,14 +123,6 @@ class CommandExecutor {
     }
 
     const cmdWithNewline = command.endsWith('\n') ? command : command + '\n'
-    try {
-      state.stream.write(cmdWithNewline)
-    } catch (err) {
-      state.isLocked = false
-      state.lockedBy = null
-      throw err
-    }
-
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (state.currentCommand && state.currentCommand.inputId === inputId) {
@@ -160,6 +152,16 @@ class CommandExecutor {
 
       if (activeCommand.isStreaming) {
         this.startStreamingFlush(sessionId, inputId)
+      }
+
+      try {
+        state.stream.write(cmdWithNewline)
+      } catch (err) {
+        state.currentCommand = undefined
+        state.isLocked = false
+        state.lockedBy = null
+        clearTimeout(timeout)
+        reject(err)
       }
     })
   }
@@ -323,13 +325,14 @@ class CommandExecutor {
       if (matchIdx > 0) {
         const matchingPart = displayData.slice(0, matchIdx)
         const restPart = displayData.slice(matchIdx)
-        // Apply Light Blue color: \x1b[38;2;99;128;254m
-        displayData = `\x1b[38;2;99;128;254m${matchingPart}\x1b[0m${restPart}`
+        // Apply Cyan color: \x1b[36m
+        displayData = `\x1b[36m${matchingPart}\x1b[0m${restPart}`
       }
     }
 
     if (state.currentCommand) {
-      state.currentCommand.outputBuffer += cleanData
+      // Strip ANSI for the Agent's internal buffer (clean text)
+      state.currentCommand.outputBuffer += cleanData.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
 
       if (isCommandEnd) {
         this.completeCommand(sessionId, exitCode)
@@ -409,9 +412,26 @@ class CommandExecutor {
   }
 
   buildTerminalContext(topicId: string): string {
+    const topic = topicDB.getTopicById(topicId)
+    const topicHosts = hostDB.getHosts().filter(h => topic?.hostIds.includes(h.id))
     const sessions = terminalSessionDB.getSessionsByTopic(topicId)
-    if (sessions.length === 0) return ''
 
+    let context = `\n[Topic Context]\n`
+    context += `Available Hosts in this Topic:\n`
+    if (topicHosts.length > 0) {
+      topicHosts.forEach(h => {
+        context += `- ${h.alias} (${h.ip})\n`
+      })
+    } else {
+      context += `- (No hosts added to this topic yet)\n`
+    }
+
+    if (sessions.length === 0) {
+      context += `Active Terminals: None\n`
+      return context
+    }
+
+    context += `Active Terminals:\n`
     const parts = sessions.map((session) => {
       const state = this.sessions.get(session.id)
       const recentIO = terminalIODB.getIOBySession(session.id, 20)
@@ -449,7 +469,8 @@ class CommandExecutor {
       )
     })
 
-    return `📋 Terminal State Summary:\n${parts.join('\n\n')}`
+    context += `📋 Terminal State Summary:\n${parts.join('\n\n')}`
+    return context
   }
 
   setSessionLock(sessionId: string, locked: boolean, lockedBy: 'agent' | 'user' | null): void {
@@ -497,6 +518,23 @@ class CommandExecutor {
 
   getSessionState(sessionId: string): SessionState | undefined {
     return this.sessions.get(sessionId)
+  }
+
+  async execute(
+    sessionId: string,
+    command: string,
+    topicId?: string,
+    taskId?: string,
+    stepId?: string
+  ): Promise<CommandResult> {
+    return this.executeAgentCommand(sessionId, command, topicId || '', taskId, stepId)
+  }
+
+  async complete(sessionId: string, _partial: string): Promise<string | null> {
+    const state = this.sessions.get(sessionId)
+    if (!state) return null
+    // Basic completion bridge
+    return null
   }
 }
 

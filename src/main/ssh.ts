@@ -240,11 +240,18 @@ export const closeSession = (sessionId: string): void => {
   }
 }
 
+let agentServiceRef: any = null
+
+export function setAgentService(service: any) {
+  agentServiceRef = service
+}
+
 export function setupSSHHandlers() {
+
   ipcMain.removeHandler('ssh:connect')
-  ipcMain.handle('ssh:connect', async (event, hostId: string) => {
+  ipcMain.handle('ssh:connect', async (event, hostId: string, topicId: string) => {
     const webContents = event.sender
-    const { config } = getConnectionConfig(hostId)
+    const { host, config } = getHostAndConfig(hostId)
 
     const client = new Client()
 
@@ -260,14 +267,50 @@ export function setupSSHHandlers() {
             const sessionId = generateSessionId(hostId)
             sessions.set(sessionId, { client, stream, hostId, buffer: '', currentOutput: '' })
 
+            // Register with commandExecutor for Agent usage if topic is provided
+            if (topicId) {
+              commandExecutor.createSession(
+                sessionId,
+                topicId,
+                hostId,
+                host.alias,
+                stream,
+                webContents
+              )
+
+              if (agentServiceRef) {
+                agentServiceRef.registerSession({
+                  id: sessionId,
+                  topicId,
+                  hostId,
+                  hostAlias: host.alias,
+                  name: `${host.alias} Terminal`,
+                  status: 'active',
+                  shellIntegrationReady: false,
+                  isPinned: false,
+                  visible: true,
+                  paused: false,
+                  createdAt: Date.now()
+                })
+              }
+            }
+
             stream.on('data', (data: Buffer) => {
-              const str = data.toString()
+              // Use handleStreamOutput if it's registered in commandExecutor
+              const { cleanData } = topicId 
+                ? commandExecutor.handleStreamOutput(sessionId, data)
+                : { cleanData: data.toString() }
+
               const session = sessions.get(sessionId)
-              if (session) session.buffer += str
-              webContents.send(`ssh:data:${sessionId}`, str)
+              if (session) {
+                session.buffer += data.toString()
+                session.currentOutput += data.toString()
+              }
+              webContents.send(`ssh:data:${sessionId}`, cleanData)
             })
 
             stream.on('close', () => {
+              if (topicId) commandExecutor.closeSession(sessionId)
               sessions.delete(sessionId)
               webContents.send(`ssh:closed:${sessionId}`)
               client.end()

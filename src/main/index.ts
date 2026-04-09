@@ -16,8 +16,8 @@ import {
   approvalDB,
   artifactDB
 } from './db'
-import { setupSSHHandlers } from './ssh'
-import { AgentService } from './agent'
+import { setupSSHHandlers, setAgentService, createAgentSession } from './ssh'
+import { setupAgentHandlers, agentService, setCreateAgentSession } from './agent'
 import { logger } from './logger'
 import { buildProviderChatUrl } from './ai'
 import type { Provider } from '../shared/types'
@@ -46,6 +46,7 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
     logger.setWebContents(mainWindow.webContents)
+    agentService.setWebContents(mainWindow.webContents)
     logger.info('System', 'Main window shown, logger initialized')
   })
 
@@ -90,7 +91,11 @@ app.whenReady().then(() => {
 
   // Register Global IPC Handlers (Once)
   setupSSHHandlers()
-  new AgentService()
+  setupAgentHandlers()
+
+  // Link services to avoid circular dependencies
+  setAgentService(agentService)
+  setCreateAgentSession(createAgentSession)
 
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.openterm')
