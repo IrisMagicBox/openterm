@@ -32,8 +32,7 @@ import {
 import { TerminalView } from './components/TerminalView'
 import { TopicHub } from './components/TopicHub'
 import { TaskStepTimeline } from './components/TaskStepTimeline'
-// import logo from './assets/logo.png'
-// const logo = ""; // Removed unused placeholder
+import logo from './assets/logo.png'
 import { AuthModal } from './components/AuthModal'
 import { 
   Host, 
@@ -715,8 +714,8 @@ function ChatPanel({
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-7 py-6 space-y-6">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center max-w-xs mx-auto space-y-5">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-500 rounded-3xl flex items-center justify-center shadow-sm">
-                <Bot size={30} />
+              <div className="w-16 h-16 rounded-3xl flex items-center justify-center overflow-hidden">
+                <img src={logo} alt="OpenTerm" className="w-full h-full object-contain" />
               </div>
               <div>
                 <h3 className="font-black text-gray-900">准备就绪</h3>
@@ -1659,8 +1658,8 @@ export default function App() {
       <aside className="w-72 bg-gray-50/80 border-r border-gray-100 flex flex-col no-drag">
         <div className="px-7 pt-8 pb-6 drag">
           <div className="flex items-center gap-3 no-drag">
-            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center -ml-1 ring-1 ring-blue-100 shadow-sm">
-              <Bot size={24} />
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center -ml-1 overflow-hidden">
+              <img src={logo} alt="OpenTerm" className="w-full h-full object-contain" />
             </div>
             <div>
               <h1 className="text-lg font-black tracking-tight text-gray-900 leading-none">
