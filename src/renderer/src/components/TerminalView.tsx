@@ -12,6 +12,7 @@ interface TerminalViewProps {
   commandAssistEnabled?: boolean
   onFocusSession?: () => void
   onSuggestionChange?: (suggestion: { partial: string; completion: string } | null) => void
+  fontSize?: number
 }
 
 export function TerminalView({
@@ -21,7 +22,8 @@ export function TerminalView({
   hostId,
   commandAssistEnabled,
   onFocusSession,
-  onSuggestionChange
+  onSuggestionChange,
+  fontSize = 13
 }: TerminalViewProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
@@ -46,7 +48,7 @@ export function TerminalView({
 
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: 13,
+      fontSize: fontSize,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: {
         background: '#1a1b1e',
@@ -203,6 +205,18 @@ export function TerminalView({
       term.dispose()
     }
   }, [sessionId, topicId, hostId])
+
+  useEffect(() => {
+    if (xtermRef.current) {
+      xtermRef.current.options.fontSize = fontSize
+      // We need to wait a tiny bit for the font to apply before fitting
+      setTimeout(() => {
+        const fitAddon = new FitAddon()
+        xtermRef.current?.loadAddon(fitAddon)
+        fitAddon.fit()
+      }, 50)
+    }
+  }, [fontSize])
 
   return (
     <div className="w-full h-full relative">

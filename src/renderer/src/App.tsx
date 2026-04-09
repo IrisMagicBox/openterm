@@ -428,7 +428,11 @@ function ChatPanel({
   onManageHosts,
   agentSessions,
   onCloseAgentTerminal,
-  onToggleAgentTerminalPaused
+  onToggleAgentTerminalPaused,
+  terminalWidth,
+  setTerminalWidth,
+  terminalFontSize,
+  setTerminalFontSize
 }: {
   topic: Topic
   hosts: Host[]
@@ -437,6 +441,10 @@ function ChatPanel({
   agentSessions: AgentTerminalSession[]
   onCloseAgentTerminal: (sessionId: string) => void
   onToggleAgentTerminalPaused: (sessionId: string, paused: boolean) => Promise<void>
+  terminalWidth: number
+  setTerminalWidth: (width: number) => void
+  terminalFontSize: number
+  setTerminalFontSize: (size: number) => void
 }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState(prefill || '')
@@ -455,6 +463,31 @@ function ChatPanel({
     Record<string, CommandSuggestion | null>
   >({})
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [isResizing, setIsResizing] = useState(false)
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return
+      const newWidth = window.innerWidth - e.clientX
+      setTerminalWidth(Math.max(300, Math.min(newWidth, window.innerWidth - 400)))
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+      document.body.style.cursor = 'default'
+    }
+
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove)
+      window.addEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = 'col-resize'
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing])
 
   const { providers, models } = useProvider()
 
@@ -538,7 +571,15 @@ function ChatPanel({
     setIsThinking(true)
     try {
       const response = await window.api.sendMessage(topic.id, userContent)
-      setMessages((prev) => [...prev, response])
+      setMessages((prev) => {
+        const index = prev.findIndex((m) => m.id === response.id)
+        if (index !== -1) {
+          const newMessages = [...prev]
+          newMessages[index] = response
+          return newMessages
+        }
+        return [...prev, response]
+      })
     } catch (err) {
       console.error('Agent error:', err)
       const errMsg: Message = {
@@ -704,7 +745,7 @@ function ChatPanel({
             </div>
           )}
 
-          {messages.map((msg) => (
+          {messages.filter(msg => msg.role !== 'tool').map((msg) => (
             <div
               key={msg.id}
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -776,7 +817,25 @@ function ChatPanel({
                     {msg.role === 'user' ? (
                       <div className="whitespace-pre-wrap">{msg.content}</div>
                     ) : msg.role === 'tool' ? (
-                      <div>{msg.content}</div>
+                      <div className="space-y-2">
+                        <button
+                          onClick={() => setExpandedThoughts((p) => ({ ...p, [msg.id]: !p[msg.id] }))}
+                          className="flex items-center gap-2 text-[10px] font-black text-emerald-400/70 hover:text-emerald-400 transition uppercase tracking-widest no-drag"
+                        >
+                          {expandedThoughts[msg.id] ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                          终端原始输出
+                        </button>
+                        {expandedThoughts[msg.id] && (
+                          <div className="mt-2 border-t border-gray-800 pt-2 break-all whitespace-pre-wrap">
+                            {msg.content}
+                          </div>
+                        )}
+                        {!expandedThoughts[msg.id] && (
+                          <div className="text-[10px] italic text-emerald-400/40">
+                            输出内容已在终端显示，点击展开查看原始文本...
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <MarkdownRenderer content={msg.content} />
                     )}
@@ -808,7 +867,15 @@ function ChatPanel({
         </div>
 
         {visibleSessions.length > 0 && (
-          <div className="w-[min(52vw,56rem)] border-l border-gray-100 bg-gray-50 flex flex-col">
+          <>
+            <div
+              className={`w-1.5 hover:w-2 bg-transparent hover:bg-blue-400/20 cursor-col-resize transition-all z-20 active:bg-blue-500/30 ${isResizing ? 'bg-blue-500/30 w-2' : ''}`}
+              onMouseDown={() => setIsResizing(true)}
+            />
+            <div
+              style={{ width: terminalWidth }}
+              className="border-l border-gray-100 bg-gray-50 flex flex-col shrink-0"
+            >
             <div className="px-4 py-3 border-b border-gray-100 bg-white space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
@@ -879,6 +946,23 @@ function ChatPanel({
                       )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex bg-white/10 rounded-lg overflow-hidden border border-white/5 mr-1">
+                        <button
+                          onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
+                          className="px-2 py-1 text-[10px] font-black hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                          title="缩小 (Cmd -)"
+                        >
+                          -
+                        </button>
+                        <div className="w-[1px] bg-white/5" />
+                        <button
+                          onClick={() => setTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
+                          className="px-2 py-1 text-[10px] font-black hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                          title="放大 (Cmd +)"
+                        >
+                          +
+                        </button>
+                      </div>
                       <button
                         onClick={() =>
                           onToggleAgentTerminalPaused(session.sessionId, !session.paused)
@@ -956,6 +1040,7 @@ function ChatPanel({
                       sessionId={session.sessionId}
                       topicId={topic.id}
                       hostId={session.hostId}
+                      fontSize={terminalFontSize}
                       commandAssistEnabled={commandAssistEnabled}
                       onFocusSession={() => handleFocusSession(session.sessionId)}
                       onSuggestionChange={(suggestion) =>
@@ -1019,7 +1104,8 @@ function ChatPanel({
                 </div>
               ))}
             </div>
-          </div>
+            </div>
+          </>
         )}
       </div>
 
@@ -1217,6 +1303,8 @@ export default function App() {
   const [editingTopicTitle, setEditingTopicTitle] = useState('')
   const [debugLogs, setDebugLogs] = useState<DebugEntry[]>([])
   const [showDebug, setShowDebug] = useState(false)
+  const [terminalFontSize, setTerminalFontSize] = useState(13)
+  const [terminalWidth, setTerminalWidth] = useState(800)
 
   useEffect(() => {
     const unlisten = window.api.onDebugLog((entry: DebugEntry) => {
@@ -1231,9 +1319,28 @@ export default function App() {
     }
 
     window.addEventListener('keydown', handleDebugKey)
+
+    const handleZoomKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        if (e.key === '=' || e.key === '+' || e.code === 'Equal' || e.code === 'NumpadAdd') {
+          e.preventDefault()
+          setTerminalFontSize((s) => Math.min(s + 1, 30))
+        } else if (e.key === '-' || e.key === '_' || e.code === 'Minus' || e.code === 'NumpadSubtract') {
+          e.preventDefault()
+          setTerminalFontSize((s) => Math.max(s - 1, 6))
+        } else if (e.key === '0' || e.code === 'Digit0' || e.code === 'Numpad0') {
+          e.preventDefault()
+          setTerminalFontSize(13)
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleZoomKey)
+
     return () => {
       if (unlisten) unlisten()
       window.removeEventListener('keydown', handleDebugKey)
+      window.removeEventListener('keydown', handleZoomKey)
     }
   }, [])
 
@@ -1701,19 +1808,39 @@ export default function App() {
                   {selectedHost.username}@{selectedHost.ip}:{selectedHost.port || 22}
                 </span>
               </div>
-              <button
-                onClick={() => {
-                  setActiveView('hosts')
-                  setTerminalSessionId(null)
-                }}
-                className="text-[11px] bg-gray-800 hover:bg-red-900/60 text-gray-500 hover:text-red-400 px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
-              >
-                <X size={12} /> 断开连接
-              </button>
+              <div className="flex items-center gap-2 no-drag">
+                <div className="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 mr-1">
+                  <button
+                    onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
+                    className="px-3 py-1.5 text-xs font-black hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                    title="缩小 (Cmd -)"
+                  >
+                    -
+                  </button>
+                  <div className="w-[1px] bg-gray-700" />
+                  <button
+                    onClick={() => setTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
+                    className="px-3 py-1.5 text-xs font-black hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                    title="放大 (Cmd +)"
+                  >
+                    +
+                  </button>
+                </div>
+                <button
+                  onClick={() => {
+                    setActiveView('hosts')
+                    setTerminalSessionId(null)
+                  }}
+                  className="text-[11px] bg-gray-800 hover:bg-red-900/60 text-gray-500 hover:text-red-400 px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
+                >
+                  <X size={12} /> 断开连接
+                </button>
+              </div>
             </div>
             <div className="flex-1 bg-[#1a1b1e]">
               <TerminalView
                 sessionId={terminalSessionId}
+                fontSize={terminalFontSize}
                 onClose={() => {
                   setActiveView('hosts')
                   setTerminalSessionId(null)
@@ -1733,6 +1860,10 @@ export default function App() {
             agentSessions={agentSessions}
             onCloseAgentTerminal={handleCloseAgentTerminal}
             onToggleAgentTerminalPaused={handleToggleAgentTerminalPaused}
+            terminalWidth={terminalWidth}
+            setTerminalWidth={setTerminalWidth}
+            terminalFontSize={terminalFontSize}
+            setTerminalFontSize={setTerminalFontSize}
           />
         )}
 
