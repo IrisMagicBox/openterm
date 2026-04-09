@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Plus,
   LayoutGrid,
@@ -45,14 +45,26 @@ interface AgentTerminalSession {
   sessionId: string
   hostId: string
   hostAlias: string
-  command: string
+  command?: string
   visible: boolean
   paused?: boolean
+  commandStatus?: 'idle' | 'running' | 'completed' | 'failed'
+  commandStartTime?: number
+  commandExitCode?: number
+  commandDurationMs?: number
 }
 
 interface CommandSuggestion {
   partial: string
   completion: string
+}
+
+interface DebugEntry {
+  level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
+  timestamp: number
+  category: string
+  message: string
+  data?: any
 }
 
 function CommandPalette({
@@ -491,6 +503,7 @@ function ChatPanel({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setInputValue(value)
@@ -566,9 +579,13 @@ function ChatPanel({
     setCommandPaletteOpen(true)
   }
 
-  const setSessionSuggestion = (sessionId: string, suggestion: CommandSuggestion | null) => {
+  const handleFocusSession = useCallback((sessionId: string) => {
+    setFocusedSessionId(sessionId)
+  }, [])
+
+  const handleSuggestionChange = useCallback((sessionId: string, suggestion: CommandSuggestion | null) => {
     setCommandSuggestions((prev) => ({ ...prev, [sessionId]: suggestion }))
-  }
+  }, [])
 
   const handleSubmitCommandPalette = async () => {
     if (!commandPaletteValue.trim()) return
@@ -886,17 +903,65 @@ function ChatPanel({
                       </button>
                     </div>
                   </div>
+                  {session.commandStatus === 'running' && (
+                    <div className="px-3 py-2 bg-blue-50 border-b border-blue-100">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                          <span className="text-[11px] font-bold text-blue-700">
+                            {session.command}
+                          </span>
+                          <span className="text-[10px] text-blue-500">
+                            {session.commandStartTime
+                              ? `${Math.floor((Date.now() - session.commandStartTime) / 1000)}s`
+                              : ''}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-blue-600 font-medium">执行中...</span>
+                      </div>
+                    </div>
+                  )}
+                  {session.commandStatus === 'completed' && (
+                    <div className="px-3 py-2 bg-emerald-50 border-b border-emerald-100">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                          <span className="text-[11px] font-bold text-emerald-700">
+                            {session.command}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-emerald-600">
+                          exit {session.commandExitCode} · {session.commandDurationMs}ms
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {session.commandStatus === 'failed' && (
+                    <div className="px-3 py-2 bg-red-50 border-b border-red-100">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 bg-red-500 rounded-full" />
+                          <span className="text-[11px] font-bold text-red-700">
+                            {session.command}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-red-600">
+                          exit {session.commandExitCode} · {session.commandDurationMs}ms
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex-1 min-h-0 bg-[#1a1b1e] relative">
                     <TerminalView
                       sessionId={session.sessionId}
                       topicId={topic.id}
                       hostId={session.hostId}
                       commandAssistEnabled={commandAssistEnabled}
-                      onFocusSession={() => setFocusedSessionId(session.sessionId)}
+                      onFocusSession={() => handleFocusSession(session.sessionId)}
                       onSuggestionChange={(suggestion) =>
-                        setSessionSuggestion(session.sessionId, suggestion)
+                        handleSuggestionChange(session.sessionId, suggestion)
                       }
-                      onClose={() => {}}
+                      onClose={onCloseAgentTerminal ? () => onCloseAgentTerminal(session.sessionId) : () => {}}
                     />
                     {session.paused && (
                       <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-amber-500/90 text-white text-[10px] font-black shadow-sm">
@@ -1150,6 +1215,27 @@ export default function App() {
   const [showManageHosts, setShowManageHosts] = useState(false)
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null)
   const [editingTopicTitle, setEditingTopicTitle] = useState('')
+  const [debugLogs, setDebugLogs] = useState<DebugEntry[]>([])
+  const [showDebug, setShowDebug] = useState(false)
+
+  useEffect(() => {
+    const unlisten = window.api.onDebugLog((entry: DebugEntry) => {
+      setDebugLogs((prev) => [entry, ...prev].slice(0, 100))
+    })
+
+    const handleDebugKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault()
+        setShowDebug((v) => !v)
+      }
+    }
+
+    window.addEventListener('keydown', handleDebugKey)
+    return () => {
+      if (unlisten) unlisten()
+      window.removeEventListener('keydown', handleDebugKey)
+    }
+  }, [])
 
   const { requireConfirmation } = usePermissions()
 
@@ -1186,7 +1272,11 @@ export default function App() {
     })
 
     const unlistenSessionCreated = window.api.onAgentSessionCreated((data) => {
-      console.log('Agent session created:', data)
+      setAgentSessions((prev) => {
+        const exists = prev.find((s) => s.sessionId === data.sessionId)
+        if (exists) return prev
+        return [...prev, { ...data, visible: true, paused: false }]
+      })
     })
 
     return () => {
@@ -1197,6 +1287,52 @@ export default function App() {
       unlistenSessionCreated()
     }
   }, [selectedTopic])
+
+  useEffect(() => {
+    const unsubscribers: Array<() => void> = []
+
+    agentSessions.forEach((session) => {
+      // Use a set to track which sessions we already have listeners for if needed,
+      // but for now, we'll just ensure this effect is more targeted.
+      const unsubStart = window.api.onTerminalCommandStart(session.sessionId, (data) => {
+        setAgentSessions((prev) =>
+          prev.map((s) =>
+            s.sessionId === session.sessionId
+              ? {
+                  ...s,
+                  command: data.command,
+                  commandStatus: 'running',
+                  commandStartTime: Date.now(),
+                  commandExitCode: undefined,
+                  commandDurationMs: undefined
+                }
+              : s
+          )
+        )
+      })
+
+      const unsubEnd = window.api.onTerminalCommandEnd(session.sessionId, (data) => {
+        setAgentSessions((prev) =>
+          prev.map((s) =>
+            s.sessionId === session.sessionId
+              ? {
+                  ...s,
+                  commandStatus: data.exitCode === 0 ? 'completed' : 'failed',
+                  commandExitCode: data.exitCode,
+                  commandDurationMs: data.durationMs
+                }
+              : s
+          )
+        )
+      })
+
+      unsubscribers.push(unsubStart, unsubEnd)
+    })
+
+    return () => {
+      unsubscribers.forEach((fn) => fn())
+    }
+  }, [agentSessions.map((s) => s.sessionId).join(',')])
 
   const loadData = async () => {
     const [loadedHosts, loadedTopics] = await Promise.all([
@@ -1639,6 +1775,58 @@ export default function App() {
           onAddHost={handleAddHostToTopic}
           onRemoveHost={handleRemoveHostFromTopic}
         />
+      )}
+
+      {showDebug && (
+        <div className="fixed bottom-4 right-4 z-[9999] w-[400px] max-h-[500px] bg-gray-900 border border-gray-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+          <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between bg-black/20">
+            <div className="flex items-center gap-2">
+              <Zap size={14} className="text-blue-400" />
+              <h3 className="text-xs font-black text-white uppercase tracking-widest">系统调试信息</h3>
+            </div>
+            <button
+              onClick={() => setShowDebug(false)}
+              className="p-1.5 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-[10px]">
+            {debugLogs.length === 0 && (
+              <div className="text-gray-600 italic text-center py-10">等待日志输入...</div>
+            )}
+            {debugLogs.map((log, i) => (
+              <div key={i} className="flex flex-col gap-1 border-l-2 border-gray-800 pl-3 py-1">
+                <div className="flex items-center gap-2">
+                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-black ${
+                    log.level === 'ERROR' ? 'bg-red-500/20 text-red-400' :
+                    log.level === 'WARN' ? 'bg-amber-500/20 text-amber-400' :
+                    log.level === 'DEBUG' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'
+                  }`}>
+                    {log.level}
+                  </span>
+                  <span className="text-gray-500">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                  <span className="text-blue-500/70">[{log.category}]</span>
+                </div>
+                <div className="text-gray-300 leading-relaxed break-words">{log.message}</div>
+                {log.data && (
+                  <pre className="text-gray-500 bg-black/30 p-2 rounded-lg mt-1 overflow-x-auto">
+                    {JSON.stringify(log.data, null, 2)}
+                  </pre>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="px-4 py-2 bg-black/40 border-t border-gray-800 flex justify-between">
+            <span className="text-[9px] text-gray-500">显示最近 100 条日志</span>
+            <button
+              onClick={() => setDebugLogs([])}
+              className="text-[9px] text-blue-500 hover:text-blue-400 font-bold"
+            >
+              清空日志
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

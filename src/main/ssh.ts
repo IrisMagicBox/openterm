@@ -1,28 +1,27 @@
 import { Client } from 'ssh2'
 import { ipcMain, WebContents } from 'electron'
 import { hostDB } from './db'
+import { commandExecutor } from './terminal'
 import { readFileSync } from 'fs'
 
 interface SSHSession {
   client: Client
   stream: any
   hostId: string
-  buffer: string // Store some history for the agent to "see"
-  isAgentSession?: boolean // Mark if this is an agent-controlled session
-  commandResolve?: (value: string) => void // Promise resolver for command completion
-  currentOutput: string // Accumulate current command output
+  buffer: string
+  isAgentSession?: boolean
+  commandResolve?: (value: string) => void
+  currentOutput: string
   agentPaused?: boolean
   agentPauseWaiters?: Array<() => void>
 }
 
 const sessions = new Map<string, SSHSession>()
 
-// Generate a unique session ID
 function generateSessionId(hostId: string): string {
   return `${hostId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 }
 
-// Get connection config for a host
 function getHostAndConfig(hostId: string) {
   const host = hostDB.getHostById(hostId)
   if (!host) throw new Error('Host not found')
@@ -37,7 +36,6 @@ function getHostAndConfig(hostId: string) {
     try {
       config.privateKey = readFileSync(host.keyPath)
     } catch (err) {
-      console.warn('Failed to read SSH key, falling back to password:', err)
       if (host.password) config.password = host.password
     }
   } else if (host.password) {
@@ -52,7 +50,6 @@ function getConnectionConfig(hostId: string) {
   return { config }
 }
 
-// Legacy: Execute a single command (non-interactive)
 export const executeSSHCommand = (hostId: string, command: string): Promise<string> => {
   const { config } = getConnectionConfig(hostId)
 
@@ -107,6 +104,13 @@ export const setAgentSessionPaused = (sessionId: string, paused: boolean): boole
   if (!session || !session.isAgentSession) return false
 
   session.agentPaused = paused
+  commandExecutor.setSessionLock(sessionId, paused, paused ? 'user' : null)
+
+  if (paused && session.stream) {
+    // Interrupt the current foreground command so the user can take over immediately.
+    session.stream.write('\x03')
+  }
+
   if (!paused && session.agentPauseWaiters?.length) {
     const waiters = [...session.agentPauseWaiters]
     session.agentPauseWaiters = []
@@ -120,45 +124,43 @@ export const isAgentSessionPaused = (sessionId: string): boolean => {
   return Boolean(session?.agentPaused)
 }
 
-// Execute command in an agent session (interactive shell mode)
-export const executeAgentCommand = (
+export const executeAgentCommand = async (
   sessionId: string,
   command: string,
-  webContents?: WebContents
-): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const session = sessions.get(sessionId)
-    if (!session) {
-      reject(new Error('Session not found'))
-      return
-    }
+  _webContents?: WebContents,
+  topicId?: string,
+  taskId?: string,
+  stepId?: string
+): Promise<{ content: string; exitCode: number; durationMs: number }> => {
+  const session = sessions.get(sessionId)
+  if (!session) {
+    throw new Error('Session not found')
+  }
 
-    waitForAgentResume(session)
-      .then(() => {
-        session.currentOutput = ''
-        session.commandResolve = resolve
+  await waitForAgentResume(session)
 
-        const cmdWithNewline = command.endsWith('\n') ? command : command + '\n'
-        session.stream.write(cmdWithNewline)
+  const effectiveTopicId = topicId || 'unknown'
 
-        if (webContents) {
-          webContents.send(`ssh:command:${sessionId}`, command)
-        }
+  const result = await commandExecutor.executeAgentCommand(
+    sessionId,
+    command,
+    effectiveTopicId,
+    taskId,
+    stepId
+  )
 
-        setTimeout(() => {
-          if (session.commandResolve) {
-            const output = session.currentOutput
-            session.currentOutput = ''
-            session.commandResolve = undefined
-            resolve(output)
-          }
-        }, 500)
-      })
-      .catch(reject)
-  })
+  return {
+    content: result.content,
+    exitCode: result.exitCode,
+    durationMs: result.durationMs
+  }
 }
 
-export const createAgentSession = (hostId: string, webContents: WebContents): Promise<string> => {
+export const createAgentSession = (
+  hostId: string,
+  webContents: WebContents,
+  topicId?: string
+): Promise<string> => {
   const { host, config } = getHostAndConfig(hostId)
 
   return new Promise((resolve, reject) => {
@@ -185,27 +187,38 @@ export const createAgentSession = (hostId: string, webContents: WebContents): Pr
           }
           sessions.set(sessionId, session)
 
+          if (topicId) {
+            commandExecutor.createSession(
+              sessionId,
+              topicId,
+              hostId,
+              host.alias,
+              stream,
+              webContents
+            )
+          }
+
           stream.on('data', (data: Buffer) => {
+            const { cleanData } = commandExecutor.handleStreamOutput(sessionId, data)
+
             const str = data.toString()
             session.buffer += str
             session.currentOutput += str
 
-            // Keep buffer size manageable
             if (session.buffer.length > 10000) {
               session.buffer = session.buffer.slice(-5000)
             }
 
-            // Send to renderer for display
-            webContents.send(`ssh:data:${sessionId}`, str)
+            webContents.send(`ssh:data:${sessionId}`, cleanData)
           })
 
           stream.on('close', () => {
+            commandExecutor.closeSession(sessionId)
             sessions.delete(sessionId)
             webContents.send(`ssh:closed:${sessionId}`)
             client.end()
           })
 
-          // Send initial ready signal
           webContents.send(`ssh:ready:${sessionId}`, host.alias)
           resolve(sessionId)
         })
@@ -217,10 +230,10 @@ export const createAgentSession = (hostId: string, webContents: WebContents): Pr
   })
 }
 
-// Close a session
 export const closeSession = (sessionId: string): void => {
   const session = sessions.get(sessionId)
   if (session) {
+    commandExecutor.closeSession(sessionId)
     session.stream.close()
     session.client.end()
     sessions.delete(sessionId)
@@ -270,26 +283,32 @@ export function setupSSHHandlers() {
     })
   })
 
-  // Agent session creation
   ipcMain.removeHandler('ssh:agent:create')
-  ipcMain.handle('ssh:agent:create', async (event, hostId: string) => {
-    return createAgentSession(hostId, event.sender)
+  ipcMain.handle('ssh:agent:create', async (event, hostId: string, topicId?: string) => {
+    return createAgentSession(hostId, event.sender, topicId)
   })
 
-  // Agent command execution (interactive)
   ipcMain.removeHandler('ssh:agent:execute')
-  ipcMain.handle('ssh:agent:execute', async (event, sessionId: string, command: string) => {
-    return executeAgentCommand(sessionId, command, event.sender)
-  })
+  ipcMain.handle(
+    'ssh:agent:execute',
+    async (
+      event,
+      sessionId: string,
+      command: string,
+      topicId?: string,
+      taskId?: string,
+      stepId?: string
+    ) => {
+      return executeAgentCommand(sessionId, command, event.sender, topicId, taskId, stepId)
+    }
+  )
 
-  // Get session output buffer
   ipcMain.removeHandler('ssh:agent:buffer')
   ipcMain.handle('ssh:agent:buffer', (_, sessionId: string) => {
     const session = sessions.get(sessionId)
     return session ? session.currentOutput : ''
   })
 
-  // Close agent session
   ipcMain.removeHandler('ssh:agent:close')
   ipcMain.handle('ssh:agent:close', (_, sessionId: string) => {
     closeSession(sessionId)
@@ -305,16 +324,28 @@ export function setupSSHHandlers() {
     return isAgentSessionPaused(sessionId)
   })
 
-  // SSH input
+  ipcMain.removeHandler('ssh:get-buffer')
+  ipcMain.handle('ssh:get-buffer', (_, sessionId: string) => {
+    return getTerminalBuffer(sessionId)
+  })
+
+  ipcMain.removeAllListeners('ssh:attach')
+  ipcMain.on('ssh:attach', (event, sessionId: string) => {
+    commandExecutor.attachSession(sessionId, event.sender)
+  })
+
   ipcMain.removeAllListeners('ssh:input')
-  ipcMain.on('ssh:input', (_, sessionId: string, data: string) => {
+  ipcMain.on('ssh:input', (_, sessionId: string, data: string, topicId?: string) => {
     const session = sessions.get(sessionId)
     if (session && session.stream) {
-      session.stream.write(data)
+      if (topicId) {
+        commandExecutor.handleUserInput(sessionId, data, topicId)
+      } else {
+        session.stream.write(data)
+      }
     }
   })
 
-  // SSH resize
   ipcMain.removeAllListeners('ssh:resize')
   ipcMain.on('ssh:resize', (_, sessionId: string, cols: number, rows: number) => {
     const session = sessions.get(sessionId)

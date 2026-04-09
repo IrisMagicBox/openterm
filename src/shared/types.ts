@@ -37,11 +37,7 @@ export type TaskStepStatus =
   | 'blocked'
   | 'cancelled'
 
-export type ApprovalRiskLevel =
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'critical'
+export type ApprovalRiskLevel = 'low' | 'medium' | 'high' | 'critical'
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired'
 
@@ -123,6 +119,53 @@ export interface ToolCall {
 export interface ToolResult {
   toolCallId: string
   content: string
+}
+
+export type TerminalSessionStatus = 'active' | 'streaming' | 'closed' | 'disconnected'
+
+export interface TerminalSession {
+  id: string
+  topicId: string
+  hostId: string
+  hostAlias: string
+  status: TerminalSessionStatus
+  shellType?: string
+  shellIntegrationReady: boolean
+  isLocked?: boolean
+  lockedBy?: 'agent' | 'user' | null
+  createdAt: number
+  closedAt?: number
+}
+
+export type TerminalIOType = 'input' | 'output'
+export type TerminalIOSource = 'agent' | 'user' | 'system'
+
+export interface TerminalIO {
+  id: string
+  sessionId: string
+  topicId: string
+  hostId: string
+  type: TerminalIOType
+  source: TerminalIOSource
+  content: string
+  exitCode?: number
+  durationMs?: number
+  relatedInputId?: string
+  isStreaming?: boolean
+  chunkIndex?: number
+  isTruncated?: boolean
+  cwd?: string
+  taskId?: string
+  stepId?: string
+  timestamp: number
+}
+
+export interface CommandResult {
+  content: string
+  exitCode: number
+  durationMs: number
+  isTruncated: boolean
+  sessionId: string
 }
 
 export interface ModelSettings {

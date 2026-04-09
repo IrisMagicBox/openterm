@@ -29,6 +29,18 @@ export function TerminalView({
   const isCompletingRef = useRef(false)
   const pendingSuggestionRef = useRef<{ partial: string; completion: string } | null>(null)
 
+  const onCloseRef = useRef(onClose)
+  const commandAssistEnabledRef = useRef(commandAssistEnabled)
+  const onFocusSessionRef = useRef(onFocusSession)
+  const onSuggestionChangeRef = useRef(onSuggestionChange)
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+    commandAssistEnabledRef.current = commandAssistEnabled
+    onFocusSessionRef.current = onFocusSession
+    onSuggestionChangeRef.current = onSuggestionChange
+  }, [onClose, commandAssistEnabled, onFocusSession, onSuggestionChange])
+
   useEffect(() => {
     if (!terminalRef.current) return
 
@@ -66,26 +78,50 @@ export function TerminalView({
     term.loadAddon(clipboardAddon)
     term.open(terminalRef.current)
     fitAddon.fit()
-    const handleMouseDown = () => onFocusSession?.()
+
+    const handleMouseDown = () => {
+      term.focus()
+      onFocusSessionRef.current?.()
+    }
     terminalRef.current.addEventListener('mousedown', handleMouseDown)
 
     xtermRef.current = term
 
-    // Initial resize
+    // Initial resize and attach
     window.api.resizeSSH(sessionId, term.cols, term.rows)
+    window.api.attachSSH(sessionId)
 
+    let isBufferLoaded = false
     const cleanupData = window.api.onSSHData(sessionId, (data) => {
-      term.write(data)
+      if (isBufferLoaded) {
+        term.write(data)
+      }
     })
 
+    // Load initial buffer
+    window.api
+      .getSSHBuffer(sessionId)
+      .then((buffer) => {
+        if (buffer) {
+          term.write(buffer)
+        }
+      })
+      .catch(() => {
+        // Fall back to live streaming when the initial buffer is unavailable.
+      })
+      .finally(() => {
+        isBufferLoaded = true
+      })
+
     const cleanupClosed = window.api.onSSHClosed(sessionId, () => {
-      onClose()
+      onCloseRef.current?.()
     })
 
     term.onData((data) => {
-      onFocusSession?.()
+      term.focus()
+      onFocusSessionRef.current?.()
 
-      if (commandAssistEnabled && data === '\t' && topicId && hostId && !isCompletingRef.current) {
+      if (commandAssistEnabledRef.current && data === '\t' && topicId && hostId && !isCompletingRef.current) {
         const partialCommand = currentLineRef.current.trim()
         if (partialCommand.length > 0) {
           if (
@@ -96,10 +132,10 @@ export function TerminalView({
             const suffix = pendingSuggestionRef.current.completion.slice(partialCommand.length)
             if (suffix) {
               currentLineRef.current = pendingSuggestionRef.current.completion
-              window.api.sendSSHInput(sessionId, suffix)
+              window.api.sendSSHInput(sessionId, suffix, topicId)
             }
             pendingSuggestionRef.current = null
-            onSuggestionChange?.(null)
+            onSuggestionChangeRef.current?.(null)
             return
           }
 
@@ -111,7 +147,7 @@ export function TerminalView({
               const suffix = completion.slice(partialCommand.length)
               if (!suffix) return
               pendingSuggestionRef.current = { partial: partialCommand, completion }
-              onSuggestionChange?.({ partial: partialCommand, completion })
+              onSuggestionChangeRef.current?.({ partial: partialCommand, completion })
             })
             .finally(() => {
               isCompletingRef.current = false
@@ -123,22 +159,34 @@ export function TerminalView({
       if (data === '\r') {
         currentLineRef.current = ''
         pendingSuggestionRef.current = null
-        onSuggestionChange?.(null)
+        onSuggestionChangeRef.current?.(null)
       } else if (data === '\u007f') {
         currentLineRef.current = currentLineRef.current.slice(0, -1)
         pendingSuggestionRef.current = null
-        onSuggestionChange?.(null)
+        onSuggestionChangeRef.current?.(null)
       } else if (data >= ' ' && data !== '\u007f') {
         currentLineRef.current += data
         pendingSuggestionRef.current = null
-        onSuggestionChange?.(null)
+        onSuggestionChangeRef.current?.(null)
       }
-      window.api.sendSSHInput(sessionId, data)
+      window.api.sendSSHInput(sessionId, data, topicId)
     })
 
     term.onResize(({ cols, rows }) => {
       window.api.resizeSSH(sessionId, cols, rows)
     })
+
+    const resizeObserver = new ResizeObserver(() => {
+      try {
+        fitAddon.fit()
+      } catch (err) {
+        // Ignore fit errors when element is not visible
+      }
+    })
+
+    if (terminalRef.current) {
+      resizeObserver.observe(terminalRef.current)
+    }
 
     const handleResize = () => {
       fitAddon.fit()
@@ -147,13 +195,14 @@ export function TerminalView({
 
     return () => {
       window.removeEventListener('resize', handleResize)
+      resizeObserver.disconnect()
       cleanupData()
       cleanupClosed()
       terminalRef.current?.removeEventListener('mousedown', handleMouseDown)
-      onSuggestionChange?.(null)
+      onSuggestionChangeRef.current?.(null)
       term.dispose()
     }
-  }, [sessionId, topicId, hostId, commandAssistEnabled, onFocusSession, onSuggestionChange])
+  }, [sessionId, topicId, hostId])
 
   return (
     <div className="w-full h-full relative">

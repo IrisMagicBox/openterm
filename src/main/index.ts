@@ -18,6 +18,7 @@ import {
 } from './db'
 import { setupSSHHandlers } from './ssh'
 import { AgentService } from './agent'
+import { logger } from './logger'
 import { buildProviderChatUrl } from './ai'
 import type { Provider } from '../shared/types'
 
@@ -44,6 +45,8 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+    logger.setWebContents(mainWindow.webContents)
+    logger.info('System', 'Main window shown, logger initialized')
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {

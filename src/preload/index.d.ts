@@ -60,10 +60,12 @@ declare global {
       ) => Promise<Artifact>
 
       connectSSH: (hostId: string) => Promise<string>
-      sendSSHInput: (sessionId: string, data: string) => void
+      sendSSHInput: (sessionId: string, data: string, topicId?: string) => void
       resizeSSH: (sessionId: string, cols: number, rows: number) => void
       onSSHData: (sessionId: string, callback: (data: string) => void) => () => void
       onSSHClosed: (sessionId: string, callback: () => void) => () => void
+      getSSHBuffer: (sessionId: string) => Promise<string>
+      attachSSH: (sessionId: string) => void
 
       sendMessage: (topicId: string, content: string) => Promise<Message>
       completeAgentCommand: (
@@ -100,8 +102,29 @@ declare global {
         }) => void
       ) => () => void
 
-      createAgentSSHSession: (hostId: string) => Promise<string>
-      executeAgentSSHCommand: (sessionId: string, command: string) => Promise<string>
+      onTerminalCommandStart: (
+        sessionId: string,
+        callback: (data: { inputId: string; command: string; source: string }) => void
+      ) => () => void
+      onTerminalCommandEnd: (
+        sessionId: string,
+        callback: (data: {
+          inputId: string
+          outputId: string
+          exitCode: number
+          durationMs: number
+          isTruncated: boolean
+        }) => void
+      ) => () => void
+
+      createAgentSSHSession: (hostId: string, topicId?: string) => Promise<string>
+      executeAgentSSHCommand: (
+        sessionId: string,
+        command: string,
+        topicId?: string,
+        taskId?: string,
+        stepId?: string
+      ) => Promise<{ content: string; exitCode: number; durationMs: number }>
       closeAgentSSHSession: (sessionId: string) => Promise<void>
       setAgentSessionPaused: (sessionId: string, paused: boolean) => Promise<boolean>
       isAgentSessionPaused: (sessionId: string) => Promise<boolean>
@@ -127,6 +150,7 @@ declare global {
       // Permission Settings APIs
       getPermissions: () => Promise<PermissionSettings>
       savePermissions: (permissions: Partial<PermissionSettings>) => Promise<void>
+      onDebugLog: (callback: (entry: any) => void) => () => void
     }
   }
 }

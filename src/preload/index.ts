@@ -32,7 +32,8 @@ const api = {
 
   // SSH Terminal APIs
   connectSSH: (hostId: string) => ipcRenderer.invoke('ssh:connect', hostId),
-  sendSSHInput: (sessionId: string, data: string) => ipcRenderer.send('ssh:input', sessionId, data),
+  sendSSHInput: (sessionId: string, data: string, topicId?: string) =>
+    ipcRenderer.send('ssh:input', sessionId, data, topicId),
   resizeSSH: (sessionId: string, cols: number, rows: number) =>
     ipcRenderer.send('ssh:resize', sessionId, cols, rows),
   onSSHData: (sessionId: string, callback: (data: string) => void) => {
@@ -45,6 +46,8 @@ const api = {
     ipcRenderer.on(`ssh:closed:${sessionId}`, listener)
     return () => ipcRenderer.removeListener(`ssh:closed:${sessionId}`, listener)
   },
+  getSSHBuffer: (sessionId: string) => ipcRenderer.invoke('ssh:get-buffer', sessionId),
+  attachSSH: (sessionId: string) => ipcRenderer.send('ssh:attach', sessionId),
 
   // Agent APIs
   sendMessage: (topicId: string, content: string) =>
@@ -116,7 +119,32 @@ const api = {
     return () => ipcRenderer.removeListener('agent:session-created', listener)
   },
 
-  createAgentSSHSession: (hostId: string) => ipcRenderer.invoke('ssh:agent:create', hostId),
+  onTerminalCommandStart: (
+    sessionId: string,
+    callback: (data: { inputId: string; command: string; source: string }) => void
+  ) => {
+    const listener = (_event, data: any) => callback(data)
+    ipcRenderer.on(`terminal:command-start:${sessionId}`, listener)
+    return () => ipcRenderer.removeListener(`terminal:command-start:${sessionId}`, listener)
+  },
+
+  onTerminalCommandEnd: (
+    sessionId: string,
+    callback: (data: {
+      inputId: string
+      outputId: string
+      exitCode: number
+      durationMs: number
+      isTruncated: boolean
+    }) => void
+  ) => {
+    const listener = (_event, data: any) => callback(data)
+    ipcRenderer.on(`terminal:command-end:${sessionId}`, listener)
+    return () => ipcRenderer.removeListener(`terminal:command-end:${sessionId}`, listener)
+  },
+
+  createAgentSSHSession: (hostId: string, topicId?: string) =>
+    ipcRenderer.invoke('ssh:agent:create', hostId, topicId),
   executeAgentSSHCommand: (sessionId: string, command: string) =>
     ipcRenderer.invoke('ssh:agent:execute', sessionId, command),
   closeAgentSSHSession: (sessionId: string) => ipcRenderer.invoke('ssh:agent:close', sessionId),
@@ -151,8 +179,15 @@ const api = {
 
   // Permission Settings APIs
   getPermissions: () => ipcRenderer.invoke('get-permissions'),
-  savePermissions: (permissions: { requireConfirmation?: boolean; autoExecuteSafeOperations?: boolean }) =>
-    ipcRenderer.invoke('save-permissions', permissions)
+  savePermissions: (permissions: {
+    requireConfirmation?: boolean
+    autoExecuteSafeOperations?: boolean
+  }) => ipcRenderer.invoke('save-permissions', permissions),
+  onDebugLog: (callback: (entry: any) => void) => {
+    const listener = (_event, entry: any) => callback(entry)
+    ipcRenderer.on('debug:log', listener)
+    return () => ipcRenderer.removeListener('debug:log', listener)
+  }
 }
 
 if (process.contextIsolated) {

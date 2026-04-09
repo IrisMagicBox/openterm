@@ -1,6 +1,17 @@
 import { ipcMain, WebContents } from 'electron'
-import { hostDB, topicDB, messageDB, permissionDB, taskDB, taskStepDB, approvalDB, artifactDB } from './db'
+import {
+  hostDB,
+  topicDB,
+  messageDB,
+  permissionDB,
+  taskDB,
+  taskStepDB,
+  approvalDB,
+  artifactDB
+} from './db'
+import { commandExecutor } from './terminal'
 import { createAgentSession, executeAgentCommand, closeSession } from './ssh'
+import { logger } from './logger'
 import { ApprovalRiskLevel, Message, Task, TaskStep } from '../shared/types'
 import { getAIClient, getCurrentModel, SYSTEM_PROMPT } from './ai'
 import { v4 as uuidv4 } from 'uuid'
@@ -23,6 +34,7 @@ export class AgentService {
   private setupHandlers() {
     ipcMain.removeHandler('agent:message')
     ipcMain.handle('agent:message', async (event, topicId: string, content: string) => {
+      logger.info('Agent', `Received message for topic ${topicId}`, { content: content.slice(0, 50) + '...' })
       this.webContents = event.sender
       return this.processMessage(topicId, content)
     })
@@ -91,6 +103,7 @@ export class AgentService {
   }
 
   private async ensureSession(topicId: string, hostId: string, hostAlias: string): Promise<string> {
+    logger.debug('Agent', `Ensuring session for host ${hostAlias} (${hostId}) in topic ${topicId}`)
     let topicMap = this.topicSessions.get(topicId)
     if (!topicMap) {
       topicMap = new Map()
@@ -99,14 +112,21 @@ export class AgentService {
 
     const existing = topicMap.get(hostId)
     if (existing) {
-      return existing.sessionId
+      if (commandExecutor.getSessionState(existing.sessionId)) {
+        logger.debug('Agent', `Found existing active session: ${existing.sessionId}`)
+        return existing.sessionId
+      }
+      logger.warn('Agent', `Session ${existing.sessionId} found in topicMap but missing in executor, re-creating`)
+      topicMap.delete(hostId)
     }
 
     if (!this.webContents) {
+      logger.error('Agent', 'WebContents not available for session creation')
       throw new Error('WebContents not available')
     }
 
-    const sessionId = await createAgentSession(hostId, this.webContents)
+    const sessionId = await createAgentSession(hostId, this.webContents, topicId)
+    logger.info('Agent', `Created new agent session: ${sessionId} for host ${hostAlias}`)
     topicMap.set(hostId, { sessionId, hostId, hostAlias })
 
     if (this.webContents) {
@@ -158,17 +178,17 @@ export class AgentService {
 
   private async shouldRequireConfirmation(command: string): Promise<boolean> {
     const permissions = permissionDB.getPermissions()
-    
+
     // If requireConfirmation is disabled, never ask
     if (!permissions.requireConfirmation) {
       return false
     }
-    
+
     // If autoExecuteSafeOperations is enabled and command is safe, skip confirmation
     if (permissions.autoExecuteSafeOperations && this.isCommandSafe(command)) {
       return false
     }
-    
+
     // Otherwise, require confirmation for unsafe commands
     return !this.isCommandSafe(command)
   }
@@ -207,11 +227,7 @@ export class AgentService {
     return `${normalized.slice(0, 57).trimEnd()}...`
   }
 
-  private createTaskForMessage(
-    topicId: string,
-    content: string,
-    modelId: string
-  ): Task {
+  private createTaskForMessage(topicId: string, content: string, modelId: string): Task {
     return taskDB.createTask({
       topicId,
       title: this.createTaskTitle(content),
@@ -294,8 +310,13 @@ export class AgentService {
       .map((h) => `${h.alias} (ID: ${h.id}, IP: ${h.ip}, User: ${h.username})`)
       .join('\n')
 
+    const terminalContext = commandExecutor.buildTerminalContext(topicId)
+
     const aiMessages: any[] = [
-      { role: 'system', content: `${SYSTEM_PROMPT}\n\nAvailable Hosts:\n${hostContext}` },
+      {
+        role: 'system',
+        content: `${SYSTEM_PROMPT}\n\nAvailable Hosts:\n${hostContext}${terminalContext ? '\n\n' + terminalContext : ''}`
+      },
       ...history.map((m) => {
         const msg: any = { role: m.role, content: m.content }
         if (m.toolCalls) msg.tool_calls = m.toolCalls
@@ -342,7 +363,9 @@ export class AgentService {
           type: 'plan',
           status: 'completed',
           title: 'Initial plan',
-          content: assistantMessage.content || 'The agent decided to execute remote commands to answer this request.',
+          content:
+            assistantMessage.content ||
+            'The agent decided to execute remote commands to answer this request.',
           metadata: {
             toolCalls: tool_calls.map((tc: any) => ({
               id: tc.id,
@@ -441,7 +464,15 @@ export class AgentService {
                     command: args.command
                   })
 
-                  result = await executeAgentCommand(sessionId, args.command, this.webContents)
+                  const commandResult = await executeAgentCommand(
+                    sessionId,
+                    args.command,
+                    this.webContents,
+                    topicId,
+                    task.id,
+                    commandStep.id
+                  )
+                  result = commandResult.content
                 }
               } catch (err) {
                 result = `Error: ${err instanceof Error ? err.message : 'Unknown error'}`
@@ -538,7 +569,11 @@ export class AgentService {
         title: 'Agent summary',
         content: assistantMessage.content || "I couldn't process your request."
       })
-      this.markTaskStatus(task.id, 'completed', assistantMessage.content || "I couldn't process your request.")
+      this.markTaskStatus(
+        task.id,
+        'completed',
+        assistantMessage.content || "I couldn't process your request."
+      )
 
       const finalMsg: Message = {
         id: uuidv4(),

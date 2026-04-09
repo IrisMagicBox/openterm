@@ -12,7 +12,10 @@ import {
   Task,
   TaskStep,
   Approval,
-  Artifact
+  Artifact,
+  TerminalSession,
+  TerminalSessionStatus,
+  TerminalIO
 } from '../shared/types'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -148,6 +151,45 @@ export const initializeDB = () => {
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL,
       FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS terminal_sessions (
+      id TEXT PRIMARY KEY,
+      topicId TEXT NOT NULL,
+      hostId TEXT NOT NULL,
+      hostAlias TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      shellType TEXT,
+      shellIntegrationReady INTEGER DEFAULT 0,
+      createdAt INTEGER NOT NULL,
+      closedAt INTEGER,
+      FOREIGN KEY (topicId) REFERENCES topics(id) ON DELETE CASCADE,
+      FOREIGN KEY (hostId) REFERENCES hosts(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS terminal_io (
+      id TEXT PRIMARY KEY,
+      sessionId TEXT NOT NULL,
+      topicId TEXT NOT NULL,
+      hostId TEXT NOT NULL,
+      type TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'agent',
+      content TEXT NOT NULL,
+      exitCode INTEGER,
+      durationMs INTEGER,
+      relatedInputId TEXT,
+      isStreaming INTEGER DEFAULT 0,
+      chunkIndex INTEGER DEFAULT 0,
+      isTruncated INTEGER DEFAULT 0,
+      cwd TEXT,
+      taskId TEXT,
+      stepId TEXT,
+      timestamp INTEGER NOT NULL,
+      FOREIGN KEY (sessionId) REFERENCES terminal_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (topicId) REFERENCES topics(id) ON DELETE CASCADE,
+      FOREIGN KEY (hostId) REFERENCES hosts(id) ON DELETE SET NULL,
+      FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE SET NULL,
+      FOREIGN KEY (stepId) REFERENCES task_steps(id) ON DELETE SET NULL
     );
   `)
 
@@ -383,7 +425,8 @@ export const taskDB = {
   },
 
   createTask: (
-    task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> & Partial<Pick<Task, 'id' | 'createdAt' | 'updatedAt'>>
+    task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> &
+      Partial<Pick<Task, 'id' | 'createdAt' | 'updatedAt'>>
   ): Task => {
     const id = task.id || uuidv4()
     const now = task.createdAt || Date.now()
@@ -422,7 +465,10 @@ export const taskDB = {
     return createdTask
   },
 
-  updateTask: (id: string, updates: Partial<Omit<Task, 'id' | 'topicId' | 'createdAt'>>): Task | undefined => {
+  updateTask: (
+    id: string,
+    updates: Partial<Omit<Task, 'id' | 'topicId' | 'createdAt'>>
+  ): Task | undefined => {
     const existing = taskDB.getTaskById(id)
     if (!existing) return undefined
 
@@ -509,7 +555,10 @@ export const taskStepDB = {
     return createdStep
   },
 
-  updateStep: (id: string, updates: Partial<Omit<TaskStep, 'id' | 'taskId' | 'createdAt'>>): TaskStep | undefined => {
+  updateStep: (
+    id: string,
+    updates: Partial<Omit<TaskStep, 'id' | 'taskId' | 'createdAt'>>
+  ): TaskStep | undefined => {
     const row = db.prepare('SELECT * FROM task_steps WHERE id = ?').get(id) as any
     if (!row) return undefined
 
@@ -748,8 +797,16 @@ export const permissionDB = {
         WHERE id = ?
       `
       ).run(
-        permissions.requireConfirmation !== undefined ? (permissions.requireConfirmation ? 1 : 0) : null,
-        permissions.autoExecuteSafeOperations !== undefined ? (permissions.autoExecuteSafeOperations ? 1 : 0) : null,
+        permissions.requireConfirmation !== undefined
+          ? permissions.requireConfirmation
+            ? 1
+            : 0
+          : null,
+        permissions.autoExecuteSafeOperations !== undefined
+          ? permissions.autoExecuteSafeOperations
+            ? 1
+            : 0
+          : null,
         now,
         'default'
       )
@@ -761,8 +818,16 @@ export const permissionDB = {
       `
       ).run(
         'default',
-        permissions.requireConfirmation !== undefined ? (permissions.requireConfirmation ? 1 : 0) : 1,
-        permissions.autoExecuteSafeOperations !== undefined ? (permissions.autoExecuteSafeOperations ? 1 : 0) : 1,
+        permissions.requireConfirmation !== undefined
+          ? permissions.requireConfirmation
+            ? 1
+            : 0
+          : 1,
+        permissions.autoExecuteSafeOperations !== undefined
+          ? permissions.autoExecuteSafeOperations
+            ? 1
+            : 0
+          : 1,
         now
       )
     }
@@ -937,5 +1002,288 @@ export const modelDB = {
 
   deleteModelsByProvider: (providerId: string): void => {
     db.prepare('DELETE FROM models WHERE providerId = ?').run(providerId)
+  }
+}
+
+export const terminalSessionDB = {
+  createSession: (session: TerminalSession): void => {
+    db.prepare(
+      `INSERT INTO terminal_sessions (id, topicId, hostId, hostAlias, status, shellType, shellIntegrationReady, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      session.id,
+      session.topicId,
+      session.hostId,
+      session.hostAlias,
+      session.status,
+      session.shellType || null,
+      session.shellIntegrationReady ? 1 : 0,
+      session.createdAt
+    )
+  },
+
+  getSessionById: (id: string): TerminalSession | undefined => {
+    const row = db.prepare('SELECT * FROM terminal_sessions WHERE id = ?').get(id) as any
+    if (!row) return undefined
+    return {
+      id: row.id,
+      topicId: row.topicId,
+      hostId: row.hostId,
+      hostAlias: row.hostAlias,
+      status: row.status,
+      shellType: row.shellType,
+      shellIntegrationReady: row.shellIntegrationReady === 1,
+      createdAt: row.createdAt,
+      closedAt: row.closedAt || undefined
+    }
+  },
+
+  getSessionsByTopic: (topicId: string): TerminalSession[] => {
+    const rows = db
+      .prepare('SELECT * FROM terminal_sessions WHERE topicId = ? ORDER BY createdAt DESC')
+      .all(topicId) as any[]
+    return rows.map((row) => ({
+      id: row.id,
+      topicId: row.topicId,
+      hostId: row.hostId,
+      hostAlias: row.hostAlias,
+      status: row.status,
+      shellType: row.shellType,
+      shellIntegrationReady: row.shellIntegrationReady === 1,
+      createdAt: row.createdAt,
+      closedAt: row.closedAt || undefined
+    }))
+  },
+
+  getSessionsByHost: (hostId: string): TerminalSession[] => {
+    const rows = db
+      .prepare('SELECT * FROM terminal_sessions WHERE hostId = ? ORDER BY createdAt DESC')
+      .all(hostId) as any[]
+    return rows.map((row) => ({
+      id: row.id,
+      topicId: row.topicId,
+      hostId: row.hostId,
+      hostAlias: row.hostAlias,
+      status: row.status,
+      shellType: row.shellType,
+      shellIntegrationReady: row.shellIntegrationReady === 1,
+      createdAt: row.createdAt,
+      closedAt: row.closedAt || undefined
+    }))
+  },
+
+  updateSessionStatus: (id: string, status: TerminalSessionStatus): void => {
+    db.prepare('UPDATE terminal_sessions SET status = ? WHERE id = ?').run(status, id)
+  },
+
+  updateSessionShellIntegration: (id: string, ready: boolean): void => {
+    db.prepare('UPDATE terminal_sessions SET shellIntegrationReady = ? WHERE id = ?').run(
+      ready ? 1 : 0,
+      id
+    )
+  },
+
+  closeSession: (id: string): void => {
+    db.prepare('UPDATE terminal_sessions SET status = ?, closedAt = ? WHERE id = ?').run(
+      'closed',
+      Date.now(),
+      id
+    )
+  },
+
+  deleteSession: (id: string): void => {
+    db.prepare('DELETE FROM terminal_sessions WHERE id = ?').run(id)
+  }
+}
+
+export const terminalIODB = {
+  createIO: (io: TerminalIO): void => {
+    db.prepare(
+      `INSERT INTO terminal_io (id, sessionId, topicId, hostId, type, source, content, exitCode, durationMs, relatedInputId, isStreaming, chunkIndex, isTruncated, cwd, taskId, stepId, timestamp)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      io.id,
+      io.sessionId,
+      io.topicId,
+      io.hostId,
+      io.type,
+      io.source,
+      io.content,
+      io.exitCode || null,
+      io.durationMs || null,
+      io.relatedInputId || null,
+      io.isStreaming ? 1 : 0,
+      io.chunkIndex || 0,
+      io.isTruncated ? 1 : 0,
+      io.cwd || null,
+      io.taskId || null,
+      io.stepId || null,
+      io.timestamp
+    )
+  },
+
+  getIOById: (id: string): TerminalIO | undefined => {
+    const row = db.prepare('SELECT * FROM terminal_io WHERE id = ?').get(id) as any
+    if (!row) return undefined
+    return {
+      id: row.id,
+      sessionId: row.sessionId,
+      topicId: row.topicId,
+      hostId: row.hostId,
+      type: row.type,
+      source: row.source,
+      content: row.content,
+      exitCode: row.exitCode || undefined,
+      durationMs: row.durationMs || undefined,
+      relatedInputId: row.relatedInputId || undefined,
+      isStreaming: row.isStreaming === 1,
+      chunkIndex: row.chunkIndex,
+      isTruncated: row.isTruncated === 1,
+      cwd: row.cwd || undefined,
+      taskId: row.taskId || undefined,
+      stepId: row.stepId || undefined,
+      timestamp: row.timestamp
+    }
+  },
+
+  getIOBySession: (sessionId: string, limit = 100): TerminalIO[] => {
+    const rows = db
+      .prepare('SELECT * FROM terminal_io WHERE sessionId = ? ORDER BY timestamp DESC LIMIT ?')
+      .all(sessionId, limit) as any[]
+    return rows
+      .map((row) => ({
+        id: row.id,
+        sessionId: row.sessionId,
+        topicId: row.topicId,
+        hostId: row.hostId,
+        type: row.type,
+        source: row.source,
+        content: row.content,
+        exitCode: row.exitCode || undefined,
+        durationMs: row.durationMs || undefined,
+        relatedInputId: row.relatedInputId || undefined,
+        isStreaming: row.isStreaming === 1,
+        chunkIndex: row.chunkIndex,
+        isTruncated: row.isTruncated === 1,
+        cwd: row.cwd || undefined,
+        taskId: row.taskId || undefined,
+        stepId: row.stepId || undefined,
+        timestamp: row.timestamp
+      }))
+      .reverse()
+  },
+
+  getIOByTopic: (topicId: string, limit = 200): TerminalIO[] => {
+    const rows = db
+      .prepare('SELECT * FROM terminal_io WHERE topicId = ? ORDER BY timestamp DESC LIMIT ?')
+      .all(topicId, limit) as any[]
+    return rows
+      .map((row) => ({
+        id: row.id,
+        sessionId: row.sessionId,
+        topicId: row.topicId,
+        hostId: row.hostId,
+        type: row.type,
+        source: row.source,
+        content: row.content,
+        exitCode: row.exitCode || undefined,
+        durationMs: row.durationMs || undefined,
+        relatedInputId: row.relatedInputId || undefined,
+        isStreaming: row.isStreaming === 1,
+        chunkIndex: row.chunkIndex,
+        isTruncated: row.isTruncated === 1,
+        cwd: row.cwd || undefined,
+        taskId: row.taskId || undefined,
+        stepId: row.stepId || undefined,
+        timestamp: row.timestamp
+      }))
+      .reverse()
+  },
+
+  getRecentInputsBySession: (sessionId: string, limit = 20): TerminalIO[] => {
+    const rows = db
+      .prepare(
+        'SELECT * FROM terminal_io WHERE sessionId = ? AND type = ? ORDER BY timestamp DESC LIMIT ?'
+      )
+      .all(sessionId, 'input', limit) as any[]
+    return rows
+      .map((row) => ({
+        id: row.id,
+        sessionId: row.sessionId,
+        topicId: row.topicId,
+        hostId: row.hostId,
+        type: row.type,
+        source: row.source,
+        content: row.content,
+        exitCode: row.exitCode || undefined,
+        durationMs: row.durationMs || undefined,
+        relatedInputId: row.relatedInputId || undefined,
+        isStreaming: row.isStreaming === 1,
+        chunkIndex: row.chunkIndex,
+        isTruncated: row.isTruncated === 1,
+        cwd: row.cwd || undefined,
+        taskId: row.taskId || undefined,
+        stepId: row.stepId || undefined,
+        timestamp: row.timestamp
+      }))
+      .reverse()
+  },
+
+  getOutputByRelatedInput: (relatedInputId: string): TerminalIO | undefined => {
+    const row = db
+      .prepare('SELECT * FROM terminal_io WHERE relatedInputId = ? AND type = ?')
+      .get(relatedInputId, 'output') as any
+    if (!row) return undefined
+    return {
+      id: row.id,
+      sessionId: row.sessionId,
+      topicId: row.topicId,
+      hostId: row.hostId,
+      type: row.type,
+      source: row.source,
+      content: row.content,
+      exitCode: row.exitCode || undefined,
+      durationMs: row.durationMs || undefined,
+      relatedInputId: row.relatedInputId || undefined,
+      isStreaming: row.isStreaming === 1,
+      chunkIndex: row.chunkIndex,
+      isTruncated: row.isTruncated === 1,
+      cwd: row.cwd || undefined,
+      taskId: row.taskId || undefined,
+      stepId: row.stepId || undefined,
+      timestamp: row.timestamp
+    }
+  },
+
+  updateOutput: (id: string, updates: Partial<TerminalIO>): void => {
+    const sets: string[] = []
+    const values: any[] = []
+    if (updates.content !== undefined) {
+      sets.push('content = ?')
+      values.push(updates.content)
+    }
+    if (updates.exitCode !== undefined) {
+      sets.push('exitCode = ?')
+      values.push(updates.exitCode)
+    }
+    if (updates.durationMs !== undefined) {
+      sets.push('durationMs = ?')
+      values.push(updates.durationMs)
+    }
+    if (updates.isTruncated !== undefined) {
+      sets.push('isTruncated = ?')
+      values.push(updates.isTruncated ? 1 : 0)
+    }
+    if (updates.chunkIndex !== undefined) {
+      sets.push('chunkIndex = ?')
+      values.push(updates.chunkIndex)
+    }
+    if (sets.length > 0) {
+      db.prepare(`UPDATE terminal_io SET ${sets.join(', ')} WHERE id = ?`).run(...values, id)
+    }
+  },
+
+  deleteIOBySession: (sessionId: string): void => {
+    db.prepare('DELETE FROM terminal_io WHERE sessionId = ?').run(sessionId)
   }
 }
