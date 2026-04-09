@@ -62,68 +62,83 @@ export function ModelSelector({
       <button
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`flex items-center gap-2 px-3 py-2 bg-white border rounded-lg text-sm transition-colors ${
+        className={`flex items-center gap-2.5 px-4 py-2 bg-white border rounded-xl text-sm font-semibold transition-all shadow-sm ${
           disabled
-            ? 'opacity-50 cursor-not-allowed border-gray-200'
-            : 'hover:border-blue-300 border-gray-200'
+            ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50'
+            : 'hover:border-blue-300 hover:shadow-md border-gray-200 active:scale-95'
         }`}
       >
-        <Cpu size={14} className={selectedProvider ? 'text-blue-500' : 'text-gray-400'} />
-        <span className="max-w-[150px] truncate">
+        <Cpu size={14} className={selectedProvider ? 'text-blue-600' : 'text-gray-400'} />
+        <span className="max-w-[150px] truncate text-gray-700">
           {selectedModel
             ? selectedModel.name
             : selectedProvider
               ? `${selectedProvider.name} (默认)`
               : '选择模型'}
         </span>
-        <ChevronDown size={14} className="text-gray-400" />
+        <ChevronDown size={14} className={`text-gray-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-72 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-200">
-          <div className="max-h-80 overflow-y-auto">
+        <div className="absolute top-full right-0 mt-3 w-80 bg-white border border-gray-100 rounded-3xl shadow-[0_20px_40px_-12px_rgba(0,0,0,0.15)] overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-300 backdrop-blur-xl">
+          <div className="max-h-96 overflow-y-auto scrollbar-hide py-2">
             {enabledProviders.map((provider) => {
               const providerModels = getProviderModels(provider.id)
               return (
-                <div key={provider.id}>
-                  <div className="px-3 py-2 bg-gray-50 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    {provider.name}
+                <div key={provider.id} className="mb-2 last:mb-0">
+                  <div className="px-4 py-2 flex items-center gap-2">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
+                      {provider.name}
+                    </span>
+                    <div className="h-[1px] flex-1 bg-gray-100" />
                   </div>
-                  {providerModels.length > 0 ? (
-                    providerModels.map((model) => (
+                  <div className="px-2 space-y-0.5">
+                    {providerModels.length > 0 ? (
+                      providerModels.map((model) => (
+                        <button
+                          key={`${provider.id}-${model.id}`}
+                          onClick={() => handleSelect(provider.id, model.id)}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm text-left transition-all ${
+                            selectedProviderId === provider.id && selectedModelId === model.id
+                              ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 border border-transparent hover:border-gray-100'
+                          }`}
+                        >
+                          <div className={`w-2 h-2 rounded-full ${
+                             selectedProviderId === provider.id && selectedModelId === model.id
+                             ? 'bg-white'
+                             : 'bg-transparent'
+                          }`} />
+                          <span className="truncate flex-1 font-medium">{model.name}</span>
+                          {model.group && (
+                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                              selectedProviderId === provider.id && selectedModelId === model.id
+                              ? 'bg-white/20 text-white'
+                              : 'bg-gray-100 text-gray-400'
+                            }`}>
+                              {model.group}
+                            </span>
+                          )}
+                        </button>
+                      ))
+                    ) : (
                       <button
-                        key={`${provider.id}-${model.id}`}
-                        onClick={() => handleSelect(provider.id, model.id)}
-                        className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left hover:bg-blue-50 transition-colors ${
-                          selectedProviderId === provider.id && selectedModelId === model.id
-                            ? 'bg-blue-50 text-blue-700'
-                            : 'text-gray-700'
+                        onClick={() => handleSelect(provider.id, 'default')}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm text-left transition-all ${
+                          selectedProviderId === provider.id && selectedModelId === null
+                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 border border-transparent hover:border-gray-100'
                         }`}
                       >
-                        {selectedProviderId === provider.id && selectedModelId === model.id && (
-                          <Check size={14} className="text-blue-500" />
-                        )}
-                        <span className="truncate">{model.name}</span>
-                        {model.group && (
-                          <span className="ml-auto text-xs text-gray-400">{model.group}</span>
-                        )}
+                        <div className={`w-2 h-2 rounded-full ${
+                           selectedProviderId === provider.id && selectedModelId === null
+                           ? 'bg-white'
+                           : 'bg-transparent'
+                        }`} />
+                        <span className="text-inherit opacity-70 italic flex-1 font-medium">默认模型环境</span>
                       </button>
-                    ))
-                  ) : (
-                    <button
-                      onClick={() => handleSelect(provider.id, 'default')}
-                      className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left hover:bg-blue-50 transition-colors ${
-                        selectedProviderId === provider.id && selectedModelId === null
-                          ? 'bg-blue-50 text-blue-700'
-                          : 'text-gray-700'
-                      }`}
-                    >
-                      {selectedProviderId === provider.id && selectedModelId === null && (
-                        <Check size={14} className="text-blue-500" />
-                      )}
-                      <span className="text-gray-500 italic">默认模型</span>
-                    </button>
-                  )}
+                    )}
+                  </div>
                 </div>
               )
             })}

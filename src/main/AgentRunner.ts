@@ -261,6 +261,22 @@ export class AgentRunner {
             required: ['query']
           }
         }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'write_file',
+          description: '向指定主机写入或覆盖文件内容',
+          parameters: {
+            type: 'object',
+            properties: {
+              hostId: { type: 'string', description: '主机ID' },
+              path: { type: 'string', description: '文件路径' },
+              content: { type: 'string', description: '文件内容' }
+            },
+            required: ['hostId', 'path', 'content']
+          }
+        }
       }
     ]
   }
@@ -304,6 +320,9 @@ export class AgentRunner {
           break
         case 'search_topics':
           data = await this.handleSearchTopics(args)
+          break
+        case 'write_file':
+          data = await this.handleWriteFile(args)
           break
         default:
           throw new Error(`Unknown tool: ${name}`)
@@ -384,6 +403,27 @@ export class AgentRunner {
     }
     
     return result.content
+  }
+
+  private async handleWriteFile(args: any) {
+    const { hostId, path, content } = args
+    const normalizedHostId = hostId.startsWith('@') ? hostId.slice(1) : hostId
+    
+    // Ensure we have a session
+    const sessionId = await this.context.ensureSession(normalizedHostId, normalizedHostId)
+    
+    // Use base64 to avoid shell escaping issues with complex characters
+    const b64 = Buffer.from(content).toString('base64')
+    // We try to use 'base64 -d' (common on Linux) or 'openssl base64 -d'
+    const commandRegex = `printf "%s" '${b64}' | base64 -d > "${path}"`
+    
+    const result = await commandExecutor.execute(sessionId, commandRegex, this.context.topicId, this.context.taskId)
+    
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to write file: ${result.content}`)
+    }
+    
+    return { message: 'File written successfully', path }
   }
 
   private async handleListHosts() {

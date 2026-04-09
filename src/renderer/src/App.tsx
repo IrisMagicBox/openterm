@@ -27,7 +27,8 @@ import {
   Pencil,
   Pause,
   Play,
-  Command
+  Command,
+  ChevronLeft
 } from 'lucide-react'
 import { TerminalView } from './components/TerminalView'
 import { TopicHub } from './components/TopicHub'
@@ -76,11 +77,11 @@ function CommandPalette({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/40 backdrop-blur-md animate-in fade-in duration-300"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl rounded-3xl bg-white border border-gray-100 shadow-2xl p-6 mx-4"
+        className="w-full max-w-xl rounded-[40px] bg-white border border-gray-100 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] p-10 mx-4 animate-in zoom-in-95 slide-in-from-bottom-8 duration-500"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 mb-4">
@@ -163,11 +164,11 @@ function AddHostModal({ onClose, onSave }: { onClose: () => void; onSave: (host:
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/40 backdrop-blur-md animate-in fade-in duration-300"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-md p-8 mx-4 animate-in fade-in zoom-in-95 duration-200"
+        className="bg-white rounded-[40px] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] border border-gray-100 w-full max-w-md p-10 mx-4 animate-in zoom-in-95 slide-in-from-bottom-8 duration-500"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-8">
@@ -381,33 +382,41 @@ function NavItem({
   icon,
   label,
   count,
-  onClick
+  onClick,
+  tooltip
 }: {
   active: boolean
   icon: React.ReactNode
   label: string
   count?: number
   onClick: () => void
+  tooltip?: string
 }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all group ${
+      title={label ? undefined : tooltip}
+      className={`relative w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all group ${
         active
           ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-          : 'text-gray-500 hover:bg-white hover:text-gray-900 hover:shadow-sm hover:border hover:border-gray-100'
-      }`}
+          : 'text-gray-500 hover:bg-white hover:text-gray-900 hover:shadow-sm'
+      } ${!label ? 'justify-center' : ''}`}
     >
       <span
         className={active ? 'text-white' : 'text-gray-400 group-hover:text-blue-500 transition'}
       >
         {icon}
       </span>
-      <span className="flex-1 text-left">{label}</span>
-      {count !== undefined && (
+      {label && <span className="flex-1 text-left truncate">{label}</span>}
+      {count !== undefined && label && (
         <span
           className={`text-[10px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center ${active ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}
         >
+          {count}
+        </span>
+      )}
+      {count !== undefined && !label && (
+        <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] flex items-center justify-center border-2 border-gray-50 shadow-sm animate-in zoom-in">
           {count}
         </span>
       )}
@@ -1109,51 +1118,37 @@ function ChatPanel({
                         </div>
                       )}
                     </div>
-                    <div className="px-3 py-2.5 bg-gray-50 border-t border-gray-100 space-y-2">
-                      <div className="flex items-center justify-between gap-2 text-[10px]">
-                        <span
-                          className={`font-black ${session.paused ? 'text-amber-600' : 'text-emerald-600'}`}
-                        >
-                          {session.paused ? '键盘已交给你' : 'Agent 正在控制'}
-                        </span>
-                        <span className="text-gray-400">
-                          {focusedSession?.id === session.id
-                            ? 'Cmd+K 将作用于此终端'
-                            : '点击以选中'}
-                        </span>
-                      </div>
-                      <code className="text-[10px] font-mono text-gray-600 truncate block bg-white border border-gray-200 rounded-lg px-2 py-1.5">
-                        {session.command || '(no active command)'}
-                      </code>
-                      {commandSuggestions[session.id] && (
-                        <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-2">
-                          <div className="text-[10px] font-black text-blue-600">Tab 建议</div>
-                          <code className="mt-1 block text-[10px] font-mono text-blue-900 break-all">
-                            {commandSuggestions[session.id]?.completion}
-                          </code>
-                          <div className="mt-1 text-[10px] text-blue-500">
-                            再按一次 `Tab` 接受建议
-                          </div>
-                        </div>
-                      )}
+                    <div className="px-3 py-2.5 bg-gray-50 border-t border-gray-100">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="text-[10px] text-gray-400">
-                          {commandAssistEnabled ? 'Tab 补全已启用' : 'Tab 补全已关闭'}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${session.paused ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}
+                          />
+                          <span
+                            className={`text-[10px] font-black truncate ${session.paused ? 'text-amber-600' : 'text-emerald-600'}`}
+                          >
+                            {session.paused ? '人工接管中' : 'Agent 正在控制'}
+                          </span>
                         </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setFocusedSessionId(session.id)
-                            setCommandPaletteOpen(true)
-                          }}
-                          className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition ${
-                            focusedSession?.id === session.id
-                              ? 'bg-blue-600 text-white hover:bg-blue-700'
-                              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-                          }`}
-                        >
-                          自然语言执行
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <div className="text-[9px] font-bold text-gray-400">
+                            {commandAssistEnabled ? 'Tab 补全' : 'Tab 禁用'}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setFocusedSessionId(session.id)
+                              setCommandPaletteOpen(true)
+                            }}
+                            className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md transition ${
+                              focusedSession?.id === session.id
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                            }`}
+                          >
+                            执行命令
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1236,6 +1231,17 @@ function ChatPanel({
           onSubmit={handleSubmitCommandPalette}
         />
       )}
+
+      {isResizing && (
+        <div 
+          className="fixed inset-0 z-[100] cursor-col-resize select-none pointer-events-auto bg-transparent"
+          onMouseMove={(e) => {
+            const newWidth = window.innerWidth - e.clientX
+            setTerminalWidth(Math.max(300, Math.min(newWidth, window.innerWidth - 400)))
+          }}
+          onMouseUp={() => setIsResizing(false)}
+        />
+      )}
     </div>
   )
 }
@@ -1258,11 +1264,11 @@ function ManageHostsModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/40 backdrop-blur-md animate-in fade-in duration-300"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-lg p-8 mx-4"
+        className="bg-white rounded-[40px] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] border border-gray-100 w-full max-w-lg p-10 mx-4 animate-in zoom-in-95 slide-in-from-bottom-8 duration-500"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-6">
@@ -1378,6 +1384,7 @@ export default function App() {
   const [debugLogs, setDebugLogs] = useState<DebugEntry[]>([])
   const [showDebug, setShowDebug] = useState(false)
   const [terminalFontSize, setTerminalFontSize] = useState(13)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [terminalWidth, setTerminalWidth] = useState(800)
 
   useEffect(() => {
@@ -1654,18 +1661,25 @@ export default function App() {
   )
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-white text-gray-900">
-      <aside className="w-72 bg-gray-50/80 border-r border-gray-100 flex flex-col no-drag">
-        <div className="px-7 pt-8 pb-6 drag">
+    <div className="flex h-screen w-screen overflow-hidden bg-white text-gray-900 select-none">
+      <aside className={`${sidebarCollapsed ? 'w-20' : 'w-72'} bg-gray-50/80 border-r border-gray-100 flex flex-col no-drag transition-all duration-300 relative group`}>
+        <button
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          className={`absolute -right-3 top-12 w-6 h-6 bg-white border border-gray-100 rounded-full flex items-center justify-center text-gray-400 hover:text-blue-600 shadow-sm transition-all z-10 opacity-0 group-hover:opacity-100 ${sidebarCollapsed ? 'rotate-180' : ''}`}
+        >
+          <ChevronLeft size={14} />
+        </button>
+
+        <div className={`pt-8 pb-6 drag transition-all ${sidebarCollapsed ? 'px-5' : 'px-7'}`}>
           <div className="flex items-center gap-3 no-drag">
-            <div className="w-10 h-10 rounded-2xl flex items-center justify-center -ml-1 overflow-hidden">
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center -ml-1 overflow-hidden bg-white shadow-sm border border-gray-50 p-1">
               <img src={logo} alt="OpenTerm" className="w-full h-full object-contain" />
             </div>
-            <div>
+            {!sidebarCollapsed && (
               <h1 className="text-lg font-black tracking-tight text-gray-900 leading-none">
                 OpenTerm
               </h1>
-            </div>
+            )}
           </div>
         </div>
 
@@ -1674,8 +1688,9 @@ export default function App() {
             active={activeView === 'hosts'}
             onClick={() => setActiveView('hosts')}
             icon={<LayoutGrid size={17} />}
-            label="主机"
-            count={hosts.length}
+            label={sidebarCollapsed ? "" : "主机"}
+            count={sidebarCollapsed ? undefined : hosts.length}
+            tooltip="主机列表"
           />
           <NavItem
             active={activeView === 'chat'}
@@ -1684,26 +1699,31 @@ export default function App() {
               if (!selectedTopic && topics.length > 0) setSelectedTopic(topics[0])
             }}
             icon={<MessageSquare size={17} />}
-            label="Agent助手"
-            count={topics.length}
+            label={sidebarCollapsed ? "" : "Agent助手"}
+            count={sidebarCollapsed ? undefined : topics.length}
+            tooltip="Agent助手"
           />
           <NavItem
             active={activeView === 'settings'}
             onClick={() => setActiveView('settings')}
             icon={<Settings size={17} />}
-            label="设置"
+            label={sidebarCollapsed ? "" : "设置"}
+            tooltip="设置"
           />
         </nav>
 
         {activeView === 'chat' && (
-          <div className="flex-1 overflow-y-auto px-4 mt-6">
-            <div className="flex items-center justify-between mb-3 px-2">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                会话
-              </span>
+          <div className="flex-1 overflow-y-auto px-4 mt-6 scrollbar-hide">
+            <div className={`flex items-center justify-between mb-3 px-2 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+              {!sidebarCollapsed && (
+                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                  会话记录
+                </span>
+              )}
               <button
                 onClick={() => handleCreateTopic()}
-                className="p-1.5 hover:bg-white rounded-lg text-gray-400 hover:text-blue-600 transition border border-transparent hover:border-gray-200 hover:shadow-sm"
+                className={`p-1.5 hover:bg-white rounded-lg text-gray-400 hover:text-blue-600 transition border border-transparent hover:border-gray-200 hover:shadow-sm ${sidebarCollapsed ? 'w-full flex justify-center' : ''}`}
+                title="新建会话"
               >
                 <Plus size={13} />
               </button>
@@ -1740,52 +1760,56 @@ export default function App() {
                   <div
                     className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${selectedTopic?.id === topic.id ? 'bg-blue-500' : 'bg-gray-300'}`}
                   />
-                  {editingTopicId === topic.id ? (
-                    <input
-                      autoFocus
-                      value={editingTopicTitle}
-                      onChange={(e) => setEditingTopicTitle(e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      onBlur={handleCommitRenameTopic}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          handleCommitRenameTopic()
-                        }
-                        if (e.key === 'Escape') {
-                          e.preventDefault()
-                          setEditingTopicId(null)
-                          setEditingTopicTitle('')
-                        }
-                      }}
-                      className="flex-1 bg-transparent border-none outline-none text-sm font-semibold text-inherit"
-                    />
-                  ) : (
-                    <span className="truncate flex-1">{topic.title}</span>
-                  )}
-                  {editingTopicId !== topic.id && (
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleStartRenameTopic(topic)
-                        }}
-                        className="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-blue-600"
-                        title="重命名话题"
-                      >
-                        <Pencil size={12} />
-                      </span>
-                      <span
-                        onClick={async (e) => {
-                          e.stopPropagation()
-                          await handleDeleteTopic(topic.id)
-                        }}
-                        className="p-1 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-500"
-                        title="删除话题"
-                      >
-                        <Trash2 size={12} />
-                      </span>
-                    </div>
+                  {!sidebarCollapsed && (
+                    <>
+                      {editingTopicId === topic.id ? (
+                        <input
+                          autoFocus
+                          value={editingTopicTitle}
+                          onChange={(e) => setEditingTopicTitle(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          onBlur={handleCommitRenameTopic}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              handleCommitRenameTopic()
+                            }
+                            if (e.key === 'Escape') {
+                              e.preventDefault()
+                              setEditingTopicId(null)
+                              setEditingTopicTitle('')
+                            }
+                          }}
+                          className="flex-1 bg-transparent border-none outline-none text-sm font-semibold text-inherit"
+                        />
+                      ) : (
+                        <span className="truncate flex-1">{topic.title}</span>
+                      )}
+                      {editingTopicId !== topic.id && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleStartRenameTopic(topic)
+                            }}
+                            className="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-blue-600"
+                            title="重命名"
+                          >
+                            <Pencil size={12} />
+                          </span>
+                          <span
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              await handleDeleteTopic(topic.id)
+                            }}
+                            className="p-1 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-500"
+                            title="删除"
+                          >
+                            <Trash2 size={12} />
+                          </span>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
