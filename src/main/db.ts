@@ -16,7 +16,9 @@ import {
   TerminalSession,
   TerminalSessionStatus,
   TerminalIO,
-  MemoryEntry
+  MemoryEntry,
+  CommandPattern,
+  TrustLevel
 } from '../shared/types'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -204,6 +206,17 @@ export const initializeDB = () => {
       FOREIGN KEY (hostId) REFERENCES hosts(id) ON DELETE SET NULL,
       FOREIGN KEY (topicId) REFERENCES topics(id) ON DELETE SET NULL
     );
+
+    CREATE TABLE IF NOT EXISTS command_patterns (
+      id TEXT PRIMARY KEY,
+      hostId TEXT NOT NULL,
+      commandPattern TEXT NOT NULL,
+      approvalCount INTEGER DEFAULT 0,
+      rejectionCount INTEGER DEFAULT 0,
+      trustLevel TEXT DEFAULT 'untrusted',
+      lastSeen INTEGER NOT NULL,
+      createdAt INTEGER NOT NULL
+    );
   `)
 
   const tableInfo = db.prepare('PRAGMA table_info(messages)').all() as any[]
@@ -220,6 +233,12 @@ export const initializeDB = () => {
   }
   if (!columns.includes('name')) {
     db.exec('ALTER TABLE messages ADD COLUMN name TEXT')
+  }
+
+  const sessionInfo = db.prepare('PRAGMA table_info(terminal_sessions)').all() as any[]
+  const sessionColumns = sessionInfo.map((c) => c.name)
+  if (!sessionColumns.includes('name')) {
+    db.exec('ALTER TABLE terminal_sessions ADD COLUMN name TEXT')
   }
 }
 
@@ -335,7 +354,8 @@ export const hostDB = {
     const existing = hostDB.getHostById(id)
     if (!existing) return
     const alias = updates.alias !== undefined ? updates.alias : existing.alias
-    const tagsStr = updates.tags !== undefined ? JSON.stringify(updates.tags) : JSON.stringify(existing.tags)
+    const tagsStr =
+      updates.tags !== undefined ? JSON.stringify(updates.tags) : JSON.stringify(existing.tags)
     db.prepare('UPDATE hosts SET alias = ?, tags = ? WHERE id = ?').run(alias, tagsStr, id)
   }
 }
@@ -387,9 +407,11 @@ export const topicDB = {
   },
 
   searchTopics: (query: string): Topic[] => {
-    const rows = db.prepare(
-      "SELECT * FROM topics WHERE title LIKE ? OR id IN (SELECT topicId FROM tasks WHERE summary LIKE ? OR goal LIKE ?) ORDER BY lastMessageAt DESC LIMIT 10"
-    ).all(`%${query}%`, `%${query}%`, `%${query}%`) as any[]
+    const rows = db
+      .prepare(
+        'SELECT * FROM topics WHERE title LIKE ? OR id IN (SELECT topicId FROM tasks WHERE summary LIKE ? OR goal LIKE ?) ORDER BY lastMessageAt DESC LIMIT 10'
+      )
+      .all(`%${query}%`, `%${query}%`, `%${query}%`) as any[]
     return rows.map((row) => ({
       ...row,
       hostIds: parseJSON(row.hostIds, [])
@@ -754,7 +776,15 @@ export const memoryDB = {
       INSERT INTO memories (id, type, content, hostId, topicId, importance, timestamp)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `
-    ).run(id, entry.type, entry.content, entry.hostId || null, entry.topicId || null, entry.importance, timestamp)
+    ).run(
+      id,
+      entry.type,
+      entry.content,
+      entry.hostId || null,
+      entry.topicId || null,
+      entry.importance,
+      timestamp
+    )
 
     return entry
   },
@@ -766,16 +796,14 @@ export const memoryDB = {
   searchRelevantMemories: (query: string, hostId?: string): MemoryEntry[] => {
     const all = memoryDB.getMemories(hostId)
     if (!query) return all.slice(0, 5)
-    
-    return all.filter(m => 
-      m.content.toLowerCase().includes(query.toLowerCase())
-    ).slice(0, 10)
+
+    return all.filter((m) => m.content.toLowerCase().includes(query.toLowerCase())).slice(0, 10)
   },
 
   searchMemories: (query: string, scope?: { hostId?: string; topicId?: string }): MemoryEntry[] => {
     let sql = 'SELECT * FROM memories WHERE 1=1'
     const params: any[] = []
-    
+
     if (scope?.hostId) {
       sql += ' AND (hostId = ? OR hostId IS NULL)'
       params.push(scope.hostId)
@@ -784,12 +812,12 @@ export const memoryDB = {
       sql += ' AND (topicId = ? OR topicId IS NULL)'
       params.push(scope.topicId)
     }
-    
+
     sql += ' AND content LIKE ?'
     params.push(`%${query}%`)
-    
+
     sql += ' ORDER BY importance DESC, timestamp DESC LIMIT 20'
-    
+
     const rows = db.prepare(sql).all(params) as any[]
     return rows.map((row) => ({
       ...row,
@@ -1103,6 +1131,101 @@ export const modelDB = {
   }
 }
 
+const mapCommandPatternRow = (row: any): CommandPattern => ({
+  id: row.id,
+  hostId: row.hostId,
+  commandPattern: row.commandPattern,
+  approvalCount: row.approvalCount,
+  rejectionCount: row.rejectionCount,
+  trustLevel: row.trustLevel as TrustLevel,
+  lastSeen: row.lastSeen,
+  createdAt: row.createdAt
+})
+
+export const commandPatternDB = {
+  getPatternsByHost: (hostId: string): CommandPattern[] => {
+    const rows = db
+      .prepare('SELECT * FROM command_patterns WHERE hostId = ? ORDER BY lastSeen DESC')
+      .all(hostId) as any[]
+    return rows.map(mapCommandPatternRow)
+  },
+
+  getPatternByHostAndPattern: (
+    hostId: string,
+    commandPattern: string
+  ): CommandPattern | undefined => {
+    const row = db
+      .prepare('SELECT * FROM command_patterns WHERE hostId = ? AND commandPattern = ?')
+      .get(hostId, commandPattern) as any
+    return row ? mapCommandPatternRow(row) : undefined
+  },
+
+  createCommandPattern: (pattern: Omit<CommandPattern, 'id' | 'createdAt'>): CommandPattern => {
+    const id = uuidv4()
+    const now = Date.now()
+    db.prepare(
+      `INSERT INTO command_patterns (id, hostId, commandPattern, approvalCount, rejectionCount, trustLevel, lastSeen, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      pattern.hostId,
+      pattern.commandPattern,
+      pattern.approvalCount,
+      pattern.rejectionCount,
+      pattern.trustLevel,
+      pattern.lastSeen,
+      now
+    )
+    return { ...pattern, id, createdAt: now }
+  },
+
+  updatePatternTrust: (id: string, trustLevel: TrustLevel): void => {
+    db.prepare('UPDATE command_patterns SET trustLevel = ?, lastSeen = ? WHERE id = ?').run(
+      trustLevel,
+      Date.now(),
+      id
+    )
+  },
+
+  incrementApprovalCount: (id: string): void => {
+    const pattern = db.prepare('SELECT * FROM command_patterns WHERE id = ?').get(id) as any
+    if (!pattern) return
+    const newCount = pattern.approvalCount + 1
+    let newTrust: TrustLevel = pattern.trustLevel
+    if (newCount >= 3 && pattern.rejectionCount === 0) {
+      newTrust = 'trusted'
+    } else if (newCount >= 2 && pattern.rejectionCount <= 1) {
+      newTrust = 'familiar'
+    }
+    db.prepare(
+      'UPDATE command_patterns SET approvalCount = ?, trustLevel = ?, lastSeen = ? WHERE id = ?'
+    ).run(newCount, newTrust, Date.now(), id)
+  },
+
+  incrementRejectionCount: (id: string): void => {
+    const pattern = db.prepare('SELECT * FROM command_patterns WHERE id = ?').get(id) as any
+    if (!pattern) return
+    const newCount = pattern.rejectionCount + 1
+    let newTrust: TrustLevel = pattern.trustLevel
+    if (newCount >= 2) {
+      newTrust = 'untrusted'
+    }
+    db.prepare(
+      'UPDATE command_patterns SET rejectionCount = ?, trustLevel = ?, lastSeen = ? WHERE id = ?'
+    ).run(newCount, newTrust, Date.now(), id)
+  },
+
+  resetTrustByHost: (hostId: string): void => {
+    db.prepare(
+      "UPDATE command_patterns SET trustLevel = 'untrusted', approvalCount = 0, rejectionCount = 0 WHERE hostId = ?"
+    ).run(hostId)
+  },
+
+  deletePatternsByHost: (hostId: string): void => {
+    db.prepare('DELETE FROM command_patterns WHERE hostId = ?').run(hostId)
+  }
+}
+
 export const terminalSessionDB = {
   createSession: (session: TerminalSession): void => {
     db.prepare(
@@ -1195,6 +1318,32 @@ export const terminalSessionDB = {
 
   deleteSession: (id: string): void => {
     db.prepare('DELETE FROM terminal_sessions WHERE id = ?').run(id)
+  },
+
+  getActiveSessions: (): TerminalSession[] => {
+    const rows = db
+      .prepare('SELECT * FROM terminal_sessions WHERE status = ? ORDER BY createdAt DESC')
+      .all('active') as any[]
+    return rows.map((row) => ({
+      id: row.id,
+      topicId: row.topicId,
+      hostId: row.hostId,
+      hostAlias: row.hostAlias,
+      status: row.status,
+      shellType: row.shellType,
+      shellIntegrationReady: row.shellIntegrationReady === 1,
+      createdAt: row.createdAt,
+      closedAt: row.closedAt || undefined,
+      name: row.name || undefined
+    }))
+  },
+
+  markAllSessionsClosed: (): void => {
+    db.prepare('UPDATE terminal_sessions SET status = ?, closedAt = ? WHERE status = ?').run(
+      'closed',
+      Date.now(),
+      'active'
+    )
   }
 }
 
@@ -1387,5 +1536,15 @@ export const terminalIODB = {
 
   deleteIOBySession: (sessionId: string): void => {
     db.prepare('DELETE FROM terminal_io WHERE sessionId = ?').run(sessionId)
+  },
+
+  searchCommandInputs: (query: string, limit = 20): any[] => {
+    return db
+      .prepare(
+        `SELECT DISTINCT content, source, hostId, timestamp FROM terminal_io
+       WHERE type = 'input' AND content LIKE ?
+       ORDER BY timestamp DESC LIMIT ?`
+      )
+      .all(`%${query}%`, limit)
   }
 }

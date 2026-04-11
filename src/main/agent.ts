@@ -1,19 +1,8 @@
 import { WebContents, ipcMain } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
-import { 
-  topicDB, 
-  messageDB, 
-  hostDB, 
-  taskDB,
-  terminalSessionDB,
-  memoryDB
-} from './db'
-import { 
-  Message, 
-  TerminalSession, 
-  Task
-} from '../shared/types'
-import { AgentRunner, AgentContext } from './AgentRunner'
+import { topicDB, messageDB, hostDB, taskDB, memoryDB } from './db'
+import { Message, TerminalSession, Task } from '../shared/types'
+import { AgentRunner, AgentContext, AuthResponse } from './AgentRunner'
 import { commandExecutor } from './terminal'
 import { logger } from './logger'
 
@@ -30,7 +19,7 @@ export interface AgentSession extends TerminalSession {
 export class AgentService {
   private webContents?: WebContents
   private topicSessions: Map<string, Map<string, AgentSession[]>> = new Map()
-  private pendingRequests: Map<string, (approved: boolean) => void> = new Map()
+  private pendingRequests: Map<string, (response: AuthResponse) => void> = new Map()
 
   setWebContents(webContents: WebContents) {
     this.webContents = webContents
@@ -56,7 +45,7 @@ export class AgentService {
     if (!topic) return
     const newHostIds = topic.hostIds.filter((id) => id !== hostId)
     topicDB.updateTopicHosts(topicId, newHostIds)
-    
+
     const hostMap = this.topicSessions.get(topicId)
     if (hostMap) {
       const sessions = hostMap.get(hostId)
@@ -79,7 +68,7 @@ export class AgentService {
     commandExecutor.closeSession(id)
     for (const hostMap of this.topicSessions.values()) {
       for (const [hostId, sessions] of hostMap.entries()) {
-        const index = sessions.findIndex(s => s.id === id)
+        const index = sessions.findIndex((s) => s.id === id)
         if (index !== -1) {
           sessions.splice(index, 1)
           if (sessions.length === 0) hostMap.delete(hostId)
@@ -92,7 +81,7 @@ export class AgentService {
   async renameTerminal(id: string, name: string) {
     for (const hostMap of this.topicSessions.values()) {
       for (const sessions of hostMap.values()) {
-        const session = sessions.find(s => s.id === id)
+        const session = sessions.find((s) => s.id === id)
         if (session) {
           session.name = name
           return
@@ -104,7 +93,7 @@ export class AgentService {
   async toggleTerminalPin(id: string, isPinned: boolean) {
     for (const hostMap of this.topicSessions.values()) {
       for (const sessions of hostMap.values()) {
-        const session = sessions.find(s => s.id === id)
+        const session = sessions.find((s) => s.id === id)
         if (session) {
           session.isPinned = isPinned
           return
@@ -113,7 +102,10 @@ export class AgentService {
     }
   }
 
-  async updateHostMetadata(hostId: string, updates: Partial<Pick<import('../shared/types').Host, 'alias' | 'tags'>>) {
+  async updateHostMetadata(
+    hostId: string,
+    updates: Partial<Pick<import('../shared/types').Host, 'alias' | 'tags'>>
+  ) {
     hostDB.updateHost(hostId, updates)
     // Notify frontend if host info changed
     this.webContents?.send('host:updated', { hostId, ...updates })
@@ -150,18 +142,24 @@ export class AgentService {
       hostMap.set(session.hostId, sessions)
     }
 
-    if (!sessions.find(s => s.id === session.id)) {
+    if (!sessions.find((s) => s.id === session.id)) {
       sessions.push(session)
     }
   }
 
-  private async ensureSession(topicId: string, hostId: string, hostAlias: string, name?: string, showInUI = false): Promise<AgentSession> {
+  private async ensureSession(
+    topicId: string,
+    hostId: string,
+    hostAlias: string,
+    name?: string,
+    showInUI = false
+  ): Promise<AgentSession> {
     const hostMap = this.topicSessions.get(topicId)
     const sessions = hostMap?.get(hostId)
-    
+
     // 1. If name is provided, find matching session
     if (name) {
-      const match = sessions?.find(s => s.name === name)
+      const match = sessions?.find((s) => s.name === name)
       if (match) return match
     } else if (sessions && sessions.length > 0) {
       // 2. Default to first session if no name provided
@@ -171,7 +169,7 @@ export class AgentService {
     // 2. Create a new real session if none exists
     if (!this.webContents) throw new Error('WebContents not initialized')
     if (!createAgentSessionRef) throw new Error('SSH service not initialized')
-    
+
     const sessionId = await createAgentSessionRef(hostId, this.webContents, topicId)
 
     const session: AgentSession = {
@@ -179,7 +177,7 @@ export class AgentService {
       topicId,
       hostId,
       hostAlias,
-      name: name || `${hostAlias} Terminal ${ (sessions?.length || 0) + 1}`,
+      name: name || `${hostAlias} Terminal ${(sessions?.length || 0) + 1}`,
       status: 'active',
       shellIntegrationReady: false,
       isPinned: false,
@@ -187,7 +185,7 @@ export class AgentService {
       paused: false,
       createdAt: Date.now()
     }
-    
+
     await this.registerSession(session)
 
     if (showInUI && this.webContents) {
@@ -226,14 +224,14 @@ export class AgentService {
       timestamp: Date.now()
     }
     messageDB.createMessage(userMsg)
-    
+
     // Update topic title if it looks like a default one
     if (topic && (topic.title.startsWith('Session ') || topic.title === '新建话题')) {
       const newTitle = content.slice(0, 30) + (content.length > 30 ? '...' : '')
       topicDB.updateTopicTitle(topicId, newTitle)
       this.webContents?.send('topic:updated', { topicId, title: newTitle })
     }
-    
+
     if (this.webContents) {
       this.webContents.send('agent:thinking', { topicId, thinking: true })
     }
@@ -259,7 +257,7 @@ export class AgentService {
         },
         notifyStep: (msg) => {
           if (this.webContents) {
-            this.webContents.send('agent:message', msg)
+            this.webContents.send('agent:step', msg)
           }
         }
       }
@@ -267,7 +265,7 @@ export class AgentService {
       const runner = new AgentRunner(context)
       const messages = await messageDB.getMessages(topicId)
       const result = await runner.run(messages)
-      
+
       this.webContents?.send('agent:thinking', { topicId, thinking: false })
       return result
     } catch (error: any) {
@@ -287,15 +285,15 @@ export class AgentService {
       return errorMsg
     } finally {
       if (this.webContents) {
-        this.webContents.send('agent:thinking', false)
+        this.webContents.send('agent:thinking', { topicId, thinking: false })
       }
     }
   }
 
-  async handleAuthResponse(requestId: string, approved: boolean) {
+  async handleAuthResponse(requestId: string, approved: boolean, alwaysAllow = false) {
     const resolve = this.pendingRequests.get(requestId)
     if (resolve) {
-      resolve(approved)
+      resolve({ approved, alwaysAllow })
       this.pendingRequests.delete(requestId)
     }
   }
@@ -305,14 +303,17 @@ export class AgentService {
     if (!host) return null
     const hostMap = this.topicSessions.get(topicId)
     const sessions = hostMap?.get(hostId)
-    const session = sessions && sessions.length > 0 ? sessions[0] : await this.ensureSession(topicId, hostId, host.alias)
+    const session =
+      sessions && sessions.length > 0
+        ? sessions[0]
+        : await this.ensureSession(topicId, hostId, host.alias)
     return commandExecutor.complete(session.id, partialCommand)
   }
 
   async setPaused(id: string, paused: boolean) {
     for (const hostMap of this.topicSessions.values()) {
       for (const sessions of hostMap.values()) {
-        const session = sessions.find(s => s.id === id)
+        const session = sessions.find((s) => s.id === id)
         if (session) {
           session.paused = paused
           return
@@ -324,7 +325,7 @@ export class AgentService {
   async isPaused(id: string): Promise<boolean> {
     for (const hostMap of this.topicSessions.values()) {
       for (const sessions of hostMap.values()) {
-        const session = sessions.find(s => s.id === id)
+        const session = sessions.find((s) => s.id === id)
         if (session) return session.paused
       }
     }
@@ -336,57 +337,55 @@ export const agentService = new AgentService()
 
 export function setupAgentHandlers() {
   ipcMain.removeHandler('agent:get-topic-hosts')
-  ipcMain.handle('agent:get-topic-hosts', (_, topicId: string) => 
+  ipcMain.handle('agent:get-topic-hosts', (_, topicId: string) =>
     agentService.getTopicHosts(topicId)
   )
 
   ipcMain.removeHandler('agent:add-host')
-  ipcMain.handle('agent:add-host', (_, topicId: string, hostId: string) => 
+  ipcMain.handle('agent:add-host', (_, topicId: string, hostId: string) =>
     agentService.addHostToTopic(topicId, hostId)
   )
 
   ipcMain.removeHandler('agent:remove-host')
-  ipcMain.handle('agent:remove-host', (_, topicId: string, hostId: string) => 
+  ipcMain.handle('agent:remove-host', (_, topicId: string, hostId: string) =>
     agentService.removeHostFromTopic(topicId, hostId)
   )
 
   ipcMain.removeHandler('agent:message')
-  ipcMain.handle('agent:message', (_, topicId: string, content: string) => 
+  ipcMain.handle('agent:message', (_, topicId: string, content: string) =>
     agentService.handleMessage(topicId, content)
   )
 
   ipcMain.removeHandler('agent:auth-response')
-  ipcMain.handle('agent:auth-response', (_, requestId: string, approved: boolean) => 
-    agentService.handleAuthResponse(requestId, approved)
+  ipcMain.handle(
+    'agent:auth-response',
+    (_, requestId: string, approved: boolean, alwaysAllow?: boolean) =>
+      agentService.handleAuthResponse(requestId, approved, alwaysAllow)
   )
 
   ipcMain.removeHandler('agent:get-sessions')
-  ipcMain.handle('agent:get-sessions', (_, topicId: string) => 
-    agentService.getSessions(topicId)
-  )
+  ipcMain.handle('agent:get-sessions', (_, topicId: string) => agentService.getSessions(topicId))
 
   ipcMain.removeHandler('agent:complete-command')
-  ipcMain.handle('agent:complete-command', (_, topicId: string, hostId: string, partial: string) => 
+  ipcMain.handle('agent:complete-command', (_, topicId: string, hostId: string, partial: string) =>
     agentService.completeCommand(topicId, hostId, partial)
   )
 
   ipcMain.removeHandler('agent:create-terminal')
-  ipcMain.handle('agent:create-terminal', (_, topicId: string, hostId: string, name?: string) => 
+  ipcMain.handle('agent:create-terminal', (_, topicId: string, hostId: string, name?: string) =>
     agentService.createTerminal(topicId, hostId, name)
   )
 
   ipcMain.removeHandler('agent:close-terminal')
-  ipcMain.handle('agent:close-terminal', (_, id: string) => 
-    agentService.closeTerminal(id)
-  )
+  ipcMain.handle('agent:close-terminal', (_, id: string) => agentService.closeTerminal(id))
 
   ipcMain.removeHandler('agent:rename-terminal')
-  ipcMain.handle('agent:rename-terminal', (_, id: string, name: string) => 
+  ipcMain.handle('agent:rename-terminal', (_, id: string, name: string) =>
     agentService.renameTerminal(id, name)
   )
 
   ipcMain.removeHandler('agent:toggle-terminal-pin')
-  ipcMain.handle('agent:toggle-terminal-pin', (_, id: string, isPinned: boolean) => 
+  ipcMain.handle('agent:toggle-terminal-pin', (_, id: string, isPinned: boolean) =>
     agentService.toggleTerminalPin(id, isPinned)
   )
 }

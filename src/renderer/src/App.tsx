@@ -13,41 +13,35 @@ import {
   Eye,
   EyeOff,
   Bot,
-  Send,
-  User,
-  Hash,
-  ChevronDown,
-  ChevronRight,
-  CheckCircle2,
   Zap,
   Clock,
-  ArrowRight,
   Monitor,
   Minus,
   Pencil,
   Pause,
   Play,
   Command,
-  ChevronLeft
+  ChevronLeft,
+  Folder
 } from 'lucide-react'
 import { TerminalView } from './components/TerminalView'
 import { TopicHub } from './components/TopicHub'
-import { TaskStepTimeline } from './components/TaskStepTimeline'
 import logo from './assets/logo.png'
 import { AuthModal } from './components/AuthModal'
-import { 
-  Host, 
-  Topic, 
-  Message, 
-  TerminalSession 
-} from '../../shared/types'
-import { MarkdownRenderer } from './components/MarkdownRenderer'
+import { Host, Topic, Message, TerminalSession } from '../../shared/types'
+import { AgentStepStream } from './components/AgentStepStream'
 import { SettingsPage } from './components/settings'
 import { ModelSelector } from './components/ModelSelector'
+import { ChatInput } from './components/chat/ChatInput'
+import { MessageBubble } from './components/chat/MessageBubble'
 import { useProvider } from './hooks/useProvider'
 import { usePermissions } from './hooks/usePermissions'
+import { useVisibilityRestore } from './hooks/useVisibilityRestore'
+import { CommandHistorySearch } from './components/terminal/CommandHistorySearch'
+import { FileBrowser } from './components/terminal/FileBrowser'
+import { TerminalTabBar } from './components/terminal/TerminalTabBar'
 
-type View = 'hosts' | 'terminal'| 'chat' | 'settings'
+type View = 'hosts' | 'terminal' | 'chat' | 'settings'
 
 interface CommandSuggestion {
   partial: string
@@ -311,12 +305,14 @@ function HostCard({
   host,
   onConnect,
   onDelete,
-  onAgentClick
+  onAgentClick,
+  onFileBrowser
 }: {
   host: Host
   onConnect: () => void
   onDelete: () => void
   onAgentClick: () => void
+  onFileBrowser: () => void
 }) {
   return (
     <div className="group relative bg-white rounded-3xl p-7 border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-gray-100 hover:-translate-y-1 transition-all duration-300 overflow-hidden">
@@ -365,6 +361,13 @@ function HostCard({
           className="flex-1 py-2.5 bg-gray-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-700 transition active:scale-95"
         >
           <TerminalIcon size={13} /> 终端
+        </button>
+        <button
+          onClick={onFileBrowser}
+          className="py-2.5 px-3 bg-gray-100 text-gray-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-gray-200 transition active:scale-95"
+          title="文件管理"
+        >
+          <Folder size={13} />
         </button>
         <button
           onClick={onAgentClick}
@@ -462,6 +465,7 @@ function ChatPanel({
   onToggleTerminalPin: (sessionId: string, isPinned: boolean) => Promise<void>
 }) {
   const [messages, setMessages] = useState<Message[]>([])
+  const [activeSteps, setActiveSteps] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState(prefill || '')
   const [showMentions, setShowMentions] = useState(false)
   const [mentionFilter, setMentionFilter] = useState('')
@@ -473,11 +477,13 @@ function ChatPanel({
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [commandPaletteValue, setCommandPaletteValue] = useState('')
   const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null)
-  const [commandSuggestions, setCommandSuggestions] = useState<
+  const [_commandSuggestions, setCommandSuggestions] = useState<
     Record<string, CommandSuggestion | null>
   >({})
+  const [messageQueue, setMessageQueue] = useState<{ id: string; content: string }[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const [isResizing, setIsResizing] = useState(false)
+  const { animationKey } = useVisibilityRestore()
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -519,16 +525,29 @@ function ChatPanel({
     const fetchHistory = async () => {
       const history = await window.api.getMessages(topic.id)
       setMessages(history)
+      setActiveSteps([])
     }
     fetchHistory()
 
     const unlistenStep = window.api.onAgentStep((step) => {
       if (step.topicId === topic.id) {
-        setMessages((prev) => {
-          const exists = prev.find((m) => m.id === step.id)
-          if (exists) return prev.map((m) => (m.id === step.id ? step : m))
-          return [...prev, step]
-        })
+        if (step.metadata?.agentStatus && !step.content) {
+          setActiveSteps((prev) => [...prev, step])
+        } else if (step.content && step.role === 'assistant') {
+          setActiveSteps([])
+          setMessages((prev) => {
+            const exists = prev.find((m) => m.id === step.id)
+            if (exists) return prev.map((m) => (m.id === step.id ? step : m))
+            return [...prev, step]
+          })
+        } else {
+          setActiveSteps((prev) => [...prev, step])
+          setMessages((prev) => {
+            const exists = prev.find((m) => m.id === step.id)
+            if (exists) return prev.map((m) => (m.id === step.id ? step : m))
+            return [...prev, step]
+          })
+        }
       }
     })
     return () => unlistenStep()
@@ -550,7 +569,6 @@ function ChatPanel({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setInputValue(value)
@@ -571,8 +589,15 @@ function ChatPanel({
   }
 
   const handleSend = async () => {
-    if (!inputValue.trim() || thinking) return
+    if (!inputValue.trim()) return
     const userContent = inputValue
+
+    if (thinking) {
+      setMessageQueue((prev) => [...prev, { id: Date.now().toString(), content: userContent }])
+      setInputValue('')
+      return
+    }
+
     const userMsg: Message = {
       id: Date.now().toString(),
       topicId: topic.id,
@@ -606,6 +631,37 @@ function ChatPanel({
     }
   }
 
+  useEffect(() => {
+    if (!thinking && messageQueue.length > 0) {
+      const next = messageQueue[0]
+      setMessageQueue((prev) => prev.slice(1))
+      const userMsg: Message = {
+        id: next.id,
+        topicId: topic.id,
+        role: 'user',
+        content: next.content,
+        timestamp: Date.now()
+      }
+      setMessages((prev) => [...prev, userMsg])
+      window.api
+        .sendMessage(topic.id, next.content)
+        .then((response) => {
+          setMessages((prev) => {
+            const index = prev.findIndex((m) => m.id === response.id)
+            if (index !== -1) {
+              const newMessages = [...prev]
+              newMessages[index] = response
+              return newMessages
+            }
+            return [...prev, response]
+          })
+        })
+        .catch((err) => {
+          console.error('Agent error:', err)
+        })
+    }
+  }, [thinking, messageQueue])
+
   const visibleSessions = agentSessions.filter((session) => session.visible)
   const focusedSession =
     visibleSessions.find((session) => session.id === focusedSessionId) || visibleSessions[0]
@@ -616,10 +672,7 @@ function ChatPanel({
       return
     }
 
-    if (
-      !focusedSessionId ||
-      !visibleSessions.some((session) => session.id === focusedSessionId)
-    ) {
+    if (!focusedSessionId || !visibleSessions.some((session) => session.id === focusedSessionId)) {
       setFocusedSessionId(visibleSessions[0].id)
     }
   }, [focusedSessionId, visibleSessions])
@@ -635,9 +688,12 @@ function ChatPanel({
     setFocusedSessionId(sessionId)
   }, [])
 
-  const handleSuggestionChange = useCallback((sessionId: string, suggestion: CommandSuggestion | null) => {
-    setCommandSuggestions((prev) => ({ ...prev, [sessionId]: suggestion }))
-  }, [])
+  const handleSuggestionChange = useCallback(
+    (sessionId: string, suggestion: CommandSuggestion | null) => {
+      setCommandSuggestions((prev) => ({ ...prev, [sessionId]: suggestion }))
+    },
+    []
+  )
 
   const handleSubmitCommandPalette = async () => {
     if (!commandPaletteValue.trim()) return
@@ -750,132 +806,21 @@ function ChatPanel({
           )}
 
           {messages.map((msg) => (
-            <div
+            <MessageBubble
               key={msg.id}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[80%] flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end gap-2.5`}
-              >
-                <div
-                  className={`w-8 h-8 rounded-2xl flex-shrink-0 flex items-center justify-center shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}
-                >
-                  {msg.role === 'user' ? <User size={14} /> : <Bot size={14} />}
-                </div>
-                <div className="flex flex-col gap-2 min-w-0">
-                  {msg.thought && (
-                    <div className="bg-amber-50 border border-amber-100 rounded-2xl overflow-hidden">
-                      <button
-                        onClick={() => setExpandedThoughts((p) => ({ ...p, [msg.id]: !p[msg.id] }))}
-                        className="flex items-center gap-2 px-4 py-2.5 text-[11px] font-black text-amber-600 uppercase tracking-widest hover:bg-amber-100/50 transition w-full"
-                      >
-                        {expandedThoughts[msg.id] ? (
-                          <ChevronDown size={11} />
-                        ) : (
-                          <ChevronRight size={11} />
-                        )}
-                        <Zap size={11} />
-                        助手推理
-                      </button>
-                      {expandedThoughts[msg.id] && (
-                        <div className="px-4 pb-3 text-xs text-amber-800/80 italic leading-relaxed border-t border-amber-100">
-                          {msg.thought}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {msg.metadata?.taskId && (
-                    <TaskStepTimeline taskId={msg.metadata.taskId} />
-                  )}
-
-                  {msg.toolCalls && msg.toolCalls.length > 0 && (
-                    <div className="space-y-1.5">
-                      {msg.toolCalls.map((tool) => {
-                        let cmd = ''
-                        try {
-                          cmd = JSON.parse(tool.function.arguments).command
-                        } catch {}
-                        return (
-                          <div
-                            key={tool.id}
-                            className="flex items-center gap-2.5 text-[11px] font-mono font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 px-3.5 py-2 rounded-xl"
-                          >
-                            <TerminalIcon size={11} className="text-emerald-500 flex-shrink-0" />
-                            <span className="truncate">{cmd || tool.function.name}</span>
-                            <CheckCircle2
-                              size={11}
-                              className="ml-auto text-emerald-500 flex-shrink-0"
-                            />
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  <div
-                    className={`px-5 py-3.5 text-sm leading-relaxed rounded-2xl shadow-sm ${
-                      msg.role === 'user'
-                        ? 'bg-blue-600 text-white rounded-br-sm'
-                        : msg.role === 'tool'
-                          ? 'bg-gray-900 border border-gray-800 rounded-bl-sm max-w-full overflow-x-auto shadow-xl'
-                          : 'bg-gray-50 border border-gray-100 text-gray-800 rounded-bl-sm'
-                    } ${msg.metadata?.isVerifying ? 'ring-2 ring-emerald-500/20 bg-emerald-50/10' : ''}`}
-                  >
-                    {msg.role === 'user' ? (
-                      <div className="whitespace-pre-wrap">{msg.content}</div>
-                    ) : msg.role === 'tool' ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                           <button
-                             onClick={() => setExpandedThoughts((p) => ({ ...p, [msg.id]: !p[msg.id] }))}
-                             className="flex items-center gap-2 text-[10px] font-black text-emerald-400/70 hover:text-emerald-400 transition uppercase tracking-widest no-drag"
-                           >
-                             {expandedThoughts[msg.id] ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                             终端原始输出
-                           </button>
-                           {msg.metadata?.isVerifying && (
-                             <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full uppercase tracking-widest">
-                                验证凭证
-                             </span>
-                           )}
-                        </div>
-                        {expandedThoughts[msg.id] && (
-                          <div className="mt-2 border-t border-gray-800 pt-2 break-all text-emerald-400 font-mono text-[11px] whitespace-pre-wrap">
-                            {msg.content}
-                          </div>
-                        )}
-                        {!expandedThoughts[msg.id] && (
-                          <div className="text-[10px] italic text-emerald-400/40">
-                             输出内容已提纯并同步至终端视图。点击查看原始文本...
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {msg.metadata?.memoryRecalled && (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 w-fit rounded-full text-[10px] font-black tracking-widest uppercase mb-1">
-                            <Zap size={10} /> 已调取经验记忆
-                          </div>
-                        )}
-                        {msg.metadata?.isVerifying && (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 w-fit rounded-full text-[10px] font-black tracking-widest uppercase mb-1">
-                            <CheckCircle2 size={10} /> 任务目标验证通过
-                          </div>
-                        )}
-                        <MarkdownRenderer content={msg.content} />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+              message={msg}
+              expandedThoughts={expandedThoughts}
+              onToggleThought={(msgId) =>
+                setExpandedThoughts((p) => ({ ...p, [msgId]: !p[msgId] }))
+              }
+            />
           ))}
 
-          {thinking && (
-            <div className="flex justify-start">
+          {thinking && activeSteps.length > 0 && <AgentStepStream steps={activeSteps} />}
+          {thinking && activeSteps.length === 0 && (
+            <div key={`thinking-${animationKey}`} className="flex justify-start">
               <div className="flex items-end gap-2.5">
-                <div className="w-8 h-8 rounded-2xl bg-gray-100 text-gray-500 flex items-center justify-center animate-pulse">
+                <div className="w-8 h-8 rounded-2xl bg-blue-50 text-blue-500 flex items-center justify-center animate-pulse">
                   <Bot size={14} />
                 </div>
                 <div className="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-sm px-5 py-4 flex items-center gap-2 shadow-sm">
@@ -885,11 +830,7 @@ function ChatPanel({
                     <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:300ms]"></span>
                   </div>
                   <span className="text-[10px] font-black text-blue-600/50 uppercase tracking-widest ml-1">
-                    {messages.length > 0 && messages[messages.length - 1].metadata?.agentStatus === 'verifying' 
-                      ? '正在验证目标...' 
-                      : messages.length > 0 && messages[messages.length - 1].metadata?.agentStatus === 'executing'
-                        ? '正在执行操作...'
-                        : '思考并分析中...'}
+                    思考并分析中...
                   </span>
                 </div>
               </div>
@@ -952,20 +893,38 @@ function ChatPanel({
                   </div>
                 </div>
               </div>
+              {visibleSessions.length > 0 && (
+                <TerminalTabBar
+                  tabs={visibleSessions.map((s) => ({
+                    id: s.id,
+                    hostAlias: s.hostAlias,
+                    name: s.name,
+                    active: s.id === focusedSessionId
+                  }))}
+                  onTabSelect={(id) => setFocusedSessionId(id)}
+                  onTabClose={(id) => onCloseAgentTerminal(id)}
+                  onNewTab={() => {
+                    const firstHost = topicHosts[0]
+                    if (firstHost) onCreateTerminal(firstHost.id)
+                  }}
+                />
+              )}
               <div className="flex-1 min-h-0 flex bg-gray-50/50">
                 {/* Stage Manager Rail */}
                 <div className="w-16 border-r border-gray-100 flex flex-col items-center py-4 gap-4 overflow-y-auto no-scrollbar bg-white/40">
-                  {agentSessions.map(session => (
-                    <div 
+                  {agentSessions.map((session) => (
+                    <div
                       key={session.id}
                       onClick={() => {
                         onToggleTerminalPin(session.id, true)
                         setFocusedSessionId(session.id)
                       }}
                       className={`relative w-10 h-10 rounded-xl border flex items-center justify-center cursor-pointer transition-all shadow-sm ${
-                        session.id === focusedSessionId 
-                        ? 'bg-blue-600 border-blue-600 text-white scale-110 z-10' 
-                        : (session.isPinned ? 'bg-white border-blue-200 text-blue-600' : 'bg-gray-100 border-gray-200 text-gray-400 opacity-60 hover:opacity-100 hover:scale-105')
+                        session.id === focusedSessionId
+                          ? 'bg-blue-600 border-blue-600 text-white scale-110 z-10'
+                          : session.isPinned
+                            ? 'bg-white border-blue-200 text-blue-600'
+                            : 'bg-gray-100 border-gray-200 text-gray-400 opacity-60 hover:opacity-100 hover:scale-105'
                       }`}
                       title={`${session.hostAlias} (${session.name || '终端'})`}
                     >
@@ -989,175 +948,175 @@ function ChatPanel({
                   {visibleSessions.slice(0, 4).map((session) => (
                     <div
                       key={session.id}
-                    onClick={() => setFocusedSessionId(session.id)}
-                    className={`bg-white rounded-2xl border overflow-hidden shadow-sm transition cursor-pointer flex flex-col ${focusedSession?.id === session.id ? 'border-blue-300 ring-2 ring-blue-100 shadow-blue-100/70' : 'border-gray-200 hover:border-gray-300'}`}
-                  >
-                    <div
-                      className={`px-3 py-2.5 text-white flex items-center justify-between gap-2 ${focusedSession?.id === session.id ? 'bg-slate-950' : 'bg-gray-900'}`}
+                      onClick={() => setFocusedSessionId(session.id)}
+                      className={`bg-white rounded-2xl border overflow-hidden shadow-sm transition cursor-pointer flex flex-col ${focusedSession?.id === session.id ? 'border-blue-300 ring-2 ring-blue-100 shadow-blue-100/70' : 'border-gray-200 hover:border-gray-300'}`}
                     >
-                      <div className="flex items-center gap-2 min-w-0 shrink">
-                        <TerminalIcon
-                          size={12}
-                          className={session.paused ? 'text-amber-300' : 'text-emerald-400'}
-                        />
-                        <span className="text-xs font-bold truncate">{session.hostAlias}</span>
-                        {focusedSession?.id === session.id && (
-                          <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/10 text-blue-100">
-                            当前
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <div className="flex bg-white/10 rounded-lg overflow-hidden border border-white/5 mr-1">
-                          <button
-                            onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
-                            className="px-2 py-1 text-[10px] font-black hover:bg-white/10 text-white/70 hover:text-white transition-colors"
-                            title="缩小 (Cmd -)"
-                          >
-                            -
-                          </button>
-                          <div className="w-[1px] bg-white/5" />
-                          <button
-                            onClick={() => setTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
-                            className="px-2 py-1 text-[10px] font-black hover:bg-white/10 text-white/70 hover:text-white transition-colors"
-                            title="放大 (Cmd +)"
-                          >
-                            +
-                          </button>
-                        </div>
-                        <button
-                          onClick={() =>
-                            onToggleAgentTerminalPaused(session.id, !session.paused)
-                          }
-                          className={`px-2 py-1 rounded-lg text-[11px] font-bold transition ${
-                            session.paused
-                              ? 'bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30'
-                              : 'bg-amber-500/20 text-amber-100 hover:bg-amber-500/30'
-                          }`}
-                          title={session.paused ? '恢复 Agent 控制' : '暂停 Agent，人工接管'}
-                        >
-                          {session.paused ? <Play size={12} /> : <Pause size={12} />}
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onCloseAgentTerminal(session.id)
-                          }}
-                          className="p-1 hover:bg-gray-700 rounded transition"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    </div>
-                    {session.commandStatus === 'running' && (
-                      <div className="px-3 py-2 bg-blue-50 border-b border-blue-100">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                            <span className="text-[11px] font-bold text-blue-700">
-                              {session.command}
-                            </span>
-                            <span className="text-[10px] text-blue-500">
-                              {session.commandStartTime
-                                ? `${Math.floor((Date.now() - session.commandStartTime) / 1000)}s`
-                                : ''}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-blue-600 font-medium">执行中...</span>
-                        </div>
-                      </div>
-                    )}
-                    {session.commandStatus === 'completed' && (
-                      <div className="px-3 py-2 bg-emerald-50 border-b border-emerald-100">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-                            <span className="text-[11px] font-bold text-emerald-700">
-                              {session.command}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-emerald-600">
-                            exit {session.commandExitCode} · {session.commandDurationMs}ms
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    {session.commandStatus === 'failed' && (
-                      <div className="px-3 py-2 bg-red-50 border-b border-red-100">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 bg-red-500 rounded-full" />
-                            <span className="text-[11px] font-bold text-red-700">
-                              {session.command}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-red-600">
-                            exit {session.commandExitCode} · {session.commandDurationMs}ms
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    <div className="flex-1 min-h-0 bg-[#1a1b1e] relative">
-                      <TerminalView
-                        id={session.id}
-                        topicId={topic.id}
-                        hostId={session.hostId}
-                        fontSize={terminalFontSize}
-                        commandAssistEnabled={commandAssistEnabled}
-                        onFocusSession={() => handleFocusSession(session.id)}
-                        onSuggestionChange={(suggestion) =>
-                          handleSuggestionChange(session.id, suggestion)
-                        }
-                        onClose={() => onCloseTerminal(session.id)}
-                        command={session.command}
-                        commandStatus={session.commandStatus}
-                      />
-                      {session.paused && (
-                        <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-amber-500/90 text-white text-[10px] font-black shadow-sm">
-                          人工接管中
-                        </div>
-                      )}
-                    </div>
-                    <div className="px-3 py-2.5 bg-gray-50 border-t border-gray-100">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${session.paused ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}
+                      <div
+                        className={`px-3 py-2.5 text-white flex items-center justify-between gap-2 ${focusedSession?.id === session.id ? 'bg-slate-950' : 'bg-gray-900'}`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 shrink">
+                          <TerminalIcon
+                            size={12}
+                            className={session.paused ? 'text-amber-300' : 'text-emerald-400'}
                           />
-                          <span
-                            className={`text-[10px] font-black truncate ${session.paused ? 'text-amber-600' : 'text-emerald-600'}`}
-                          >
-                            {session.paused ? '人工接管中' : 'Agent 正在控制'}
-                          </span>
+                          <span className="text-xs font-bold truncate">{session.hostAlias}</span>
+                          {focusedSession?.id === session.id && (
+                            <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/10 text-blue-100">
+                              当前
+                            </span>
+                          )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <div className="text-[9px] font-bold text-gray-400">
-                            {commandAssistEnabled ? 'Tab 补全' : 'Tab 禁用'}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <div className="flex bg-white/10 rounded-lg overflow-hidden border border-white/5 mr-1">
+                            <button
+                              onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
+                              className="px-2 py-1 text-[10px] font-black hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                              title="缩小 (Cmd -)"
+                            >
+                              -
+                            </button>
+                            <div className="w-[1px] bg-white/5" />
+                            <button
+                              onClick={() =>
+                                setTerminalFontSize(Math.min(terminalFontSize + 1, 30))
+                              }
+                              className="px-2 py-1 text-[10px] font-black hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                              title="放大 (Cmd +)"
+                            >
+                              +
+                            </button>
                           </div>
+                          <button
+                            onClick={() => onToggleAgentTerminalPaused(session.id, !session.paused)}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-bold transition ${
+                              session.paused
+                                ? 'bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30'
+                                : 'bg-amber-500/20 text-amber-100 hover:bg-amber-500/30'
+                            }`}
+                            title={session.paused ? '恢复 Agent 控制' : '暂停 Agent，人工接管'}
+                          >
+                            {session.paused ? <Play size={12} /> : <Pause size={12} />}
+                          </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              setFocusedSessionId(session.id)
-                              setCommandPaletteOpen(true)
+                              onCloseAgentTerminal(session.id)
                             }}
-                            className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md transition ${
-                              focusedSession?.id === session.id
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
-                            }`}
+                            className="p-1 hover:bg-gray-700 rounded transition"
                           >
-                            执行命令
+                            <X size={12} />
                           </button>
                         </div>
                       </div>
+                      {session.commandStatus === 'running' && (
+                        <div className="px-3 py-2 bg-blue-50 border-b border-blue-100">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                              <span className="text-[11px] font-bold text-blue-700">
+                                {session.command}
+                              </span>
+                              <span className="text-[10px] text-blue-500">
+                                {session.commandStartTime
+                                  ? `${Math.floor((Date.now() - session.commandStartTime) / 1000)}s`
+                                  : ''}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-blue-600 font-medium">执行中...</span>
+                          </div>
+                        </div>
+                      )}
+                      {session.commandStatus === 'completed' && (
+                        <div className="px-3 py-2 bg-emerald-50 border-b border-emerald-100">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                              <span className="text-[11px] font-bold text-emerald-700">
+                                {session.command}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-emerald-600">
+                              exit {session.commandExitCode} · {session.commandDurationMs}ms
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      {session.commandStatus === 'failed' && (
+                        <div className="px-3 py-2 bg-red-50 border-b border-red-100">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 bg-red-500 rounded-full" />
+                              <span className="text-[11px] font-bold text-red-700">
+                                {session.command}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-red-600">
+                              exit {session.commandExitCode} · {session.commandDurationMs}ms
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex-1 min-h-0 bg-[#1a1b1e] relative">
+                        <TerminalView
+                          id={session.id}
+                          topicId={topic.id}
+                          hostId={session.hostId}
+                          fontSize={terminalFontSize}
+                          commandAssistEnabled={commandAssistEnabled}
+                          onFocusSession={() => handleFocusSession(session.id)}
+                          onSuggestionChange={(suggestion) =>
+                            handleSuggestionChange(session.id, suggestion)
+                          }
+                          onClose={() => onCloseTerminal(session.id)}
+                          command={session.command}
+                          commandStatus={session.commandStatus}
+                        />
+                        {session.paused && (
+                          <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-amber-500/90 text-white text-[10px] font-black shadow-sm">
+                            人工接管中
+                          </div>
+                        )}
+                      </div>
+                      <div className="px-3 py-2.5 bg-gray-50 border-t border-gray-100">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${session.paused ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}
+                            />
+                            <span
+                              className={`text-[10px] font-black truncate ${session.paused ? 'text-amber-600' : 'text-emerald-600'}`}
+                            >
+                              {session.paused ? '人工接管中' : 'Agent 正在控制'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-[9px] font-bold text-gray-400">
+                              {commandAssistEnabled ? 'Tab 补全' : 'Tab 禁用'}
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setFocusedSessionId(session.id)
+                                setCommandPaletteOpen(true)
+                              }}
+                              className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md transition ${
+                                focusedSession?.id === session.id
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                              }`}
+                            >
+                              执行命令
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
 
         <TopicHub
           topicId={topic.id}
@@ -1174,53 +1133,18 @@ function ChatPanel({
         />
       </div>
 
-      <div className="px-7 py-5 border-t border-gray-100 relative">
-        {showMentions && filteredHosts.length > 0 && (
-          <div className="absolute bottom-full left-7 mb-2 w-72 bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden z-10">
-            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-              <Hash size={10} /> 提及主机
-            </div>
-            {filteredHosts.map((host) => (
-              <button
-                key={host.id}
-                className="w-full px-4 py-3 hover:bg-blue-50 flex items-center gap-3 text-left transition"
-                onClick={() => insertMention(host)}
-              >
-                <div className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500">
-                  <Server size={15} />
-                </div>
-                <div>
-                  <div className="text-sm font-bold text-gray-900">{host.alias}</div>
-                  <div className="text-[11px] text-gray-400 font-mono">
-                    {host.ip}:{host.port || 22}
-                  </div>
-                </div>
-                <ArrowRight size={14} className="ml-auto text-gray-300" />
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div
-          className={`flex items-center gap-3 bg-gray-50 border rounded-2xl px-3 py-2 transition-all ${thinking ? 'opacity-60' : 'focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-50 border-gray-200'}`}
-        >
-          <input
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            disabled={thinking}
-            placeholder={thinking ? '助手正在工作中...' : '给助手发送消息或输入 @ 来指定主机...'}
-            className="flex-1 bg-transparent px-2 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none disabled:cursor-not-allowed font-medium"
-          />
-          <button
-            onClick={handleSend}
-            disabled={!inputValue.trim() || thinking}
-            className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 transition-all active:scale-95 shadow-md shadow-blue-500/20"
-          >
-            <Send size={16} />
-          </button>
-        </div>
-      </div>
+      <ChatInput
+        inputValue={inputValue}
+        onInputChange={handleInputChange}
+        onSend={handleSend}
+        thinking={!!thinking}
+        messageQueue={messageQueue}
+        onRemoveFromQueue={(id) => setMessageQueue((prev) => prev.filter((m) => m.id !== id))}
+        onClearQueue={() => setMessageQueue([])}
+        showMentions={showMentions}
+        filteredHosts={filteredHosts}
+        onInsertMention={insertMention}
+      />
 
       {commandPaletteOpen && (
         <CommandPalette
@@ -1233,7 +1157,7 @@ function ChatPanel({
       )}
 
       {isResizing && (
-        <div 
+        <div
           className="fixed inset-0 z-[100] cursor-col-resize select-none pointer-events-auto bg-transparent"
           onMouseMove={(e) => {
             const newWidth = window.innerWidth - e.clientX
@@ -1370,11 +1294,11 @@ export default function App() {
   const [thinkingTopics, setThinkingTopics] = useState<Set<string>>(new Set())
   const [showAddHost, setShowAddHost] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [pendingAuth, setPendingAuth] = useState<{ 
-    requestId: string; 
-    command: string;
-    riskLevel?: string;
-    reason?: string;
+  const [pendingAuth, setPendingAuth] = useState<{
+    requestId: string
+    command: string
+    riskLevel?: string
+    reason?: string
   } | null>(null)
   const [prefilledText, setPrefilledText] = useState('')
   const [agentSessions, setAgentSessions] = useState<TerminalSession[]>([])
@@ -1386,6 +1310,9 @@ export default function App() {
   const [terminalFontSize, setTerminalFontSize] = useState(13)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [terminalWidth, setTerminalWidth] = useState(800)
+  const [commandHistoryOpen, setCommandHistoryOpen] = useState(false)
+  const [fileBrowserHostId, setFileBrowserHostId] = useState<string | null>(null)
+  const [fileBrowserHostAlias, setFileBrowserHostAlias] = useState('')
 
   useEffect(() => {
     const unlisten = window.api.onDebugLog((entry: DebugEntry) => {
@@ -1399,14 +1326,17 @@ export default function App() {
       }
     }
 
-    window.addEventListener('keydown', handleDebugKey)
-
     const handleZoomKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey) {
         if (e.key === '=' || e.key === '+' || e.code === 'Equal' || e.code === 'NumpadAdd') {
           e.preventDefault()
           setTerminalFontSize((s) => Math.min(s + 1, 30))
-        } else if (e.key === '-' || e.key === '_' || e.code === 'Minus' || e.code === 'NumpadSubtract') {
+        } else if (
+          e.key === '-' ||
+          e.key === '_' ||
+          e.code === 'Minus' ||
+          e.code === 'NumpadSubtract'
+        ) {
           e.preventDefault()
           setTerminalFontSize((s) => Math.max(s - 1, 6))
         } else if (e.key === '0' || e.code === 'Digit0' || e.code === 'Numpad0') {
@@ -1416,12 +1346,22 @@ export default function App() {
       }
     }
 
+    const handleCommandHistoryKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'r') {
+        e.preventDefault()
+        setCommandHistoryOpen(true)
+      }
+    }
+
+    window.addEventListener('keydown', handleDebugKey)
     window.addEventListener('keydown', handleZoomKey)
+    window.addEventListener('keydown', handleCommandHistoryKey)
 
     return () => {
       if (unlisten) unlisten()
       window.removeEventListener('keydown', handleDebugKey)
       window.removeEventListener('keydown', handleZoomKey)
+      window.removeEventListener('keydown', handleCommandHistoryKey)
     }
   }, [])
 
@@ -1453,9 +1393,7 @@ export default function App() {
         const exists = prev.find((s) => s.id === data.id)
         if (exists) {
           return prev.map((s) =>
-            s.id === data.id
-              ? { ...s, ...data, visible: true, paused: s.paused ?? false }
-              : s
+            s.id === data.id ? { ...s, ...data, visible: true, paused: s.paused ?? false } : s
           )
         }
         return [...prev, { ...data, visible: true, paused: false }]
@@ -1463,9 +1401,7 @@ export default function App() {
     })
 
     const unlistenTerminalHide = window.api.onAgentTerminalHide(({ id }) => {
-      setAgentSessions((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, visible: false } : s))
-      )
+      setAgentSessions((prev) => prev.map((s) => (s.id === id ? { ...s, visible: false } : s)))
     })
 
     const unlistenSessionCreated = window.api.onAgentSessionCreated((data) => {
@@ -1582,17 +1518,17 @@ export default function App() {
 
   const handleCloseTerminal = async (id: string) => {
     await window.api.closeAgentTerminal(id)
-    setAgentSessions(prev => prev.filter(s => s.id !== id))
+    setAgentSessions((prev) => prev.filter((s) => s.id !== id))
   }
 
   const handleRenameTerminal = async (id: string, name: string) => {
     await window.api.renameAgentTerminal(id, name)
-    setAgentSessions(prev => prev.map(s => s.id === id ? { ...s, name } : s))
+    setAgentSessions((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)))
   }
 
   const handleToggleTerminalPin = async (id: string, isPinned: boolean) => {
     await window.api.toggleTerminalPin(id, isPinned)
-    setAgentSessions(prev => prev.map(s => s.id === id ? { ...s, isPinned } : s))
+    setAgentSessions((prev) => prev.map((s) => (s.id === id ? { ...s, isPinned } : s)))
   }
 
   const handleToggleAgentTerminalPaused = async (id: string, paused: boolean) => {
@@ -1646,9 +1582,9 @@ export default function App() {
     }
   }
 
-  const handleResolveAuth = async (approved: boolean) => {
+  const handleResolveAuth = async (approved: boolean, alwaysAllow = false) => {
     if (pendingAuth) {
-      await window.api.sendAgentAuthResponse(pendingAuth.requestId, approved)
+      await window.api.sendAgentAuthResponse(pendingAuth.requestId, approved, alwaysAllow)
       setPendingAuth(null)
     }
   }
@@ -1662,7 +1598,9 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white text-gray-900 select-none">
-      <aside className={`${sidebarCollapsed ? 'w-20' : 'w-72'} bg-gray-50/80 border-r border-gray-100 flex flex-col no-drag transition-all duration-300 relative group`}>
+      <aside
+        className={`${sidebarCollapsed ? 'w-20' : 'w-72'} bg-gray-50/80 border-r border-gray-100 flex flex-col no-drag transition-all duration-300 relative group`}
+      >
         <button
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
           className={`absolute -right-3 top-12 w-6 h-6 bg-white border border-gray-100 rounded-full flex items-center justify-center text-gray-400 hover:text-blue-600 shadow-sm transition-all z-10 opacity-0 group-hover:opacity-100 ${sidebarCollapsed ? 'rotate-180' : ''}`}
@@ -1688,7 +1626,7 @@ export default function App() {
             active={activeView === 'hosts'}
             onClick={() => setActiveView('hosts')}
             icon={<LayoutGrid size={17} />}
-            label={sidebarCollapsed ? "" : "主机"}
+            label={sidebarCollapsed ? '' : '主机'}
             count={sidebarCollapsed ? undefined : hosts.length}
             tooltip="主机列表"
           />
@@ -1699,7 +1637,7 @@ export default function App() {
               if (!selectedTopic && topics.length > 0) setSelectedTopic(topics[0])
             }}
             icon={<MessageSquare size={17} />}
-            label={sidebarCollapsed ? "" : "Agent助手"}
+            label={sidebarCollapsed ? '' : 'Agent助手'}
             count={sidebarCollapsed ? undefined : topics.length}
             tooltip="Agent助手"
           />
@@ -1707,14 +1645,16 @@ export default function App() {
             active={activeView === 'settings'}
             onClick={() => setActiveView('settings')}
             icon={<Settings size={17} />}
-            label={sidebarCollapsed ? "" : "设置"}
+            label={sidebarCollapsed ? '' : '设置'}
             tooltip="设置"
           />
         </nav>
 
         {activeView === 'chat' && (
           <div className="flex-1 overflow-y-auto px-4 mt-6 scrollbar-hide">
-            <div className={`flex items-center justify-between mb-3 px-2 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+            <div
+              className={`flex items-center justify-between mb-3 px-2 ${sidebarCollapsed ? 'justify-center' : ''}`}
+            >
               {!sidebarCollapsed && (
                 <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
                   会话记录
@@ -1908,6 +1848,10 @@ export default function App() {
                       }}
                       onAgentClick={() => handleCreateTopic(`@${host.alias} `)}
                       onDelete={() => handleDeleteHost(host.id)}
+                      onFileBrowser={() => {
+                        setFileBrowserHostId(host.id)
+                        setFileBrowserHostAlias(host.alias)
+                      }}
                     />
                   ))}
                 </div>
@@ -1917,62 +1861,86 @@ export default function App() {
         )}
 
         {activeView === 'terminal' && selectedHost && terminalSessionId && (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="h-11 bg-gray-900 text-white px-5 flex items-center justify-between border-b border-gray-800 flex-shrink-0 drag">
-              <div className="flex items-center gap-3 no-drag">
-                <div className="flex gap-1.5">
-                  <div className="w-3 h-3 bg-red-500 rounded-full" />
-                  <div className="w-3 h-3 bg-yellow-400 rounded-full" />
-                  <div className="w-3 h-3 bg-emerald-400 rounded-full" />
+          <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="h-11 bg-gray-900 text-white px-5 flex items-center justify-between border-b border-gray-800 flex-shrink-0 drag">
+                <div className="flex items-center gap-3 no-drag">
+                  <div className="flex gap-1.5">
+                    <div className="w-3 h-3 bg-red-500 rounded-full" />
+                    <div className="w-3 h-3 bg-yellow-400 rounded-full" />
+                    <div className="w-3 h-3 bg-emerald-400 rounded-full" />
+                  </div>
+                  <div className="w-px h-4 bg-gray-700" />
+                  <TerminalIcon size={13} className="text-blue-400" />
+                  <span className="text-xs font-bold font-mono text-gray-300">
+                    {selectedHost.alias}
+                  </span>
+                  <span className="text-[10px] text-gray-600 font-mono">
+                    {selectedHost.username}@{selectedHost.ip}:{selectedHost.port || 22}
+                  </span>
                 </div>
-                <div className="w-px h-4 bg-gray-700" />
-                <TerminalIcon size={13} className="text-blue-400" />
-                <span className="text-xs font-bold font-mono text-gray-300">
-                  {selectedHost.alias}
-                </span>
-                <span className="text-[10px] text-gray-600 font-mono">
-                  {selectedHost.username}@{selectedHost.ip}:{selectedHost.port || 22}
-                </span>
+                <div className="flex items-center gap-2 no-drag">
+                  <div className="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 mr-1">
+                    <button
+                      onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
+                      className="px-3 py-1.5 text-xs font-black hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                      title="缩小 (Cmd -)"
+                    >
+                      -
+                    </button>
+                    <div className="w-[1px] bg-gray-700" />
+                    <button
+                      onClick={() => setTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
+                      className="px-3 py-1.5 text-xs font-black hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                      title="放大 (Cmd +)"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setFileBrowserHostId(selectedHost.id)
+                      setFileBrowserHostAlias(selectedHost.alias)
+                    }}
+                    className="text-[11px] bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-blue-400 px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
+                    title="文件管理"
+                  >
+                    <Folder size={12} /> 文件
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveView('hosts')
+                      setTerminalSessionId(null)
+                    }}
+                    className="text-[11px] bg-gray-800 hover:bg-red-900/60 text-gray-500 hover:text-red-400 px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
+                  >
+                    <X size={12} /> 断开连接
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2 no-drag">
-                <div className="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 mr-1">
-                  <button
-                    onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
-                    className="px-3 py-1.5 text-xs font-black hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
-                    title="缩小 (Cmd -)"
-                  >
-                    -
-                  </button>
-                  <div className="w-[1px] bg-gray-700" />
-                  <button
-                    onClick={() => setTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
-                    className="px-3 py-1.5 text-xs font-black hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
-                    title="放大 (Cmd +)"
-                  >
-                    +
-                  </button>
-                </div>
-                <button
-                  onClick={() => {
+              <div className="flex-1 bg-[#1a1b1e]">
+                <TerminalView
+                  id={terminalSessionId || ''}
+                  fontSize={terminalFontSize}
+                  onClose={() => {
                     setActiveView('hosts')
                     setTerminalSessionId(null)
                   }}
-                  className="text-[11px] bg-gray-800 hover:bg-red-900/60 text-gray-500 hover:text-red-400 px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
-                >
-                  <X size={12} /> 断开连接
-                </button>
+                />
               </div>
             </div>
-            <div className="flex-1 bg-[#1a1b1e]">
-              <TerminalView
-                id={terminalSessionId || ''}
-                fontSize={terminalFontSize}
-                onClose={() => {
-                  setActiveView('hosts')
-                  setTerminalSessionId(null)
-                }}
-              />
-            </div>
+            {fileBrowserHostId && (
+              <div className="w-96 border-l border-gray-800 flex-shrink-0">
+                <FileBrowser
+                  hostId={fileBrowserHostId}
+                  hostAlias={fileBrowserHostAlias}
+                  onClose={() => {
+                    setFileBrowserHostId(null)
+                    setFileBrowserHostAlias('')
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -2042,12 +2010,25 @@ export default function App() {
         />
       )}
 
+      {commandHistoryOpen && (
+        <CommandHistorySearch
+          onSelect={(cmd) => {
+            if (activeView === 'terminal' && terminalSessionId) {
+              window.api.sendTerminalData(terminalSessionId, cmd + '\n')
+            }
+          }}
+          onClose={() => setCommandHistoryOpen(false)}
+        />
+      )}
+
       {showDebug && (
         <div className="fixed bottom-4 right-4 z-[9999] w-[400px] max-h-[500px] bg-gray-900 border border-gray-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
           <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between bg-black/20">
             <div className="flex items-center gap-2">
               <Zap size={14} className="text-blue-400" />
-              <h3 className="text-xs font-black text-white uppercase tracking-widest">系统调试信息</h3>
+              <h3 className="text-xs font-black text-white uppercase tracking-widest">
+                系统调试信息
+              </h3>
             </div>
             <button
               onClick={() => setShowDebug(false)}
@@ -2063,14 +2044,22 @@ export default function App() {
             {debugLogs.map((log, i) => (
               <div key={i} className="flex flex-col gap-1 border-l-2 border-gray-800 pl-3 py-1">
                 <div className="flex items-center gap-2">
-                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-black ${
-                    log.level === 'ERROR' ? 'bg-red-500/20 text-red-400' :
-                    log.level === 'WARN' ? 'bg-amber-500/20 text-amber-400' :
-                    log.level === 'DEBUG' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'
-                  }`}>
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[8px] font-black ${
+                      log.level === 'ERROR'
+                        ? 'bg-red-500/20 text-red-400'
+                        : log.level === 'WARN'
+                          ? 'bg-amber-500/20 text-amber-400'
+                          : log.level === 'DEBUG'
+                            ? 'bg-blue-500/20 text-blue-400'
+                            : 'bg-gray-500/20 text-gray-400'
+                    }`}
+                  >
                     {log.level}
                   </span>
-                  <span className="text-gray-500">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                  <span className="text-gray-500">
+                    {new Date(log.timestamp).toLocaleTimeString()}
+                  </span>
                   <span className="text-blue-500/70">[{log.category}]</span>
                 </div>
                 <div className="text-gray-300 leading-relaxed break-words">{log.message}</div>

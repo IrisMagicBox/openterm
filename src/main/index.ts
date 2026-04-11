@@ -14,10 +14,15 @@ import {
   taskDB,
   taskStepDB,
   approvalDB,
-  artifactDB
+  artifactDB,
+  terminalIODB
 } from './db'
 import { setupSSHHandlers, setAgentService, createAgentSession } from './ssh'
 import { setupAgentHandlers, agentService, setCreateAgentSession } from './agent'
+import { registerLocalTerminalIPC } from './local-terminal'
+import { registerSFTPIPC } from './sftp'
+import { registerPortForwardIPC } from './port-forward'
+import { recoverSessions, getRecoverableSessions } from './session-recovery'
 import { logger } from './logger'
 import { buildProviderChatUrl } from './ai'
 import type { Provider } from '../shared/types'
@@ -48,6 +53,29 @@ function createWindow(): void {
     logger.setWebContents(mainWindow.webContents)
     agentService.setWebContents(mainWindow.webContents)
     logger.info('System', 'Main window shown, logger initialized')
+
+    recoverSessions(mainWindow.webContents).then((results) => {
+      if (results.length > 0) {
+        const recovered = results.filter((r) => r.recovered)
+        const failed = results.filter((r) => !r.recovered)
+        logger.info(
+          'SessionRecovery',
+          `Recovered ${recovered.length}/${results.length} sessions, ${failed.length} failed`
+        )
+        mainWindow.webContents.send('session:recovered', {
+          recovered: recovered.map((r) => ({
+            originalId: r.originalSession.id,
+            newSessionId: r.newSessionId,
+            hostAlias: r.originalSession.hostAlias,
+            topicId: r.originalSession.topicId
+          })),
+          failed: failed.map((r) => ({
+            hostAlias: r.originalSession.hostAlias,
+            topicId: r.originalSession.topicId
+          }))
+        })
+      }
+    })
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -92,6 +120,19 @@ app.whenReady().then(() => {
   // Register Global IPC Handlers (Once)
   setupSSHHandlers()
   setupAgentHandlers()
+  registerLocalTerminalIPC()
+  registerSFTPIPC()
+  registerPortForwardIPC()
+
+  ipcMain.removeHandler('search-commands')
+  ipcMain.handle('search-commands', (_, query: string, limit?: number) => {
+    return terminalIODB.searchCommandInputs(query, limit)
+  })
+
+  ipcMain.removeHandler('session:get-recoverable')
+  ipcMain.handle('session:get-recoverable', () => {
+    return getRecoverableSessions()
+  })
 
   // Link services to avoid circular dependencies
   setAgentService(agentService)
@@ -121,7 +162,9 @@ app.whenReady().then(() => {
   ipcMain.removeHandler('create-topic')
   ipcMain.handle('create-topic', (_, title, hostIds) => topicDB.createTopic(title, hostIds))
   ipcMain.removeHandler('update-topic-title')
-  ipcMain.handle('update-topic-title', (_, topicId, title) => topicDB.updateTopicTitle(topicId, title))
+  ipcMain.handle('update-topic-title', (_, topicId, title) =>
+    topicDB.updateTopicTitle(topicId, title)
+  )
   ipcMain.removeHandler('delete-topic')
   ipcMain.handle('delete-topic', (_, topicId) => topicDB.deleteTopic(topicId))
   ipcMain.removeHandler('update-topic-hosts')
@@ -224,7 +267,10 @@ app.whenReady().then(() => {
         })
         const data: any = await response.json()
         if (data.error) return { ok: false, message: data.error.message || 'Gemini API Error' }
-        return { ok: response.ok, message: response.ok ? 'Connection successful.' : `HTTP ${response.status}` }
+        return {
+          ok: response.ok,
+          message: response.ok ? 'Connection successful.' : `HTTP ${response.status}`
+        }
       } else {
         // OpenAI format (default)
         if (provider.apiKey) {
@@ -264,7 +310,10 @@ app.whenReady().then(() => {
       } catch (error: any) {
         clearTimeout(timeoutId)
         if (error.name === 'AbortError') {
-          return { ok: false, message: '连接超时（20秒）。这可能是因为 API 地址不通或模型响应过慢。' }
+          return {
+            ok: false,
+            message: '连接超时（20秒）。这可能是因为 API 地址不通或模型响应过慢。'
+          }
         }
         throw error
       }

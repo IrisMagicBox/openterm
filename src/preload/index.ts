@@ -43,6 +43,15 @@ const api = {
     ipcRenderer.send('ssh:input', id, data, topicId),
   resizeSSH: (id: string, cols: number, rows: number) =>
     ipcRenderer.send('ssh:resize', id, cols, rows),
+
+  // Local Terminal APIs
+  connectLocal: (topicId: string) => ipcRenderer.invoke('local:connect', topicId),
+  sendLocalInput: (id: string, data: string) => ipcRenderer.send('local:input', id, data),
+  resizeLocal: (id: string, cols: number, rows: number) =>
+    ipcRenderer.send('local:resize', id, cols, rows),
+  getLocalBuffer: (id: string) => ipcRenderer.invoke('local:get-buffer', id),
+  attachLocal: (id: string) => ipcRenderer.send('local:attach', id),
+  closeLocal: (id: string) => ipcRenderer.invoke('local:close', id),
   onSSHData: (id: string, callback: (data: string) => void) => {
     const listener = (_event, data: string) => callback(data)
     ipcRenderer.on(`ssh:data:${id}`, listener)
@@ -67,36 +76,35 @@ const api = {
   onAgentAuthRequest: (
     callback: (requestId: string, command: string, riskLevel?: string, reason?: string) => void
   ) => {
-    const listener = (_event, requestId: string, command: string, riskLevel?: string, reason?: string) =>
-      callback(requestId, command, riskLevel, reason)
+    const listener = (
+      _event,
+      requestId: string,
+      command: string,
+      riskLevel?: string,
+      reason?: string
+    ) => callback(requestId, command, riskLevel, reason)
     ipcRenderer.on('agent:auth-request', listener)
     return () => ipcRenderer.removeListener('agent:auth-request', listener)
   },
-  sendAgentAuthResponse: (requestId: string, approved: boolean) =>
-    ipcRenderer.invoke('agent:auth-response', requestId, approved),
+  sendAgentAuthResponse: (requestId: string, approved: boolean, alwaysAllow?: boolean) =>
+    ipcRenderer.invoke('agent:auth-response', requestId, approved, alwaysAllow),
   onTopicUpdated: (callback: (data: { topicId: string; title: string }) => void) => {
     const listener = (_event, data: any) => callback(data)
     ipcRenderer.on('topic:updated', listener)
     return () => ipcRenderer.removeListener('topic:updated', listener)
   },
-  onAgentThinking: (
-    callback: (data: { topicId: string; thinking: boolean }) => void
-  ) => {
+  onAgentThinking: (callback: (data: { topicId: string; thinking: boolean }) => void) => {
     const listener = (_event, data: any) => callback(data)
     ipcRenderer.on('agent:thinking', listener)
     return () => ipcRenderer.removeListener('agent:thinking', listener)
   },
-  onAgentStep: (
-    callback: (step: any) => void
-  ) => {
+  onAgentStep: (callback: (step: any) => void) => {
     const listener = (_event, step: any) => callback(step)
     ipcRenderer.on('agent:step', listener)
     return () => ipcRenderer.removeListener('agent:step', listener)
   },
 
-  onAgentTerminalShow: (
-    callback: (data: any) => void
-  ) => {
+  onAgentTerminalShow: (callback: (data: any) => void) => {
     const listener = (_event, data: any) => callback(data)
     ipcRenderer.on('agent:terminal-show', listener)
     return () => ipcRenderer.removeListener('agent:terminal-show', listener)
@@ -106,27 +114,19 @@ const api = {
     ipcRenderer.on('agent:terminal-hide', listener)
     return () => ipcRenderer.removeListener('agent:terminal-hide', listener)
   },
-  onAgentSessionCreated: (
-    callback: (data: any) => void
-  ) => {
+  onAgentSessionCreated: (callback: (data: any) => void) => {
     const listener = (_event, data: any) => callback(data)
     ipcRenderer.on('agent:session-created', listener)
     return () => ipcRenderer.removeListener('agent:session-created', listener)
   },
 
-  onTerminalCommandStart: (
-    id: string,
-    callback: (data: any) => void
-  ) => {
+  onTerminalCommandStart: (id: string, callback: (data: any) => void) => {
     const listener = (_event, data: any) => callback(data)
     ipcRenderer.on(`terminal:command-start:${id}`, listener)
     return () => ipcRenderer.removeListener(`terminal:command-start:${id}`, listener)
   },
 
-  onTerminalCommandEnd: (
-    id: string,
-    callback: (data: any) => void
-  ) => {
+  onTerminalCommandEnd: (id: string, callback: (data: any) => void) => {
     const listener = (_event, data: any) => callback(data)
     ipcRenderer.on(`terminal:command-end:${id}`, listener)
     return () => ipcRenderer.removeListener(`terminal:command-end:${id}`, listener)
@@ -161,8 +161,7 @@ const api = {
     ipcRenderer.invoke('agent:toggle-terminal-pin', id, isPinned),
 
   getModelSettings: () => ipcRenderer.invoke('get-model-settings'),
-  saveModelSettings: (settings: any) =>
-    ipcRenderer.invoke('save-model-settings', settings),
+  saveModelSettings: (settings: any) => ipcRenderer.invoke('save-model-settings', settings),
 
   getProviders: () => ipcRenderer.invoke('get-providers'),
   getProvider: (id: string) => ipcRenderer.invoke('get-provider', id),
@@ -182,6 +181,32 @@ const api = {
     const listener = (_event, entry: any) => callback(entry)
     ipcRenderer.on('debug:log', listener)
     return () => ipcRenderer.removeListener('debug:log', listener)
+  },
+
+  sftpConnect: (hostId: string) => ipcRenderer.invoke('sftp:connect', hostId),
+  sftpList: (sessionId: string, path: string) => ipcRenderer.invoke('sftp:list', sessionId, path),
+  sftpUpload: (sessionId: string, localPath: string, remotePath: string) =>
+    ipcRenderer.invoke('sftp:upload', sessionId, localPath, remotePath),
+  sftpDownload: (sessionId: string, remotePath: string, localPath: string) =>
+    ipcRenderer.invoke('sftp:download', sessionId, remotePath, localPath),
+  sftpMkdir: (sessionId: string, path: string) => ipcRenderer.invoke('sftp:mkdir', sessionId, path),
+  sftpDelete: (sessionId: string, path: string) =>
+    ipcRenderer.invoke('sftp:delete', sessionId, path),
+  sftpClose: (sessionId: string) => ipcRenderer.invoke('sftp:close', sessionId),
+
+  searchCommands: (query: string, limit?: number) =>
+    ipcRenderer.invoke('search-commands', query, limit),
+
+  pfCreate: (hostId: string, localPort: number, remoteHost: string, remotePort: number) =>
+    ipcRenderer.invoke('pf:create', hostId, localPort, remoteHost, remotePort),
+  pfClose: (tunnelId: string) => ipcRenderer.invoke('pf:close', tunnelId),
+  pfList: (hostId?: string) => ipcRenderer.invoke('pf:list', hostId),
+
+  getRecoverableSessions: () => ipcRenderer.invoke('session:get-recoverable'),
+  onSessionRecovered: (callback: (data: any) => void) => {
+    const listener = (_event: any, data: any) => callback(data)
+    ipcRenderer.on('session:recovered', listener)
+    return () => ipcRenderer.removeListener('session:recovered', listener)
   }
 }
 

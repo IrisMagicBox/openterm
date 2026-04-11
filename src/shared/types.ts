@@ -298,6 +298,19 @@ export type SystemProviderId =
   | 'copilot'
   | 'coreshub'
 
+export type TrustLevel = 'untrusted' | 'familiar' | 'trusted'
+
+export interface CommandPattern {
+  id: string
+  hostId: string
+  commandPattern: string
+  approvalCount: number
+  rejectionCount: number
+  trustLevel: TrustLevel
+  lastSeen: number
+  createdAt: number
+}
+
 export type MemoryType = 'habit' | 'host_fact' | 'experience'
 
 export interface MemoryEntry {

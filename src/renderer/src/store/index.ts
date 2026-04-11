@@ -1,9 +1,13 @@
 import { configureStore } from '@reduxjs/toolkit'
 import llmReducer from './llm'
+import agentReducer from './agent'
+import terminalReducer from './terminal'
 
 export const store = configureStore({
   reducer: {
-    llm: llmReducer
+    llm: llmReducer,
+    agent: agentReducer,
+    terminal: terminalReducer
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

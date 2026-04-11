@@ -13,6 +13,8 @@ interface TerminalViewProps {
   onFocusSession?: () => void
   onSuggestionChange?: (suggestion: { partial: string; completion: string } | null) => void
   fontSize?: number
+  command?: string
+  commandStatus?: string
 }
 
 export function TerminalView({
@@ -123,7 +125,13 @@ export function TerminalView({
       term.focus()
       onFocusSessionRef.current?.()
 
-      if (commandAssistEnabledRef.current && data === '\t' && topicId && hostId && !isCompletingRef.current) {
+      if (
+        commandAssistEnabledRef.current &&
+        data === '\t' &&
+        topicId &&
+        hostId &&
+        !isCompletingRef.current
+      ) {
         const partialCommand = currentLineRef.current.trim()
         if (partialCommand.length > 0) {
           if (

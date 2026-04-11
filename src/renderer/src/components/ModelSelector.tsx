@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { ChevronDown, Cpu, Check } from 'lucide-react'
+import { ChevronDown, Cpu } from 'lucide-react'
 import type { Provider, Model } from '../../../shared/types'
 
 interface ModelSelectorProps {
@@ -76,7 +76,10 @@ export function ModelSelector({
               ? `${selectedProvider.name} (默认)`
               : '选择模型'}
         </span>
-        <ChevronDown size={14} className={`text-gray-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          size={14}
+          className={`text-gray-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}
+        />
       </button>
 
       {isOpen && (
@@ -104,18 +107,22 @@ export function ModelSelector({
                               : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 border border-transparent hover:border-gray-100'
                           }`}
                         >
-                          <div className={`w-2 h-2 rounded-full ${
-                             selectedProviderId === provider.id && selectedModelId === model.id
-                             ? 'bg-white'
-                             : 'bg-transparent'
-                          }`} />
+                          <div
+                            className={`w-2 h-2 rounded-full ${
+                              selectedProviderId === provider.id && selectedModelId === model.id
+                                ? 'bg-white'
+                                : 'bg-transparent'
+                            }`}
+                          />
                           <span className="truncate flex-1 font-medium">{model.name}</span>
                           {model.group && (
-                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${
-                              selectedProviderId === provider.id && selectedModelId === model.id
-                              ? 'bg-white/20 text-white'
-                              : 'bg-gray-100 text-gray-400'
-                            }`}>
+                            <span
+                              className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                                selectedProviderId === provider.id && selectedModelId === model.id
+                                  ? 'bg-white/20 text-white'
+                                  : 'bg-gray-100 text-gray-400'
+                              }`}
+                            >
                               {model.group}
                             </span>
                           )}
@@ -130,12 +137,16 @@ export function ModelSelector({
                             : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 border border-transparent hover:border-gray-100'
                         }`}
                       >
-                        <div className={`w-2 h-2 rounded-full ${
-                           selectedProviderId === provider.id && selectedModelId === null
-                           ? 'bg-white'
-                           : 'bg-transparent'
-                        }`} />
-                        <span className="text-inherit opacity-70 italic flex-1 font-medium">默认模型环境</span>
+                        <div
+                          className={`w-2 h-2 rounded-full ${
+                            selectedProviderId === provider.id && selectedModelId === null
+                              ? 'bg-white'
+                              : 'bg-transparent'
+                          }`}
+                        />
+                        <span className="text-inherit opacity-70 italic flex-1 font-medium">
+                          默认模型环境
+                        </span>
                       </button>
                     )}
                   </div>

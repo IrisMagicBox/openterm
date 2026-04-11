@@ -79,24 +79,22 @@ declare global {
         hostId: string,
         partialCommand: string
       ) => Promise<string>
-      getAgentSessions: (
-        topicId: string
-      ) => Promise<TerminalSession[]>
-      
+      getAgentSessions: (topicId: string) => Promise<TerminalSession[]>
+
       onAgentAuthRequest: (
         callback: (requestId: string, command: string, riskLevel?: string, reason?: string) => void
       ) => () => void
-      sendAgentAuthResponse: (requestId: string, approved: boolean) => Promise<void>
+      sendAgentAuthResponse: (
+        requestId: string,
+        approved: boolean,
+        alwaysAllow?: boolean
+      ) => Promise<void>
       onTopicUpdated: (callback: (data: { topicId: string; title: string }) => void) => () => void
       onAgentStep: (callback: (step: Message) => void) => () => void
 
-      onAgentTerminalShow: (
-        callback: (data: TerminalSession) => void
-      ) => () => void
+      onAgentTerminalShow: (callback: (data: TerminalSession) => void) => () => void
       onAgentTerminalHide: (callback: (data: { id: string }) => void) => () => void
-      onAgentSessionCreated: (
-        callback: (data: TerminalSession) => void
-      ) => () => void
+      onAgentSessionCreated: (callback: (data: TerminalSession) => void) => () => void
 
       onTerminalCommandStart: (
         id: string,
@@ -128,7 +126,11 @@ declare global {
       onSSHCommand: (id: string, callback: (command: string) => void) => () => void
 
       // Multi-Terminal Management
-      createAgentTerminal: (topicId: string, hostId: string, name?: string) => Promise<TerminalSession>
+      createAgentTerminal: (
+        topicId: string,
+        hostId: string,
+        name?: string
+      ) => Promise<TerminalSession>
       closeAgentTerminal: (id: string) => Promise<void>
       renameAgentTerminal: (id: string, name: string) => Promise<void>
       toggleTerminalPin: (id: string, isPinned: boolean) => Promise<void>
@@ -153,6 +155,68 @@ declare global {
       getPermissions: () => Promise<PermissionSettings>
       savePermissions: (permissions: Partial<PermissionSettings>) => Promise<void>
       onDebugLog: (callback: (entry: any) => void) => () => void
+
+      // Local Terminal APIs
+      connectLocal: (topicId: string) => Promise<TerminalSession>
+      sendLocalInput: (id: string, data: string) => void
+      resizeLocal: (id: string, cols: number, rows: number) => void
+      getLocalBuffer: (id: string) => Promise<string>
+      attachLocal: (id: string) => void
+      closeLocal: (id: string) => Promise<boolean>
+
+      // SFTP File Transfer APIs
+      sftpConnect: (hostId: string) => Promise<{ sessionId: string; hostId: string }>
+      sftpList: (
+        sessionId: string,
+        path: string
+      ) => Promise<
+        {
+          name: string
+          type: 'directory' | 'file'
+          size: number
+          modifyTime: number
+          permissions: number
+        }[]
+      >
+      sftpUpload: (sessionId: string, localPath: string, remotePath: string) => Promise<void>
+      sftpDownload: (sessionId: string, remotePath: string, localPath: string) => Promise<void>
+      sftpMkdir: (sessionId: string, path: string) => Promise<void>
+      sftpDelete: (sessionId: string, path: string) => Promise<void>
+      sftpClose: (sessionId: string) => Promise<boolean>
+
+      // Command History Search
+      searchCommands: (
+        query: string,
+        limit?: number
+      ) => Promise<{ content: string; source: string; hostId: string; timestamp: number }[]>
+
+      // Port Forwarding APIs
+      pfCreate: (
+        hostId: string,
+        localPort: number,
+        remoteHost: string,
+        remotePort: number
+      ) => Promise<{
+        id: string
+        hostId: string
+        localPort: number
+        remoteHost: string
+        remotePort: number
+        status: string
+        createdAt: number
+      }>
+      pfClose: (tunnelId: string) => Promise<boolean>
+      pfList: (hostId?: string) => Promise<
+        {
+          id: string
+          hostId: string
+          localPort: number
+          remoteHost: string
+          remotePort: number
+          status: string
+          createdAt: number
+        }[]
+      >
     }
   }
 }

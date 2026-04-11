@@ -1,17 +1,16 @@
 import { WebContents } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
-import {
-  hostDB,
-  messageDB,
-  taskStepDB,
-  approvalDB,
-  permissionDB
-} from './db'
+import { hostDB, messageDB, taskStepDB, approvalDB, permissionDB, commandPatternDB } from './db'
 import { commandExecutor } from './terminal'
 import { Message, TaskStep, ToolResult } from '../shared/types'
 import { getAIClient, getCurrentModel, SYSTEM_PROMPT } from './ai'
 import { MemoryManager } from './MemoryManager'
 import { PolicyEngine } from './PolicyEngine'
+
+export interface AuthResponse {
+  approved: boolean
+  alwaysAllow: boolean
+}
 
 export interface AgentContext {
   topicId: string
@@ -19,7 +18,11 @@ export interface AgentContext {
   webContents: WebContents
   agentService: any
   ensureSession: (hostId: string, hostAlias: string, name?: string) => Promise<string>
-  requestAuthorization: (command: string, riskLevel: 'low' | 'medium' | 'high' | 'critical', reason: string) => Promise<boolean>
+  requestAuthorization: (
+    command: string,
+    riskLevel: 'low' | 'medium' | 'high' | 'critical',
+    reason: string
+  ) => Promise<AuthResponse>
   notifyStep: (message: Message) => void
 }
 
@@ -59,7 +62,7 @@ export class AgentRunner {
 
     while (turnCount < maxTurns) {
       turnCount++
-      
+
       // Notify UI we are thinking
       this.context.notifyStep({
         id: uuidv4(),
@@ -101,7 +104,7 @@ export class AgentRunner {
       }
 
       // Execute tools sequentially and distill observations
-      for (const toolCall of (assistantMessage.tool_calls || [])) {
+      for (const toolCall of assistantMessage.tool_calls || []) {
         // Notify UI we are executing
         this.context.notifyStep({
           id: uuidv4(),
@@ -116,7 +119,7 @@ export class AgentRunner {
         })
 
         const result = await this.executeTool(toolCall)
-        
+
         // After command execution, try to distill the raw output for the agent's next turn
         let observation = result.content
         const tc = toolCall as any // Narrowing for simplified access
@@ -146,7 +149,8 @@ export class AgentRunner {
       id: uuidv4(),
       topicId: this.context.topicId,
       role: 'assistant',
-      content: '对不起，我已达到多轮推理上限 (10步)，未能完全解决任务。请根据当前进度给出进一步指令。',
+      content:
+        '对不起，我已达到多轮推理上限 (10步)，未能完全解决任务。请根据当前进度给出进一步指令。',
       timestamp: Date.now(),
       metadata: {
         taskId: this.context.taskId,
@@ -169,7 +173,11 @@ export class AgentRunner {
             type: 'object',
             properties: {
               hostId: { type: 'string', description: '主机ID' },
-              terminalName: { type: 'string', description: '终端名称（可选，默认为 default。指定新名称可开启并锁定新终端窗口实现并发）' },
+              terminalName: {
+                type: 'string',
+                description:
+                  '终端名称（可选，默认为 default。指定新名称可开启并锁定新终端窗口实现并发）'
+              },
               command: { type: 'string', description: '要执行的命令' },
               reason: { type: 'string', description: '执行该命令的原因' }
             },
@@ -209,9 +217,17 @@ export class AgentRunner {
             type: 'object',
             properties: {
               hostId: { type: 'string', description: '主机ID' },
-              action: { type: 'string', enum: ['open', 'close', 'rename'], description: '操作类型' },
+              action: {
+                type: 'string',
+                enum: ['open', 'close', 'rename'],
+                description: '操作类型'
+              },
               terminalName: { type: 'string', description: '终端名称。对于 open/rename 必须提供' },
-              sessionId: { type: 'string', description: '操作 close/rename 时指定的会话ID（可选，若不提供则根据 terminalName 查找）' }
+              sessionId: {
+                type: 'string',
+                description:
+                  '操作 close/rename 时指定的会话ID（可选，若不提供则根据 terminalName 查找）'
+              }
             },
             required: ['hostId', 'action']
           }
@@ -341,20 +357,28 @@ export class AgentRunner {
     const { hostId, command, reason, terminalName } = args
     const normalizedHostId = hostId.startsWith('@') ? hostId.slice(1) : hostId
     const hosts = hostDB.getHosts()
-    const host = hosts.find(h => h.id === normalizedHostId || h.alias === normalizedHostId)
-    if (!host) throw new Error(`Host ${hostId} not found. Please list_hosts to see available hosts in this topic.`)
+    const host = hosts.find((h) => h.id === normalizedHostId || h.alias === normalizedHostId)
+    if (!host)
+      throw new Error(
+        `Host ${hostId} not found. Please list_hosts to see available hosts in this topic.`
+      )
 
-    // Check policy
-    const policyResult = PolicyEngine.evaluate(command)
+    const policyResult = PolicyEngine.evaluateWithTrust(command, host.id)
     if (policyResult.action === 'deny') {
       throw new Error(`Command blocked by policy: ${policyResult.reason}`)
     }
 
+    const commandPattern = policyResult.commandPattern || PolicyEngine.normalizeCommand(command)
     const permissions = permissionDB.getPermissions()
 
     if (policyResult.action === 'confirm' && permissions.requireConfirmation) {
-      const approved = await this.context.requestAuthorization(command, policyResult.riskLevel, reason)
-      if (!approved) {
+      const authResult = await this.context.requestAuthorization(
+        command,
+        policyResult.riskLevel,
+        reason
+      )
+      if (!authResult.approved) {
+        this.recordPatternRejection(host.id, commandPattern)
         approvalDB.createApproval({
           id: uuidv4(),
           taskId: this.context.taskId,
@@ -367,6 +391,9 @@ export class AgentRunner {
         })
         throw new Error('User rejected command authorization')
       }
+
+      this.recordPatternApproval(host.id, commandPattern, authResult.alwaysAllow)
+
       approvalDB.createApproval({
         id: uuidv4(),
         taskId: this.context.taskId,
@@ -379,50 +406,100 @@ export class AgentRunner {
       })
     }
 
-    // Ensure session
     const sessionId = await this.context.ensureSession(host.id, host.alias, terminalName)
-    
-    // Execute via commandExecutor
-    const result = await commandExecutor.execute(sessionId, command, this.context.topicId, this.context.taskId, step.id)
-    
+    const result = await commandExecutor.execute(
+      sessionId,
+      command,
+      this.context.topicId,
+      this.context.taskId,
+      step.id
+    )
     return result
+  }
+
+  private recordPatternApproval(hostId: string, commandPattern: string, alwaysAllow: boolean) {
+    const existing = commandPatternDB.getPatternByHostAndPattern(hostId, commandPattern)
+    if (existing) {
+      if (alwaysAllow) {
+        for (let i = 0; i < 3; i++) {
+          commandPatternDB.incrementApprovalCount(existing.id)
+        }
+      } else {
+        commandPatternDB.incrementApprovalCount(existing.id)
+      }
+    } else {
+      commandPatternDB.createCommandPattern({
+        hostId,
+        commandPattern,
+        approvalCount: alwaysAllow ? 3 : 1,
+        rejectionCount: 0,
+        trustLevel: alwaysAllow ? 'trusted' : 'untrusted',
+        lastSeen: Date.now()
+      })
+    }
+  }
+
+  private recordPatternRejection(hostId: string, commandPattern: string) {
+    const existing = commandPatternDB.getPatternByHostAndPattern(hostId, commandPattern)
+    if (existing) {
+      commandPatternDB.incrementRejectionCount(existing.id)
+    } else {
+      commandPatternDB.createCommandPattern({
+        hostId,
+        commandPattern,
+        approvalCount: 0,
+        rejectionCount: 1,
+        trustLevel: 'untrusted',
+        lastSeen: Date.now()
+      })
+    }
   }
 
   private async handleReadFile(args: any) {
     const { hostId, path, terminalName } = args
     const normalizedHostId = hostId.startsWith('@') ? hostId.slice(1) : hostId
     const hosts = hostDB.getHosts()
-    const host = hosts.find(h => h.id === normalizedHostId || h.alias === normalizedHostId)
+    const host = hosts.find((h) => h.id === normalizedHostId || h.alias === normalizedHostId)
     if (!host) throw new Error(`Host ${hostId} not found`)
 
     const sessionId = await this.context.ensureSession(host.id, host.alias, terminalName)
-    const result = await commandExecutor.execute(sessionId, `cat "${path}"`, this.context.topicId, this.context.taskId)
-    
+    const result = await commandExecutor.execute(
+      sessionId,
+      `cat "${path}"`,
+      this.context.topicId,
+      this.context.taskId
+    )
+
     if (result.exitCode !== 0) {
       throw new Error(`Failed to read file: ${result.content}`)
     }
-    
+
     return result.content
   }
 
   private async handleWriteFile(args: any) {
     const { hostId, path, content } = args
     const normalizedHostId = hostId.startsWith('@') ? hostId.slice(1) : hostId
-    
+
     // Ensure we have a session
     const sessionId = await this.context.ensureSession(normalizedHostId, normalizedHostId)
-    
+
     // Use base64 to avoid shell escaping issues with complex characters
     const b64 = Buffer.from(content).toString('base64')
     // We try to use 'base64 -d' (common on Linux) or 'openssl base64 -d'
     const commandRegex = `printf "%s" '${b64}' | base64 -d > "${path}"`
-    
-    const result = await commandExecutor.execute(sessionId, commandRegex, this.context.topicId, this.context.taskId)
-    
+
+    const result = await commandExecutor.execute(
+      sessionId,
+      commandRegex,
+      this.context.topicId,
+      this.context.taskId
+    )
+
     if (result.exitCode !== 0) {
       throw new Error(`Failed to write file: ${result.content}`)
     }
-    
+
     return { message: 'File written successfully', path }
   }
 
@@ -433,10 +510,14 @@ export class AgentRunner {
   private async handleManageTerminal(args: any) {
     const { action, hostId, terminalName, sessionId } = args
     const normalizedHostId = hostId.startsWith('@') ? hostId.slice(1) : hostId
-    
+
     switch (action) {
       case 'open':
-        const session = await this.context.agentService.createTerminal(this.context.topicId, normalizedHostId, terminalName)
+        const session = await this.context.agentService.createTerminal(
+          this.context.topicId,
+          normalizedHostId,
+          terminalName
+        )
         return { message: 'Terminal opened', sessionId: session.id, name: session.name }
       case 'close':
         await this.context.agentService.closeTerminal(sessionId)
@@ -459,7 +540,11 @@ export class AgentRunner {
   private async handleSearchMemory(args: any) {
     const { query, hostId } = args
     const normalizedHostId = hostId?.startsWith('@') ? hostId.slice(1) : hostId
-    const memories = await this.context.agentService.searchMemories(query, normalizedHostId, this.context.topicId)
+    const memories = await this.context.agentService.searchMemories(
+      query,
+      normalizedHostId,
+      this.context.topicId
+    )
     return memories.map((m: any) => ({
       type: m.type,
       content: m.content,
