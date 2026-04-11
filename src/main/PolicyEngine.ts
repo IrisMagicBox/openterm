@@ -117,76 +117,82 @@ export class PolicyEngine {
     const lower = trimmed.toLowerCase()
 
     if (!trimmed) {
-      return { action: 'allow', riskLevel: 'low', reason: 'Empty command.' }
+      return { action: 'allow', riskLevel: 'low', reason: '空命令。' }
     }
 
+    // 1. Critical destructive patterns
     if (this.isNeverAutoApprove(command)) {
       return {
         action: 'deny',
         riskLevel: 'critical',
-        reason: 'Command matches a never-auto-approve pattern (dangerous system operation).'
+        reason: '检测到极度危险的系统操作（如全盘删除或格式化），已自动拦截。'
       }
     }
 
-    if (
-      lower.includes('| bash') ||
-      lower.includes('| sh') ||
-      lower.includes('python -c') ||
-      lower.includes('node -e') ||
-      lower.includes('eval ') ||
-      lower.includes('> /dev/')
-    ) {
-      return {
-        action: 'confirm',
-        riskLevel: 'high',
-        reason: 'Detected dynamic code execution or direct hardware pipe.'
+    // 2. Dangerous execution methods
+    const dynamicExecPatterns = [
+      { pattern: /\|\s*(bash|sh|zsh|python|node|perl|php)\b/, reason: '警告：检测到管道符直接执行外部脚本。' },
+      { pattern: /\b(python|node|perl|php)\s+-c\b/, reason: '警告：检测到内联代码执行。' },
+      { pattern: /\beval\s+/, reason: '警告：检测到 eval 动态执行。' },
+      { pattern: />\s*\/dev\/(sd|nvme|mem|kmem|port|hd)/, reason: '警告：检测到对硬件设备的直接写操作。' }
+    ]
+
+    for (const { pattern, reason } of dynamicExecPatterns) {
+      if (pattern.test(lower)) {
+        return { action: 'confirm', riskLevel: 'high', reason }
       }
     }
 
-    const foundModify = this.MODIFY_COMMANDS.find(
-      (cmd) => lower.startsWith(cmd + ' ') || lower === cmd
-    )
+    // 3. Command classification
+    const firstWord = lower.split(/\s+/)[0]
+    
+    // Modification commands
+    const foundModify = this.MODIFY_COMMANDS.find(cmd => firstWord === cmd || lower.startsWith(cmd + ' '))
     if (foundModify) {
       const isCriticalPath = this.DANGEROUS_PATHS.some((path) => lower.includes(path))
       if (isCriticalPath) {
         return {
           action: 'confirm',
           riskLevel: 'critical',
-          reason: `Destructive command '${foundModify}' targeting system-critical paths.`
+          reason: `破坏性命令 '${foundModify}' 尝试操作系统关键路径。`
         }
       }
       return {
         action: 'confirm',
         riskLevel: 'high',
-        reason: `Potentially destructive command: ${foundModify}`
+        reason: `检测到修改或删除操作: ${foundModify}`
       }
     }
 
-    const foundSystem = this.SYSTEM_COMMANDS.find((cmd) => lower.includes(cmd))
+    // System administration
+    const foundSystem = this.SYSTEM_COMMANDS.find(cmd => lower.includes(cmd))
     if (foundSystem) {
       return {
         action: 'confirm',
         riskLevel: 'high',
-        reason: `System-level modification or administration: ${foundSystem}`
+        reason: `涉及系统配置或权限管理: ${foundSystem}`
       }
     }
 
-    const foundNetwork = this.NETWORK_COMMANDS.find((cmd) => lower.startsWith(cmd + ' '))
+    // Network commands
+    const foundNetwork = this.NETWORK_COMMANDS.find(cmd => firstWord === cmd || lower.startsWith(cmd + ' '))
     if (foundNetwork) {
       return {
         action: 'confirm',
         riskLevel: 'medium',
-        reason: `External network activity: ${foundNetwork}`
+        reason: `涉及外部网络访问: ${foundNetwork}`
       }
     }
 
-    const foundDangerousPath = this.DANGEROUS_PATHS.find((path) => lower.includes(path))
-    if (foundDangerousPath) {
-      if (lower.startsWith('ls ') || lower.startsWith('cat ') || lower.startsWith('grep ')) {
+    // Sensitive path access (even for read-only commands)
+    const sensitiveReadCommands = ['cat', 'less', 'more', 'tail', 'head', 'grep', 'vi', 'nano', 'ls']
+    if (sensitiveReadCommands.includes(firstWord)) {
+      const foundDangerousPath = this.DANGEROUS_PATHS.find((path) => lower.includes(path))
+      if (foundDangerousPath) {
         return {
           action: 'confirm',
           riskLevel: 'medium',
-          reason: `Accessing system-sensitive directory or file: ${foundDangerousPath}`
+          reason: `正在访问系统敏感目录或文件: ${foundDangerousPath}`
         }
       }
     }
@@ -194,7 +200,7 @@ export class PolicyEngine {
     return {
       action: 'allow',
       riskLevel: 'low',
-      reason: 'Command satisfies basic safety criteria for automatic execution.'
+      reason: '命令符合基础安全策略，可以自动执行。'
     }
   }
 

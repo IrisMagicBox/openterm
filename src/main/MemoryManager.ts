@@ -57,45 +57,80 @@ export class MemoryManager {
 
       logger.info('MemoryManager', `正在对任务 ${taskId} 进行回顾并提取记忆...`)
 
+      // Limit the number of steps and content size to avoid context overflow (400 error)
+      const truncatedSteps = steps.slice(-20).map(s => 
+        `- ${s.title}: ${s.content.slice(0, 500)}${s.content.length > 500 ? '...' : ''}`
+      ).join('\n')
+
       const response = await aiClient.chat.completions.create({
         model,
         messages: [
           {
             role: 'system',
             content: `你是一位 Agent 经验记录员。你的任务是分析已完成的 SSH 任务并提取有价值的“全局经验”。
+必须返回标准的 JSON 格式，包含 "memories" 数组。
 关注点：
 1. 主机事实：关于发现的 OS、环境或已安装软件的具体细节。
 2. 用户习惯：用户展示出的偏好（例如：特定的 flag、首选工具）。
 3. 经验教训：从错误或成功的命令链中获得的启示。
 
-返回一个包含 "memories" 数组的 JSON 对象。
-示例：{"memories": [{"type": "host_fact", "content": "主机使用 Ubuntu 22.04", "importance": 4}]}`
+示例：
+{
+  "memories": [
+    {"type": "host_fact", "content": "主机使用 Ubuntu 22.04", "importance": 4},
+    {"type": "user_preference", "content": "用户偏好使用 htop 观察负载", "importance": 3}
+  ]
+}`
           },
           {
             role: 'user',
-            content: `目标: ${task.goal}\n总结: ${task.summary}\n步骤:\n${steps.map(s => `- ${s.title}: ${s.content}`).join('\n')}`
+            content: `目标: ${task.goal}\n结论: ${task.summary || '无'}\n近期执行步骤:\n${truncatedSteps}`
           }
-        ],
-        response_format: { type: 'json_object' }
+        ]
+        // Removed response_format: { type: 'json_object' } to improve compatibility with non-GPT4 providers
       })
 
-      const raw = response.choices[0].message.content || '{}'
+      let raw = response.choices[0].message.content || '{}'
+      
+      // Basic JSON cleaning in case the model returns markdown code blocks
+      if (raw.trim().startsWith('```json')) {
+        raw = raw.replace(/```json\n?/, '').replace(/```\n?$/, '')
+      } else if (raw.trim().startsWith('```')) {
+        raw = raw.replace(/```\n?/, '').replace(/```\n?$/, '')
+      }
+
       const data = JSON.parse(raw)
       const entries = data.memories || []
+      const hostId = steps.find(s => s.hostId && s.hostId !== 'undefined')?.hostId
 
       for (const entry of entries) {
+        // Double check host existence if we have a hostId to avoid FK errors
+        let finalHostId = hostId
+        if (finalHostId) {
+          try {
+            const h = hostDB.getHostById(finalHostId)
+            if (!h) finalHostId = undefined
+          } catch {
+            finalHostId = undefined
+          }
+        }
+
         memoryDB.createMemory({
           type: entry.type,
           content: entry.content,
           importance: entry.importance || 3,
-          hostId: steps.find(s => s.hostId)?.hostId,
+          hostId: finalHostId,
           topicId: task.topicId
         })
       }
       
       logger.info('MemoryManager', `成功从任务 ${taskId} 中提取了 ${entries.length} 条记忆`)
-    } catch (err) {
-      logger.error('MemoryManager', '回顾环节失败', err)
+    } catch (err: any) {
+      logger.error('MemoryManager', '回顾环节失败', {
+        message: err.message,
+        status: err.status,
+        taskId
+      })
     }
   }
 

@@ -1,7 +1,8 @@
 import { WebContents } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
-import { hostDB, messageDB, taskStepDB, approvalDB, permissionDB, commandPatternDB } from './db'
+import { hostDB, messageDB, taskDB, taskStepDB, approvalDB, permissionDB, commandPatternDB } from './db'
 import { commandExecutor } from './terminal'
+import { logger } from './logger'
 import { Message, TaskStep, ToolResult } from '../shared/types'
 import { getAIClient, getCurrentModel, SYSTEM_PROMPT } from './ai'
 import { MemoryManager } from './MemoryManager'
@@ -49,19 +50,27 @@ export class AgentRunner {
     // Build terminal state context
     const terminalContext = commandExecutor.buildTerminalContext(this.context.topicId)
 
-    const messages: any[] = [
-      { role: 'system', content: SYSTEM_PROMPT + terminalContext + extraContext },
-      ...history.map((m) => ({
-        role: m.role,
-        content: m.content,
-        tool_calls: (m as any).toolCalls,
-        tool_call_id: m.toolCallId,
-        name: m.name
-      }))
-    ]
+    const messagesHistory: any[] = history.map((m) => ({
+      role: m.role,
+      content: m.content,
+      tool_calls: (m as any).toolCalls,
+      tool_call_id: m.toolCallId,
+      name: m.name
+    }))
+
+    const turnMessages: any[] = []
 
     while (turnCount < maxTurns) {
       turnCount++
+
+      // REBUILD context in each turn to ensure state consistency
+      const terminalContext = commandExecutor.buildTerminalContext(this.context.topicId)
+      
+      const currentMessages: any[] = [
+        { role: 'system', content: SYSTEM_PROMPT + terminalContext + extraContext },
+        ...messagesHistory,
+        ...turnMessages
+      ]
 
       // Notify UI we are thinking
       this.context.notifyStep({
@@ -78,14 +87,14 @@ export class AgentRunner {
 
       const response = await client.chat.completions.create({
         model,
-        messages,
+        messages: currentMessages,
         tools: this.getTools(),
-        tool_choice: 'auto',
+        tool_choice: turnCount === maxTurns ? 'none' : 'auto',
         temperature: 0.1
       })
 
       const assistantMessage = response.choices[0].message
-      messages.push(assistantMessage)
+      turnMessages.push(assistantMessage)
 
       if (!assistantMessage.tool_calls || assistantMessage.tool_calls.length === 0) {
         const finalContent = assistantMessage.content || ''
@@ -97,9 +106,22 @@ export class AgentRunner {
           timestamp: Date.now(),
           metadata: {
             taskId: this.context.taskId,
-            agentStatus: 'thinking' // Final response returns to thinking/idle state visually
+            agentStatus: 'thinking'
           }
         }
+        
+        // 1. Update task status to completed
+        taskDB.updateTask(this.context.taskId, { 
+          status: 'completed', 
+          summary: finalContent.slice(0, 500) 
+        })
+
+        // 2. Trigger asynchronous reflection
+        // We don't await this to avoid blocking the user response
+        MemoryManager.reflectOnTask(this.context.taskId).catch(err => {
+          logger.error('AgentRunner', 'Failed to trigger reflection:', err)
+        })
+
         messageDB.createMessage(msg)
         this.context.notifyStep(msg)
         return msg
@@ -138,13 +160,19 @@ export class AgentRunner {
           }
         }
 
-        messages.push({
+        turnMessages.push({
           role: 'tool',
           tool_call_id: toolCall.id,
           content: observation
         })
       }
     }
+
+    // Update task status to failed (max turns reached)
+    taskDB.updateTask(this.context.taskId, { 
+      status: 'failed', 
+      summary: '任务达到多轮推理上限 (10步)，未能完全解决。' 
+    })
 
     // Fallback if max turns reached
     const timeoutMsg: Message = {
@@ -430,6 +458,9 @@ export class AgentRunner {
         createdAt: Date.now()
       })
     }
+
+    // Update the step with actual hostId for trace and memory reflection
+    taskStepDB.updateStep(step.id, { hostId: host.id })
 
     const sessionId = await this.context.ensureSession(host.id, host.alias, terminalName)
     const result = await commandExecutor.execute(

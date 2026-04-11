@@ -1261,8 +1261,8 @@ export const terminalSessionDB = {
 
   getSessionsByTopic: (topicId: string): TerminalSession[] => {
     const rows = db
-      .prepare('SELECT * FROM terminal_sessions WHERE topicId = ? ORDER BY createdAt DESC')
-      .all(topicId) as any[]
+      .prepare('SELECT * FROM terminal_sessions WHERE topicId = ? AND status = ? ORDER BY createdAt DESC')
+      .all(topicId, 'active') as any[]
     return rows.map((row) => ({
       id: row.id,
       topicId: row.topicId,

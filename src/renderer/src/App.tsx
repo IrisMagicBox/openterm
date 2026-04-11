@@ -862,37 +862,6 @@ function ChatPanel({
                 />
               )}
               <div className="flex-1 min-h-0 flex bg-gray-50/50">
-                {/* Stage Manager Rail */}
-                <div className="w-16 border-r border-gray-100 flex flex-col items-center py-4 gap-4 overflow-y-auto no-scrollbar bg-white/40">
-                  {agentSessions.map((session) => (
-                    <div
-                      key={session.id}
-                      onClick={() => {
-                        onToggleTerminalPin(session.id, true)
-                        setFocusedSessionId(session.id)
-                      }}
-                      className={`relative w-10 h-10 rounded-xl border flex items-center justify-center cursor-pointer transition-all shadow-sm ${
-                        session.id === focusedSessionId
-                          ? 'bg-blue-600 border-blue-600 text-white scale-110 z-10'
-                          : session.isPinned
-                            ? 'bg-white border-blue-200 text-blue-600'
-                            : 'bg-gray-100 border-gray-200 text-gray-400 opacity-60 hover:opacity-100 hover:scale-105'
-                      }`}
-                      title={`${session.hostAlias} (${session.name || '终端'})`}
-                    >
-                      <TerminalIcon size={16} />
-                      {session.commandStatus === 'running' && (
-                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-white animate-pulse" />
-                      )}
-                      {!session.isPinned && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/5 opacity-0 hover:opacity-100 rounded-xl transition-opacity">
-                          <Plus size={14} className="text-gray-500" />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
                 {/* Grid View */}
                 <div
                   className={`flex-1 min-h-0 overflow-y-auto p-4 grid gap-4 auto-rows-fr ${visibleSessions.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
@@ -1106,8 +1075,9 @@ function ChatPanel({
           className="fixed inset-0 z-[100] cursor-col-resize select-none pointer-events-auto bg-transparent"
           onMouseDown={(e) => e.preventDefault()}
           onMouseMove={(e) => {
-            const newWidth = window.innerWidth - e.clientX
-            setTerminalWidth(Math.max(300, Math.min(newWidth, window.innerWidth - 400)))
+            // Subtract right sidebar (TopicHub) width which is w-64 (256px)
+            const newWidth = window.innerWidth - e.clientX - 256
+            setTerminalWidth(Math.max(300, Math.min(newWidth, window.innerWidth - 700)))
           }}
           onMouseUp={() => setIsResizing(false)}
         />
@@ -1257,7 +1227,7 @@ export default function App() {
   const [showDebug, setShowDebug] = useState(false)
   const [terminalFontSize, setTerminalFontSize] = useState(13)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [terminalWidth, setTerminalWidth] = useState(800)
+  const [terminalWidth, setTerminalWidth] = useState(500)
   const [commandHistoryOpen, setCommandHistoryOpen] = useState(false)
   const [fileBrowserHostId, setFileBrowserHostId] = useState<string | null>(null)
   const [fileBrowserHostAlias, setFileBrowserHostAlias] = useState('')

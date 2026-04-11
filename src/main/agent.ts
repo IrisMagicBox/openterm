@@ -61,7 +61,36 @@ export class AgentService {
   async createTerminal(topicId: string, hostId: string, name?: string) {
     const host = hostDB.getHostById(hostId)
     if (!host) throw new Error('Host not found')
-    return this.ensureSession(topicId, hostId, host.alias, name, true)
+    
+    // Explicitly create a NEW session instead of ensuring one (which might reuse)
+    const session = await this.createNewSession(topicId, hostId, host.alias, name, true)
+    return session
+  }
+
+  private async createNewSession(
+    topicId: string,
+    hostId: string,
+    hostAlias: string,
+    name?: string,
+    showInUI = false
+  ): Promise<AgentSession> {
+    const sessionId = await createAgentSessionRef(hostId, this.webContents, topicId)
+    const session: AgentSession = {
+      id: sessionId,
+      topicId,
+      hostId,
+      hostAlias,
+      status: 'active',
+      shellType: 'bash',
+      shellIntegrationReady: false,
+      createdAt: Date.now(),
+      paused: false,
+      name: name || `终端-${(this.topicSessions.get(topicId)?.get(hostId)?.length || 0) + 1}`,
+      visible: showInUI
+    }
+
+    this.registerSession(session)
+    return session
   }
 
   async closeTerminal(id: string) {
@@ -146,6 +175,9 @@ export class AgentService {
     if (!sessions.find((s) => s.id === session.id)) {
       sessions.push(session)
     }
+
+    // Always notify UI to ensure consistency between memory and view
+    this.webContents?.send('agent:session-created', session)
   }
 
   private async ensureSession(
@@ -161,10 +193,19 @@ export class AgentService {
     // 1. If name is provided, find matching session
     if (name) {
       const match = sessions?.find((s) => s.name === name)
-      if (match) return match
-    } else if (!showInUI && sessions && sessions.length > 0) {
-      // 2. Default to first session if no name provided (only for agent internal use)
-      return sessions[0]
+      if (match) {
+        if (showInUI && this.webContents) {
+          this.webContents.send('agent:session-created', match)
+        }
+        return match
+      }
+    } else if (sessions && sessions.length > 0) {
+      // 2. Default to first session if no name provided
+      const session = sessions[0]
+      if (showInUI && this.webContents) {
+        this.webContents.send('agent:session-created', session)
+      }
+      return session
     }
 
     // 2. Create a new real session if none exists
@@ -246,7 +287,8 @@ export class AgentService {
         webContents: this.webContents,
         agentService: this,
         ensureSession: async (hostId, hostAlias, name) => {
-          const session = await this.ensureSession(topicId, hostId, hostAlias, name, false)
+          // Change showInUI to true to ensure all agent-created terminals appear in the sidebar
+          const session = await this.ensureSession(topicId, hostId, hostAlias, name, true)
           return session.id
         },
         requestAuthorization: async (command, riskLevel, reason) => {

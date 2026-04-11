@@ -58,6 +58,25 @@ function createWindow(): void {
       if (results.length > 0) {
         const recovered = results.filter((r) => r.recovered)
         const failed = results.filter((r) => !r.recovered)
+        
+        // IMPORTANT: Register recovered sessions into AgentService memory pool
+        for (const res of recovered) {
+          if (res.newSessionId) {
+            agentService.registerSession({
+              id: res.newSessionId,
+              topicId: res.originalSession.topicId,
+              hostId: res.originalSession.hostId,
+              hostAlias: res.originalSession.hostAlias,
+              status: 'active',
+              shellType: res.originalSession.shellType,
+              shellIntegrationReady: false,
+              createdAt: Date.now(),
+              paused: false,
+              name: res.originalSession.name
+            })
+          }
+        }
+
         logger.info(
           'SessionRecovery',
           `Recovered ${recovered.length}/${results.length} sessions, ${failed.length} failed`

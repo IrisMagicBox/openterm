@@ -73,7 +73,7 @@ class CommandExecutor {
 
   private injectShellIntegration(stream: any): void {
     const bashScript =
-      `__openterm_end() { printf '\\x1b]6973;OPENTERM_CMD_END;%s\\x07' "$?"; }; if [ -n "$BASH_VERSION" ]; then PROMPT_COMMAND='__openterm_end'; elif [ -n "$ZSH_VERSION" ]; then precmd_functions+=(__openterm_end); fi`.trim()
+      `__openterm_end() { printf '\\x1b]6973;OPENTERM_CMD_END;%s;%s\\x07' "$?" "$PWD"; }; if [ -n "$BASH_VERSION" ]; then PROMPT_COMMAND='__openterm_end'; elif [ -n "$ZSH_VERSION" ]; then precmd_functions+=(__openterm_end); fi`.trim()
 
     stream.write(bashScript + '\n')
   }
@@ -127,7 +127,7 @@ class CommandExecutor {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (state.currentCommand && state.currentCommand.inputId === inputId) {
-          this.completeCommand(sessionId, -1, true)
+          this.completeCommand(sessionId, -1, '', true)
           reject(new Error('Command execution timed out after 60 seconds'))
         }
       }, 60000)
@@ -288,6 +288,7 @@ class CommandExecutor {
     state.rawBuffer += data.toString()
     let isCommandEnd = false
     let exitCode: number | undefined
+    let cwd: string | undefined
 
     if (state.rawBuffer.includes(OSC_START)) {
       state.session.shellIntegrationReady = true
@@ -295,10 +296,11 @@ class CommandExecutor {
       state.rawBuffer = state.rawBuffer.replace(new RegExp(OSC_START, 'g'), '')
     }
 
-    const endRegex = new RegExp(`${OSC_END_PREFIX}(-?\\d+)\\x07`)
+    const endRegex = new RegExp(`${OSC_END_PREFIX}(-?\\d+);(.*?)\\x07`)
     const endMatch = state.rawBuffer.match(endRegex)
     if (endMatch) {
       exitCode = parseInt(endMatch[1], 10)
+      cwd = endMatch[2]
       isCommandEnd = true
       state.rawBuffer = state.rawBuffer.replace(endRegex, '')
     }
@@ -341,16 +343,16 @@ class CommandExecutor {
       state.currentCommand.outputBuffer += cleanData.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
 
       if (isCommandEnd) {
-        this.completeCommand(sessionId, exitCode)
+        this.completeCommand(sessionId, exitCode, cwd)
       } else if (state.currentCommand.outputBuffer.length > MAX_OUTPUT_SIZE) {
-        this.completeCommand(sessionId, undefined, true)
+        this.completeCommand(sessionId, undefined, undefined, true)
       }
     }
 
     return { cleanData: displayData, isCommandEnd }
   }
 
-  private completeCommand(sessionId: string, exitCode?: number, isTruncated = false): void {
+  private completeCommand(sessionId: string, exitCode?: number, cwd?: string, isTruncated = false): void {
     const state = this.sessions.get(sessionId)
     if (!state || !state.currentCommand) return
 
@@ -382,6 +384,7 @@ class CommandExecutor {
       content: outputContent,
       exitCode,
       durationMs,
+      cwd,
       relatedInputId: cmd.inputId,
       isStreaming: cmd.isStreaming,
       isTruncated,
@@ -396,7 +399,8 @@ class CommandExecutor {
         outputId,
         exitCode,
         durationMs,
-        isTruncated
+        isTruncated,
+        cwd
       })
     }
 
@@ -405,7 +409,8 @@ class CommandExecutor {
       exitCode: exitCode ?? -1,
       durationMs,
       isTruncated,
-      sessionId
+      sessionId,
+      cwd
     }
 
     cmd.resolve(result)
