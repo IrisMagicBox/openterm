@@ -72,7 +72,8 @@ class CommandExecutor {
   }
 
   private injectShellIntegration(stream: any): void {
-    const bashScript = `__openterm_end() { printf '\\x1b]6973;OPENTERM_CMD_END;%s\\x07' "$?"; }; if [ -n "$BASH_VERSION" ]; then PROMPT_COMMAND='__openterm_end'; elif [ -n "$ZSH_VERSION" ]; then precmd_functions+=(__openterm_end); fi`.trim()
+    const bashScript =
+      `__openterm_end() { printf '\\x1b]6973;OPENTERM_CMD_END;%s\\x07' "$?"; }; if [ -n "$BASH_VERSION" ]; then PROMPT_COMMAND='__openterm_end'; elif [ -n "$ZSH_VERSION" ]; then precmd_functions+=(__openterm_end); fi`.trim()
 
     stream.write(bashScript + '\n')
   }
@@ -307,7 +308,8 @@ class CommandExecutor {
       state.rawBuffer = state.rawBuffer.slice(-500)
     }
 
-    const cleanData = data.toString()
+    const cleanData = data
+      .toString()
       .replace(new RegExp(OSC_START, 'g'), '')
       .replace(new RegExp(`${OSC_END_PREFIX}(-?\\d+)\\x07`, 'g'), '')
 
@@ -317,7 +319,11 @@ class CommandExecutor {
     if (state.currentCommand && state.currentCommand.remainingEcho) {
       const cmd = state.currentCommand
       let matchIdx = 0
-      while (matchIdx < displayData.length && cmd.remainingEcho && displayData[matchIdx] === cmd.remainingEcho[0]) {
+      while (
+        matchIdx < displayData.length &&
+        cmd.remainingEcho &&
+        displayData[matchIdx] === cmd.remainingEcho[0]
+      ) {
         cmd.remainingEcho = cmd.remainingEcho.slice(1)
         matchIdx++
       }
@@ -413,13 +419,13 @@ class CommandExecutor {
 
   buildTerminalContext(topicId: string): string {
     const topic = topicDB.getTopicById(topicId)
-    const topicHosts = hostDB.getHosts().filter(h => topic?.hostIds.includes(h.id))
+    const topicHosts = hostDB.getHosts().filter((h) => topic?.hostIds.includes(h.id))
     const sessions = terminalSessionDB.getSessionsByTopic(topicId)
 
     let context = `\n[Topic Context]\n`
     context += `Available Hosts in this Topic:\n`
     if (topicHosts.length > 0) {
-      topicHosts.forEach(h => {
+      topicHosts.forEach((h) => {
         context += `- ${h.alias} (${h.ip})\n`
       })
     } else {
@@ -459,7 +465,7 @@ class CommandExecutor {
       const lockStatus = state && state.isLocked ? `, locked by ${state.lockedBy}` : ''
 
       return (
-        `${session.hostAlias} (session ${session.id.slice(0, 8)}):\n` +
+        `${session.hostAlias} - ${session.name || 'unnamed'} (id: ${session.id}):\n` +
         `  status: ${session.status}${lockStatus}\n` +
         `  recent commands:\n${recentCommands || '    (none)'}\n` +
         `  last output: ${outputSummary.slice(0, 100)}${outputSummary.length > 100 ? '...' : ''}\n` +
@@ -528,13 +534,6 @@ class CommandExecutor {
     stepId?: string
   ): Promise<CommandResult> {
     return this.executeAgentCommand(sessionId, command, topicId || '', taskId, stepId)
-  }
-
-  async complete(sessionId: string, _partial: string): Promise<string | null> {
-    const state = this.sessions.get(sessionId)
-    if (!state) return null
-    // Basic completion bridge
-    return null
   }
 }
 

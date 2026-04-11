@@ -41,12 +41,7 @@ import { CommandHistorySearch } from './components/terminal/CommandHistorySearch
 import { FileBrowser } from './components/terminal/FileBrowser'
 import { TerminalTabBar } from './components/terminal/TerminalTabBar'
 
-type View = 'hosts' | 'terminal' | 'chat' | 'settings'
-
-interface CommandSuggestion {
-  partial: string
-  completion: string
-}
+type View = 'hosts' | 'terminal' | 'chat' | 'settings' | 'files'
 
 interface DebugEntry {
   level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
@@ -473,41 +468,13 @@ function ChatPanel({
   const [topicHosts, setTopicHosts] = useState<Host[]>([])
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
-  const [commandAssistEnabled, setCommandAssistEnabled] = useState(true)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [commandPaletteValue, setCommandPaletteValue] = useState('')
   const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null)
-  const [_commandSuggestions, setCommandSuggestions] = useState<
-    Record<string, CommandSuggestion | null>
-  >({})
   const [messageQueue, setMessageQueue] = useState<{ id: string; content: string }[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const [isResizing, setIsResizing] = useState(false)
   const { animationKey } = useVisibilityRestore()
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return
-      const newWidth = window.innerWidth - e.clientX
-      setTerminalWidth(Math.max(300, Math.min(newWidth, window.innerWidth - 400)))
-    }
-
-    const handleMouseUp = () => {
-      setIsResizing(false)
-      document.body.style.cursor = 'default'
-    }
-
-    if (isResizing) {
-      window.addEventListener('mousemove', handleMouseMove)
-      window.addEventListener('mouseup', handleMouseUp)
-      document.body.style.cursor = 'col-resize'
-    }
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [isResizing])
 
   const { providers, models } = useProvider()
 
@@ -688,13 +655,6 @@ function ChatPanel({
     setFocusedSessionId(sessionId)
   }, [])
 
-  const handleSuggestionChange = useCallback(
-    (sessionId: string, suggestion: CommandSuggestion | null) => {
-      setCommandSuggestions((prev) => ({ ...prev, [sessionId]: suggestion }))
-    },
-    []
-  )
-
   const handleSubmitCommandPalette = async () => {
     if (!commandPaletteValue.trim()) return
 
@@ -842,7 +802,10 @@ function ChatPanel({
           <>
             <div
               className={`w-1.5 hover:w-2 bg-transparent hover:bg-blue-400/20 cursor-col-resize transition-all z-20 active:bg-blue-500/30 ${isResizing ? 'bg-blue-500/30 w-2' : ''}`}
-              onMouseDown={() => setIsResizing(true)}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                setIsResizing(true)
+              }}
             />
             <div
               style={{ width: terminalWidth }}
@@ -873,17 +836,6 @@ function ChatPanel({
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button
-                      onClick={() => setCommandAssistEnabled((value) => !value)}
-                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition ${
-                        commandAssistEnabled
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-gray-100 text-gray-500 border border-gray-200'
-                      }`}
-                      title="终端中按 Tab 使用 Agent 补全当前命令"
-                    >
-                      Tab补全
-                    </button>
-                    <button
                       onClick={openCommandPalette}
                       className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition bg-gray-900 text-white hover:bg-black"
                       title="Command+K"
@@ -904,8 +856,8 @@ function ChatPanel({
                   onTabSelect={(id) => setFocusedSessionId(id)}
                   onTabClose={(id) => onCloseAgentTerminal(id)}
                   onNewTab={() => {
-                    const firstHost = topicHosts[0]
-                    if (firstHost) onCreateTerminal(firstHost.id)
+                    const hostId = focusedSession?.hostId || topicHosts[0]?.id
+                    if (hostId) onCreateTerminal(hostId)
                   }}
                 />
               )}
@@ -1062,11 +1014,7 @@ function ChatPanel({
                           topicId={topic.id}
                           hostId={session.hostId}
                           fontSize={terminalFontSize}
-                          commandAssistEnabled={commandAssistEnabled}
                           onFocusSession={() => handleFocusSession(session.id)}
-                          onSuggestionChange={(suggestion) =>
-                            handleSuggestionChange(session.id, suggestion)
-                          }
                           onClose={() => onCloseTerminal(session.id)}
                           command={session.command}
                           commandStatus={session.commandStatus}
@@ -1090,9 +1038,6 @@ function ChatPanel({
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <div className="text-[9px] font-bold text-gray-400">
-                              {commandAssistEnabled ? 'Tab 补全' : 'Tab 禁用'}
-                            </div>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -1159,6 +1104,7 @@ function ChatPanel({
       {isResizing && (
         <div
           className="fixed inset-0 z-[100] cursor-col-resize select-none pointer-events-auto bg-transparent"
+          onMouseDown={(e) => e.preventDefault()}
           onMouseMove={(e) => {
             const newWidth = window.innerWidth - e.clientX
             setTerminalWidth(Math.max(300, Math.min(newWidth, window.innerWidth - 400)))
@@ -1290,6 +1236,8 @@ export default function App() {
   const [topics, setTopics] = useState<Topic[]>([])
   const [selectedHost, setSelectedHost] = useState<Host | null>(null)
   const [terminalSessionId, setTerminalSessionId] = useState<string | null>(null)
+  const [terminalTabs, setTerminalTabs] = useState<{ host: Host; sessionId: string }[]>([])
+  const [activeTerminalTabIndex, setActiveTerminalTabIndex] = useState(0)
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null)
   const [thinkingTopics, setThinkingTopics] = useState<Set<string>>(new Set())
   const [showAddHost, setShowAddHost] = useState(false)
@@ -1412,6 +1360,10 @@ export default function App() {
       })
     })
 
+    const unlistenSessionClosed = window.api.onAgentSessionClosed(({ id }) => {
+      setAgentSessions((prev) => prev.filter((s) => s.id !== id))
+    })
+
     return () => {
       unlistenAuth()
       unlistenTopic()
@@ -1419,6 +1371,7 @@ export default function App() {
       unlistenTerminalShow()
       unlistenTerminalHide()
       unlistenSessionCreated()
+      unlistenSessionClosed()
     }
   }, [selectedTopic])
 
@@ -1841,16 +1794,28 @@ export default function App() {
                           const sessionId = await window.api.connectSSH(host.id, topicId)
                           setSelectedHost(host)
                           setTerminalSessionId(sessionId)
+                          setTerminalTabs((prev) => {
+                            setActiveTerminalTabIndex(prev.length)
+                            return [...prev, { host, sessionId }]
+                          })
                           setActiveView('terminal')
                         } catch (e) {
                           console.error('SSH connection failed:', e)
                         }
                       }}
-                      onAgentClick={() => handleCreateTopic(`@${host.alias} `)}
+                      onAgentClick={async () => {
+                        const title = `Session ${topics.length + 1}`
+                        const topic = await window.api.createTopic(title, [host.id])
+                        setTopics((prev) => [topic, ...prev])
+                        setSelectedTopic(topic)
+                        setPrefilledText(`@${host.alias} `)
+                        setActiveView('chat')
+                      }}
                       onDelete={() => handleDeleteHost(host.id)}
-                      onFileBrowser={() => {
+                      onFileBrowser={async () => {
                         setFileBrowserHostId(host.id)
                         setFileBrowserHostAlias(host.alias)
+                        setActiveView('files')
                       }}
                     />
                   ))}
@@ -1860,73 +1825,155 @@ export default function App() {
           </div>
         )}
 
-        {activeView === 'terminal' && selectedHost && terminalSessionId && (
+        {activeView === 'terminal' && terminalTabs.length > 0 && (
           <div className="flex-1 flex overflow-hidden">
             <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="h-11 bg-gray-900 text-white px-5 flex items-center justify-between border-b border-gray-800 flex-shrink-0 drag">
-                <div className="flex items-center gap-3 no-drag">
-                  <div className="flex gap-1.5">
-                    <div className="w-3 h-3 bg-red-500 rounded-full" />
-                    <div className="w-3 h-3 bg-yellow-400 rounded-full" />
-                    <div className="w-3 h-3 bg-emerald-400 rounded-full" />
+              <div className="bg-gray-900 flex flex-col flex-shrink-0">
+                {terminalTabs.length > 1 && (
+                  <div className="flex items-center border-b border-gray-700/50 px-2 pt-1 no-drag overflow-x-auto">
+                    {terminalTabs.map((tab, index) => (
+                      <button
+                        key={tab.sessionId}
+                        onClick={() => {
+                          setActiveTerminalTabIndex(index)
+                          setSelectedHost(tab.host)
+                          setTerminalSessionId(tab.sessionId)
+                        }}
+                        className={`flex items-center gap-2 px-4 py-2 text-xs font-bold transition-colors border-b-2 whitespace-nowrap ${
+                          index === activeTerminalTabIndex
+                            ? 'text-white border-blue-500 bg-gray-800/50'
+                            : 'text-gray-400 border-transparent hover:text-gray-200 hover:bg-gray-800/30'
+                        }`}
+                      >
+                        <TerminalIcon size={11} />
+                        <span>
+                          {tab.host.alias}
+                          {terminalTabs.filter((t) => t.host.id === tab.host.id).length > 1
+                            ? ` #${terminalTabs.slice(0, index + 1).filter((t) => t.host.id === tab.host.id).length}`
+                            : ''}
+                        </span>
+                        <span className="text-[10px] text-gray-500 font-mono">
+                          {tab.host.username}@{tab.host.ip}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const newTabs = terminalTabs.filter((_, i) => i !== index)
+                            if (newTabs.length === 0) {
+                              setTerminalTabs([])
+                              setActiveTerminalTabIndex(0)
+                              setActiveView('hosts')
+                              setTerminalSessionId(null)
+                              setSelectedHost(null)
+                            } else {
+                              const newIndex = Math.min(activeTerminalTabIndex, newTabs.length - 1)
+                              setTerminalTabs(newTabs)
+                              setActiveTerminalTabIndex(newIndex)
+                              setSelectedHost(newTabs[newIndex].host)
+                              setTerminalSessionId(newTabs[newIndex].sessionId)
+                            }
+                          }}
+                          className="ml-1 p-0.5 hover:bg-gray-700 rounded text-gray-500 hover:text-gray-300 transition"
+                        >
+                          <X size={10} />
+                        </button>
+                      </button>
+                    ))}
                   </div>
-                  <div className="w-px h-4 bg-gray-700" />
-                  <TerminalIcon size={13} className="text-blue-400" />
-                  <span className="text-xs font-bold font-mono text-gray-300">
-                    {selectedHost.alias}
-                  </span>
-                  <span className="text-[10px] text-gray-600 font-mono">
-                    {selectedHost.username}@{selectedHost.ip}:{selectedHost.port || 22}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 no-drag">
-                  <div className="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 mr-1">
+                )}
+                <div className="h-11 text-white px-5 flex items-center justify-between flex-shrink-0 drag">
+                  <div className="flex items-center gap-3 no-drag">
+                    <div className="flex gap-1.5">
+                      <div className="w-3 h-3 bg-red-500 rounded-full" />
+                      <div className="w-3 h-3 bg-yellow-400 rounded-full" />
+                      <div className="w-3 h-3 bg-emerald-400 rounded-full" />
+                    </div>
+                    <div className="w-px h-4 bg-gray-700" />
+                    <TerminalIcon size={13} className="text-blue-400" />
+                    <span className="text-xs font-bold font-mono text-gray-300">
+                      {selectedHost?.alias}
+                    </span>
+                    <span className="text-[10px] text-gray-600 font-mono">
+                      {selectedHost
+                        ? `${selectedHost.username}@${selectedHost.ip}:${selectedHost.port || 22}`
+                        : ''}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 no-drag">
+                    <div className="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700 mr-1">
+                      <button
+                        onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
+                        className="px-3 py-1.5 text-xs font-black hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                        title="缩小 (Cmd -)"
+                      >
+                        -
+                      </button>
+                      <div className="w-[1px] bg-gray-700" />
+                      <button
+                        onClick={() => setTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
+                        className="px-3 py-1.5 text-xs font-black hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                        title="放大 (Cmd +)"
+                      >
+                        +
+                      </button>
+                    </div>
                     <button
-                      onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
-                      className="px-3 py-1.5 text-xs font-black hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
-                      title="缩小 (Cmd -)"
+                      onClick={() => {
+                        if (selectedHost) {
+                          setFileBrowserHostId(selectedHost.id)
+                          setFileBrowserHostAlias(selectedHost.alias)
+                        }
+                      }}
+                      className="text-[11px] bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-blue-400 px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
+                      title="文件管理"
                     >
-                      -
+                      <Folder size={12} /> 文件
                     </button>
-                    <div className="w-[1px] bg-gray-700" />
                     <button
-                      onClick={() => setTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
-                      className="px-3 py-1.5 text-xs font-black hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
-                      title="放大 (Cmd +)"
+                      onClick={() => {
+                        setTerminalTabs([])
+                        setActiveTerminalTabIndex(0)
+                        setActiveView('hosts')
+                        setTerminalSessionId(null)
+                        setSelectedHost(null)
+                      }}
+                      className="text-[11px] bg-gray-800 hover:bg-red-900/60 text-gray-500 hover:text-red-400 px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
                     >
-                      +
+                      <X size={12} /> 断开全部
                     </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      setFileBrowserHostId(selectedHost.id)
-                      setFileBrowserHostAlias(selectedHost.alias)
-                    }}
-                    className="text-[11px] bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-blue-400 px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
-                    title="文件管理"
-                  >
-                    <Folder size={12} /> 文件
-                  </button>
-                  <button
-                    onClick={() => {
-                      setActiveView('hosts')
-                      setTerminalSessionId(null)
-                    }}
-                    className="text-[11px] bg-gray-800 hover:bg-red-900/60 text-gray-500 hover:text-red-400 px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
-                  >
-                    <X size={12} /> 断开连接
-                  </button>
                 </div>
               </div>
-              <div className="flex-1 bg-[#1a1b1e]">
-                <TerminalView
-                  id={terminalSessionId || ''}
-                  fontSize={terminalFontSize}
-                  onClose={() => {
-                    setActiveView('hosts')
-                    setTerminalSessionId(null)
-                  }}
-                />
+              <div className="flex-1 bg-[#1a1b1e] relative">
+                {terminalTabs.map((tab, index) => (
+                  <div
+                    key={tab.sessionId}
+                    className="absolute inset-0"
+                    style={{ display: index === activeTerminalTabIndex ? 'block' : 'none' }}
+                  >
+                    <TerminalView
+                      id={tab.sessionId}
+                      fontSize={terminalFontSize}
+                      onClose={() => {
+                        const currentIdx = index
+                        const newTabs = terminalTabs.filter((_, i) => i !== currentIdx)
+                        if (newTabs.length === 0) {
+                          setTerminalTabs([])
+                          setActiveTerminalTabIndex(0)
+                          setActiveView('hosts')
+                          setTerminalSessionId(null)
+                          setSelectedHost(null)
+                        } else {
+                          const newIndex = Math.min(currentIdx, newTabs.length - 1)
+                          setTerminalTabs(newTabs)
+                          setActiveTerminalTabIndex(newIndex)
+                          setSelectedHost(newTabs[newIndex].host)
+                          setTerminalSessionId(newTabs[newIndex].sessionId)
+                        }
+                      }}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
             {fileBrowserHostId && (
@@ -1941,6 +1988,39 @@ export default function App() {
                 />
               </div>
             )}
+          </div>
+        )}
+
+        {activeView === 'files' && fileBrowserHostId && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="h-11 bg-white text-gray-900 px-5 flex items-center justify-between border-b border-gray-100 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <Folder size={15} className="text-blue-500" />
+                <span className="text-xs font-bold">{fileBrowserHostAlias}</span>
+                <span className="text-[10px] text-gray-400">文件管理</span>
+              </div>
+              <button
+                onClick={() => {
+                  setFileBrowserHostId(null)
+                  setFileBrowserHostAlias('')
+                  setActiveView('hosts')
+                }}
+                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <FileBrowser
+                hostId={fileBrowserHostId}
+                hostAlias={fileBrowserHostAlias}
+                onClose={() => {
+                  setFileBrowserHostId(null)
+                  setFileBrowserHostAlias('')
+                  setActiveView('hosts')
+                }}
+              />
+            </div>
           </div>
         )}
 

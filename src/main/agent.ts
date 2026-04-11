@@ -72,6 +72,7 @@ export class AgentService {
         if (index !== -1) {
           sessions.splice(index, 1)
           if (sessions.length === 0) hostMap.delete(hostId)
+          this.webContents?.send('agent:session-closed', { id })
           return
         }
       }
@@ -161,8 +162,8 @@ export class AgentService {
     if (name) {
       const match = sessions?.find((s) => s.name === name)
       if (match) return match
-    } else if (sessions && sessions.length > 0) {
-      // 2. Default to first session if no name provided
+    } else if (!showInUI && sessions && sessions.length > 0) {
+      // 2. Default to first session if no name provided (only for agent internal use)
       return sessions[0]
     }
 
@@ -245,7 +246,7 @@ export class AgentService {
         webContents: this.webContents,
         agentService: this,
         ensureSession: async (hostId, hostAlias, name) => {
-          const session = await this.ensureSession(topicId, hostId, hostAlias, name, true)
+          const session = await this.ensureSession(topicId, hostId, hostAlias, name, false)
           return session.id
         },
         requestAuthorization: async (command, riskLevel, reason) => {
@@ -296,18 +297,6 @@ export class AgentService {
       resolve({ approved, alwaysAllow })
       this.pendingRequests.delete(requestId)
     }
-  }
-
-  async completeCommand(topicId: string, hostId: string, partialCommand: string) {
-    const host = hostDB.getHostById(hostId)
-    if (!host) return null
-    const hostMap = this.topicSessions.get(topicId)
-    const sessions = hostMap?.get(hostId)
-    const session =
-      sessions && sessions.length > 0
-        ? sessions[0]
-        : await this.ensureSession(topicId, hostId, host.alias)
-    return commandExecutor.complete(session.id, partialCommand)
   }
 
   async setPaused(id: string, paused: boolean) {
@@ -365,11 +354,6 @@ export function setupAgentHandlers() {
 
   ipcMain.removeHandler('agent:get-sessions')
   ipcMain.handle('agent:get-sessions', (_, topicId: string) => agentService.getSessions(topicId))
-
-  ipcMain.removeHandler('agent:complete-command')
-  ipcMain.handle('agent:complete-command', (_, topicId: string, hostId: string, partial: string) =>
-    agentService.completeCommand(topicId, hostId, partial)
-  )
 
   ipcMain.removeHandler('agent:create-terminal')
   ipcMain.handle('agent:create-terminal', (_, topicId: string, hostId: string, name?: string) =>

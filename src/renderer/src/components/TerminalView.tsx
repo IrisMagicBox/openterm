@@ -9,9 +9,7 @@ interface TerminalViewProps {
   onClose: () => void
   topicId?: string
   hostId?: string
-  commandAssistEnabled?: boolean
   onFocusSession?: () => void
-  onSuggestionChange?: (suggestion: { partial: string; completion: string } | null) => void
   fontSize?: number
   command?: string
   commandStatus?: string
@@ -21,29 +19,19 @@ export function TerminalView({
   id,
   onClose,
   topicId,
-  hostId,
-  commandAssistEnabled,
   onFocusSession,
-  onSuggestionChange,
   fontSize = 13
 }: TerminalViewProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
-  const currentLineRef = useRef('')
-  const isCompletingRef = useRef(false)
-  const pendingSuggestionRef = useRef<{ partial: string; completion: string } | null>(null)
 
   const onCloseRef = useRef(onClose)
-  const commandAssistEnabledRef = useRef(commandAssistEnabled)
   const onFocusSessionRef = useRef(onFocusSession)
-  const onSuggestionChangeRef = useRef(onSuggestionChange)
 
   useEffect(() => {
     onCloseRef.current = onClose
-    commandAssistEnabledRef.current = commandAssistEnabled
     onFocusSessionRef.current = onFocusSession
-    onSuggestionChangeRef.current = onSuggestionChange
-  }, [onClose, commandAssistEnabled, onFocusSession, onSuggestionChange])
+  }, [onClose, onFocusSession])
 
   useEffect(() => {
     if (!terminalRef.current) return
@@ -124,61 +112,6 @@ export function TerminalView({
     term.onData((data) => {
       term.focus()
       onFocusSessionRef.current?.()
-
-      if (
-        commandAssistEnabledRef.current &&
-        data === '\t' &&
-        topicId &&
-        hostId &&
-        !isCompletingRef.current
-      ) {
-        const partialCommand = currentLineRef.current.trim()
-        if (partialCommand.length > 0) {
-          if (
-            pendingSuggestionRef.current &&
-            pendingSuggestionRef.current.partial === partialCommand &&
-            pendingSuggestionRef.current.completion.startsWith(partialCommand)
-          ) {
-            const suffix = pendingSuggestionRef.current.completion.slice(partialCommand.length)
-            if (suffix) {
-              currentLineRef.current = pendingSuggestionRef.current.completion
-              window.api.sendSSHInput(id, suffix, topicId || '')
-            }
-            pendingSuggestionRef.current = null
-            onSuggestionChangeRef.current?.(null)
-            return
-          }
-
-          isCompletingRef.current = true
-          window.api
-            .completeAgentCommand(topicId, hostId, partialCommand)
-            .then((completion) => {
-              if (!completion || !completion.startsWith(partialCommand)) return
-              const suffix = completion.slice(partialCommand.length)
-              if (!suffix) return
-              pendingSuggestionRef.current = { partial: partialCommand, completion }
-              onSuggestionChangeRef.current?.({ partial: partialCommand, completion })
-            })
-            .finally(() => {
-              isCompletingRef.current = false
-            })
-        }
-        return
-      }
-
-      if (data === '\r') {
-        currentLineRef.current = ''
-        pendingSuggestionRef.current = null
-        onSuggestionChangeRef.current?.(null)
-      } else if (data === '\u007f') {
-        currentLineRef.current = currentLineRef.current.slice(0, -1)
-        pendingSuggestionRef.current = null
-        onSuggestionChangeRef.current?.(null)
-      } else if (data >= ' ' && data !== '\u007f') {
-        currentLineRef.current += data
-        pendingSuggestionRef.current = null
-        onSuggestionChangeRef.current?.(null)
-      }
       window.api.sendSSHInput(id, data, topicId || '')
     })
 
@@ -209,10 +142,9 @@ export function TerminalView({
       cleanupData()
       cleanupClosed()
       terminalRef.current?.removeEventListener('mousedown', handleMouseDown)
-      onSuggestionChangeRef.current?.(null)
       term.dispose()
     }
-  }, [id, topicId, hostId])
+  }, [id, topicId])
 
   useEffect(() => {
     if (xtermRef.current) {

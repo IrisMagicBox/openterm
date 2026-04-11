@@ -74,11 +74,6 @@ declare global {
       attachSSH: (id: string) => void
 
       sendMessage: (topicId: string, content: string) => Promise<Message>
-      completeAgentCommand: (
-        topicId: string,
-        hostId: string,
-        partialCommand: string
-      ) => Promise<string>
       getAgentSessions: (topicId: string) => Promise<TerminalSession[]>
 
       onAgentAuthRequest: (

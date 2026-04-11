@@ -68,8 +68,6 @@ const api = {
   // Agent APIs
   sendMessage: (topicId: string, content: string) =>
     ipcRenderer.invoke('agent:message', topicId, content),
-  completeAgentCommand: (topicId: string, hostId: string, partialCommand: string) =>
-    ipcRenderer.invoke('agent:complete-command', topicId, hostId, partialCommand),
   getAgentSessions: (topicId: string) => ipcRenderer.invoke('agent:get-sessions', topicId),
 
   // Agent Authorization (HITL)
@@ -118,6 +116,11 @@ const api = {
     const listener = (_event, data: any) => callback(data)
     ipcRenderer.on('agent:session-created', listener)
     return () => ipcRenderer.removeListener('agent:session-created', listener)
+  },
+  onAgentSessionClosed: (callback: (data: { id: string }) => void) => {
+    const listener = (_event, data: any) => callback(data)
+    ipcRenderer.on('agent:session-closed', listener)
+    return () => ipcRenderer.removeListener('agent:session-closed', listener)
   },
 
   onTerminalCommandStart: (id: string, callback: (data: any) => void) => {

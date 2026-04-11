@@ -79,7 +79,9 @@ export class AgentRunner {
       const response = await client.chat.completions.create({
         model,
         messages,
-        tools: this.getTools()
+        tools: this.getTools(),
+        tool_choice: 'auto',
+        temperature: 0.1
       })
 
       const assistantMessage = response.choices[0].message
@@ -168,7 +170,8 @@ export class AgentRunner {
         type: 'function',
         function: {
           name: 'execute_command',
-          description: '在指定主机上执行终端命令',
+          description:
+            '在指定主机上执行终端命令。当你需要检查系统状态、验证服务运行、收集信息或执行任何操作时，必须使用此工具而非猜测结果。主动执行命令来获取实时信息。',
           parameters: {
             type: 'object',
             properties: {
@@ -189,7 +192,8 @@ export class AgentRunner {
         type: 'function',
         function: {
           name: 'read_file',
-          description: '从指定主机读取文件内容',
+          description:
+            '从指定主机读取文件内容。当用户提到配置文件、日志文件或任何文件内容时，必须使用此工具读取实际内容，而非猜测。',
           parameters: {
             type: 'object',
             properties: {
@@ -204,7 +208,8 @@ export class AgentRunner {
         type: 'function',
         function: {
           name: 'list_hosts',
-          description: '列出当前 Topic 下的所有可用主机',
+          description:
+            '列出当前 Topic 下的所有可用主机。当你需要确认可用主机或不确定主机ID时，主动调用此工具。',
           parameters: { type: 'object', properties: {} }
         }
       },
@@ -212,7 +217,8 @@ export class AgentRunner {
         type: 'function',
         function: {
           name: 'manage_terminal',
-          description: '显式管理终端窗口（开启、关闭、重命名）',
+          description:
+            '显式管理终端窗口（开启、关闭、重命名）。当你需要执行命令但无合适终端时主动创建；任务完成后主动关闭终端释放资源。',
           parameters: {
             type: 'object',
             properties: {
@@ -236,8 +242,21 @@ export class AgentRunner {
       {
         type: 'function',
         function: {
+          name: 'list_terminals',
+          description:
+            '列出当前话题下所有活动终端的详细信息（包括ID、名称、主机、状态）。在执行任何终端操作前，应先调用此工具了解当前环境。当你不确定有哪些终端时，必须主动调用。',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
           name: 'manage_host',
-          description: '管理主机元数据（更新别名、标签）',
+          description:
+            '管理主机元数据（更新别名、标签）。当你通过执行命令探测到主机角色（如 Redis Master）时，主动更新主机别名或添加标签。',
           parameters: {
             type: 'object',
             properties: {
@@ -253,7 +272,8 @@ export class AgentRunner {
         type: 'function',
         function: {
           name: 'search_memory',
-          description: '在全局经验库或当前主机/话题中搜索关联记忆',
+          description:
+            '在全局经验库或当前主机/话题中搜索关联记忆。当信息不足或需要参考历史操作时，主动发起搜索。',
           parameters: {
             type: 'object',
             properties: {
@@ -268,7 +288,8 @@ export class AgentRunner {
         type: 'function',
         function: {
           name: 'search_topics',
-          description: '搜索历史话题（对话），寻找处理类似问题的历史记录',
+          description:
+            '搜索历史话题（对话），寻找处理类似问题的历史记录。当遇到类似之前处理过的问题时，主动搜索历史经验。',
           parameters: {
             type: 'object',
             properties: {
@@ -282,7 +303,8 @@ export class AgentRunner {
         type: 'function',
         function: {
           name: 'write_file',
-          description: '向指定主机写入或覆盖文件内容',
+          description:
+            '向指定主机写入或覆盖文件内容。修改配置文件、创建脚本或写入多行文本时，必须使用此工具。',
           parameters: {
             type: 'object',
             properties: {
@@ -327,6 +349,9 @@ export class AgentRunner {
           break
         case 'manage_terminal':
           data = await this.handleManageTerminal(args)
+          break
+        case 'list_terminals':
+          data = await this.handleListTerminals()
           break
         case 'manage_host':
           data = await this.handleManageHost(args)
@@ -519,15 +544,40 @@ export class AgentRunner {
           terminalName
         )
         return { message: 'Terminal opened', sessionId: session.id, name: session.name }
-      case 'close':
-        await this.context.agentService.closeTerminal(sessionId)
-        return { message: 'Terminal closed', sessionId }
+      case 'close': {
+        let targetSessionId = sessionId
+        if (!targetSessionId && terminalName) {
+          const sessions = await this.context.agentService.getSessions(this.context.topicId)
+          const match = sessions.find(
+            (s: any) => s.name === terminalName && s.hostId === normalizedHostId
+          )
+          if (match) targetSessionId = match.id
+        }
+        if (!targetSessionId)
+          throw new Error('No session found. Use list_terminals to see available sessions.')
+        await this.context.agentService.closeTerminal(targetSessionId)
+        return { message: 'Terminal closed', sessionId: targetSessionId }
+      }
       case 'rename':
         await this.context.agentService.renameTerminal(sessionId, terminalName)
         return { message: 'Terminal renamed', sessionId, newName: terminalName }
       default:
         throw new Error('Invalid action for manage_terminal')
     }
+  }
+
+  private async handleListTerminals() {
+    const sessions = await this.context.agentService.getSessions(this.context.topicId)
+    return sessions.map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      hostId: s.hostId,
+      hostAlias: s.hostAlias,
+      status: s.status,
+      paused: s.paused,
+      isPinned: s.isPinned,
+      createdAt: s.createdAt
+    }))
   }
 
   private async handleManageHost(args: any) {

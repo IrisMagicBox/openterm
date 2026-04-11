@@ -51,17 +51,13 @@ interface Window {
     onAgentTerminalCreate: (callback: (data: any) => void) => () => void
     onAgentTerminalClose: (callback: (data: any) => void) => () => void
     onAgentSessionCreated: (callback: (data: any) => void) => () => void
+    onAgentSessionClosed: (callback: (data: { id: string }) => void) => () => void
     onTerminalCommandStart: (sessionId: string, callback: (data: any) => void) => () => void
     onTerminalCommandEnd: (sessionId: string, callback: (data: any) => void) => () => void
     createAgentTerminal: (topicId: string, hostId: string) => Promise<any>
     renameAgentTerminal: (sessionId: string, name: string) => Promise<void>
     toggleAgentTerminalPin: (sessionId: string, isPinned: boolean) => Promise<void>
     toggleTerminalPin: (sessionId: string, isPinned: boolean) => Promise<void>
-    completeAgentCommand: (
-      topicId: string | undefined,
-      hostId: string | undefined,
-      partial: string
-    ) => Promise<string | null>
 
     getProviders: () => Promise<any[]>
     saveProvider: (provider: any) => Promise<void>
