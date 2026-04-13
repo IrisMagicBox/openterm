@@ -2,11 +2,13 @@ import { Client } from 'ssh2'
 import { ipcMain, WebContents } from 'electron'
 import { hostDB } from './db'
 import { commandExecutor } from './terminal'
-import { readFileSync } from 'fs'
+import { TERMINAL_BUFFER_SIZE, SSH_RAW_BUFFER_MAX, SSH_RAW_BUFFER_TRIM } from './constants'
+import { buildSSHConfig } from './utils/ssh-config'
+import type { TerminalStream } from '../shared/types'
 
 interface SSHSession {
   client: Client
-  stream: any
+  stream: TerminalStream | null
   hostId: string
   buffer: string
   isAgentSession?: boolean
@@ -26,21 +28,7 @@ function getHostAndConfig(hostId: string) {
   const host = hostDB.getHostById(hostId)
   if (!host) throw new Error('Host not found')
 
-  const config: any = {
-    host: host.ip,
-    port: host.port || 22,
-    username: host.username
-  }
-
-  if (host.keyPath) {
-    try {
-      config.privateKey = readFileSync(host.keyPath)
-    } catch (err) {
-      if (host.password) config.password = host.password
-    }
-  } else if (host.password) {
-    config.password = host.password
-  }
+  const config = buildSSHConfig(host)
 
   return { host, config }
 }
@@ -85,7 +73,7 @@ export const executeSSHCommand = (hostId: string, command: string): Promise<stri
 
 export const getTerminalBuffer = (sessionId: string): string => {
   const session = sessions.get(sessionId)
-  return session ? session.buffer.slice(-2000) : ''
+  return session ? session.buffer.slice(-TERMINAL_BUFFER_SIZE) : ''
 }
 
 const waitForAgentResume = (session: SSHSession): Promise<void> => {
@@ -177,7 +165,7 @@ export const createAgentSession = (
           const sessionId = generateSessionId(hostId)
           const session: SSHSession = {
             client,
-            stream,
+            stream: stream as unknown as TerminalStream,
             hostId,
             buffer: '',
             isAgentSession: true,
@@ -205,8 +193,8 @@ export const createAgentSession = (
             session.buffer += str
             session.currentOutput += str
 
-            if (session.buffer.length > 10000) {
-              session.buffer = session.buffer.slice(-5000)
+            if (session.buffer.length > SSH_RAW_BUFFER_MAX) {
+              session.buffer = session.buffer.slice(-SSH_RAW_BUFFER_TRIM)
             }
 
             webContents.send(`ssh:data:${sessionId}`, cleanData)
@@ -234,20 +222,21 @@ export const closeSession = (sessionId: string): void => {
   const session = sessions.get(sessionId)
   if (session) {
     commandExecutor.closeSession(sessionId)
-    session.stream.close()
+    session.stream?.close()
     session.client.end()
     sessions.delete(sessionId)
   }
 }
 
-let agentServiceRef: any = null
+import { AgentSession } from './agent'
 
-export function setAgentService(service: any) {
+let agentServiceRef: { registerSession(session: AgentSession): void } | null = null
+
+export function setAgentService(service: { registerSession(session: AgentSession): void } | null) {
   agentServiceRef = service
 }
 
 export function setupSSHHandlers() {
-
   ipcMain.removeHandler('ssh:connect')
   ipcMain.handle('ssh:connect', async (event, hostId: string, topicId: string) => {
     const webContents = event.sender
@@ -265,7 +254,13 @@ export function setupSSHHandlers() {
             }
 
             const sessionId = generateSessionId(hostId)
-            sessions.set(sessionId, { client, stream, hostId, buffer: '', currentOutput: '' })
+            sessions.set(sessionId, {
+              client,
+              stream: stream as unknown as TerminalStream,
+              hostId,
+              buffer: '',
+              currentOutput: ''
+            })
 
             // Register with commandExecutor for Agent usage if topic is provided
             if (topicId) {
@@ -297,7 +292,7 @@ export function setupSSHHandlers() {
 
             stream.on('data', (data: Buffer) => {
               // Use handleStreamOutput if it's registered in commandExecutor
-              const { cleanData } = topicId 
+              const { cleanData } = topicId
                 ? commandExecutor.handleStreamOutput(sessionId, data)
                 : { cleanData: data.toString() }
 

@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../../../shared/errors'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Folder,
@@ -26,7 +27,7 @@ interface FileBrowserProps {
   onClose: () => void
 }
 
-const api = window.api as any
+const api = window.api
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return '-'
@@ -62,8 +63,8 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
     try {
       const result = await api.sftpConnect(hostId)
       setSessionId(result.sessionId)
-    } catch (err: any) {
-      setError(err.message || '连接失败')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || '连接失败')
     } finally {
       setLoading(false)
     }
@@ -82,8 +83,8 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
         })
         setItems(sorted)
         setCurrentPath(path)
-      } catch (err: any) {
-        setError(err.message || '读取目录失败')
+      } catch (err: unknown) {
+        setError(getErrorMessage(err) || '读取目录失败')
       } finally {
         setLoading(false)
       }
@@ -138,8 +139,8 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
       const remotePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`
       await api.sftpUpload(sessionId, (file as any).path, remotePath)
       await loadDirectory(currentPath)
-    } catch (err: any) {
-      setError(err.message || '上传失败')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || '上传失败')
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -154,8 +155,8 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
     setError(null)
     try {
       await api.sftpDownload(sessionId, remotePath, localPath)
-    } catch (err: any) {
-      setError(err.message || '下载失败')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || '下载失败')
     } finally {
       setLoading(false)
     }
@@ -172,8 +173,8 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
       setShowMkdir(false)
       setMkdirName('')
       await loadDirectory(currentPath)
-    } catch (err: any) {
-      setError(err.message || '创建目录失败')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || '创建目录失败')
     } finally {
       setLoading(false)
     }
@@ -189,8 +190,8 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
       await api.sftpDelete(sessionId, remotePath)
       setSelectedItem(null)
       await loadDirectory(currentPath)
-    } catch (err: any) {
-      setError(err.message || '删除失败')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || '删除失败')
     } finally {
       setLoading(false)
     }

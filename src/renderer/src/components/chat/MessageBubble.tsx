@@ -7,7 +7,8 @@ import {
   Bot,
   User
 } from 'lucide-react'
-import { Message } from '../../../../shared/types'
+import { Message, Host } from '../../../../shared/types'
+import logo from '../../assets/logo.png'
 import { TaskStepTimeline } from '../TaskStepTimeline'
 import { MarkdownRenderer } from '../MarkdownRenderer'
 
@@ -132,6 +133,64 @@ export function MessageBubble({ message, expandedThoughts, onToggleThought }: Me
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+export function ThinkingIndicator({ animationKey }: { animationKey: number }) {
+  return (
+    <div key={`thinking-${animationKey}`} className="flex justify-start">
+      <div className="flex items-end gap-2.5">
+        <div className="w-8 h-8 rounded-2xl bg-blue-50 text-blue-500 flex items-center justify-center animate-pulse">
+          <Bot size={14} />
+        </div>
+        <div className="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-sm px-5 py-4 flex items-center gap-2 shadow-sm">
+          <div className="flex gap-1">
+            <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce [animation-delay:0ms]" />
+            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:150ms]" />
+            <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:300ms]" />
+          </div>
+          <span className="text-[10px] font-black text-blue-600/50 uppercase tracking-widest ml-1">
+            思考并分析中...
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function EmptyState({
+  topicHosts,
+  onMentionHost
+}: {
+  topicHosts: Host[]
+  onMentionHost: (alias: string) => void
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center max-w-xs mx-auto space-y-5">
+      <div className="w-16 h-16 rounded-3xl flex items-center justify-center overflow-hidden">
+        <img src={logo} alt="OpenTerm" className="w-full h-full object-contain" />
+      </div>
+      <div>
+        <h3 className="font-black text-gray-900">准备就绪</h3>
+        <p className="text-sm text-gray-400 mt-2 leading-relaxed">
+          描述您想执行的操作。使用 <span className="font-bold text-blue-500">@别名</span>{' '}
+          来指定特定主机。
+        </p>
+      </div>
+      {topicHosts.length > 0 && (
+        <div className="flex flex-wrap gap-2 justify-center">
+          {topicHosts.slice(0, 3).map((h) => (
+            <button
+              key={h.id}
+              onClick={() => onMentionHost(h.alias)}
+              className="px-3 py-1.5 border border-blue-100 bg-blue-50 text-blue-600 text-xs font-bold rounded-full hover:bg-blue-100 transition"
+            >
+              @{h.alias}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

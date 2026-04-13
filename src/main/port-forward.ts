@@ -1,9 +1,9 @@
 import { Client } from 'ssh2'
 import { ipcMain } from 'electron'
 import { hostDB } from './db'
-import { readFileSync } from 'fs'
 import { logger } from './logger'
 import { v4 as uuidv4 } from 'uuid'
+import { buildSSHConfig } from './utils/ssh-config'
 
 interface ForwardTunnel {
   id: string
@@ -22,21 +22,7 @@ function getHostConfig(hostId: string) {
   const host = hostDB.getHostById(hostId)
   if (!host) throw new Error('Host not found')
 
-  const config: any = {
-    host: host.ip,
-    port: host.port || 22,
-    username: host.username
-  }
-
-  if (host.keyPath) {
-    try {
-      config.privateKey = readFileSync(host.keyPath)
-    } catch {
-      if (host.password) config.password = host.password
-    }
-  } else if (host.password) {
-    config.password = host.password
-  }
+  const config = buildSSHConfig(host)
 
   return { host, config }
 }

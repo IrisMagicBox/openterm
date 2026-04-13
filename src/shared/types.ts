@@ -185,6 +185,7 @@ export interface CommandResult {
   durationMs: number
   isTruncated: boolean
   sessionId: string
+  cwd?: string
 }
 
 export interface ModelSettings {
@@ -309,6 +310,16 @@ export interface CommandPattern {
   trustLevel: TrustLevel
   lastSeen: number
   createdAt: number
+}
+
+export interface TerminalStream {
+  write(data: string | Buffer): boolean
+  setWindow(rows: number, cols: number, width: number, height: number): boolean
+  close(): void
+  on(event: 'data', listener: (data: string | Buffer) => void): this
+  on(event: 'close', listener: () => void): this
+  on(event: string, listener: (...args: unknown[]) => void): this
+  removeListener(event: string, listener: (...args: unknown[]) => void): this
 }
 
 export type MemoryType = 'habit' | 'host_fact' | 'experience'

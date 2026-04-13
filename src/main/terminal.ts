@@ -1,8 +1,18 @@
 import { WebContents } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
 import { logger } from './logger'
-import { TerminalSession, TerminalIO, CommandResult } from '../shared/types'
+import { TerminalSession, TerminalIO, CommandResult, TerminalStream } from '../shared/types'
 import { terminalSessionDB, terminalIODB, topicDB, hostDB } from './db'
+import {
+  MAX_OUTPUT_SIZE,
+  STREAMING_CHUNK_SIZE,
+  STREAMING_FLUSH_INTERVAL_MS,
+  COMMAND_TIMEOUT_MS,
+  RAW_BUFFER_MAX,
+  RAW_BUFFER_TRIM,
+  TRUNCATION_HEAD_SIZE,
+  TRUNCATION_TAIL_SIZE
+} from './constants'
 
 interface ActiveCommand {
   inputId: string
@@ -17,7 +27,7 @@ interface ActiveCommand {
 
 interface SessionState {
   session: TerminalSession
-  stream: any
+  stream: TerminalStream
   webContents?: WebContents
   currentCommand?: ActiveCommand
   outputBuffer: string
@@ -28,9 +38,6 @@ interface SessionState {
 
 const OSC_START = '\x1b]6973;OPENTERM_CMD_START\x07'
 const OSC_END_PREFIX = '\x1b]6973;OPENTERM_CMD_END;'
-const MAX_OUTPUT_SIZE = 50000
-const STREAMING_CHUNK_SIZE = 10000
-const STREAMING_FLUSH_INTERVAL = 5000
 
 class CommandExecutor {
   private sessions = new Map<string, SessionState>()
@@ -41,7 +48,7 @@ class CommandExecutor {
     topicId: string,
     hostId: string,
     hostAlias: string,
-    stream: any,
+    stream: TerminalStream,
     webContents?: WebContents
   ): Promise<TerminalSession> {
     const session: TerminalSession = {
@@ -71,7 +78,7 @@ class CommandExecutor {
     return session
   }
 
-  private injectShellIntegration(stream: any): void {
+  private injectShellIntegration(stream: TerminalStream): void {
     const bashScript =
       `__openterm_end() { printf '\\x1b]6973;OPENTERM_CMD_END;%s;%s\\x07' "$?" "$PWD"; }; if [ -n "$BASH_VERSION" ]; then PROMPT_COMMAND='__openterm_end'; elif [ -n "$ZSH_VERSION" ]; then precmd_functions+=(__openterm_end); fi`.trim()
 
@@ -128,9 +135,11 @@ class CommandExecutor {
       const timeout = setTimeout(() => {
         if (state.currentCommand && state.currentCommand.inputId === inputId) {
           this.completeCommand(sessionId, -1, '', true)
-          reject(new Error('Command execution timed out after 60 seconds'))
+          reject(
+            new Error(`Command execution timed out after ${COMMAND_TIMEOUT_MS / 1000} seconds`)
+          )
         }
-      }, 60000)
+      }, COMMAND_TIMEOUT_MS)
 
       const activeCommand: ActiveCommand = {
         inputId,
@@ -189,7 +198,7 @@ class CommandExecutor {
   private startStreamingFlush(sessionId: string, inputId: string): void {
     const timer = setInterval(() => {
       this.flushStreamingOutput(sessionId, inputId)
-    }, STREAMING_FLUSH_INTERVAL)
+    }, STREAMING_FLUSH_INTERVAL_MS)
 
     this.streamingTimers.set(sessionId, timer)
   }
@@ -215,7 +224,7 @@ class CommandExecutor {
       content: chunk,
       relatedInputId: inputId,
       isStreaming: true,
-      chunkIndex: Math.floor(Date.now() / STREAMING_FLUSH_INTERVAL),
+      chunkIndex: Math.floor(Date.now() / STREAMING_FLUSH_INTERVAL_MS),
       timestamp: Date.now()
     }
 
@@ -306,8 +315,8 @@ class CommandExecutor {
     }
 
     // Keep only a reasonable amount of raw buffer if it becomes too large
-    if (state.rawBuffer.length > 1000) {
-      state.rawBuffer = state.rawBuffer.slice(-500)
+    if (state.rawBuffer.length > RAW_BUFFER_MAX) {
+      state.rawBuffer = state.rawBuffer.slice(-RAW_BUFFER_TRIM)
     }
 
     const cleanData = data
@@ -352,7 +361,12 @@ class CommandExecutor {
     return { cleanData: displayData, isCommandEnd }
   }
 
-  private completeCommand(sessionId: string, exitCode?: number, cwd?: string, isTruncated = false): void {
+  private completeCommand(
+    sessionId: string,
+    exitCode?: number,
+    cwd?: string,
+    isTruncated = false
+  ): void {
     const state = this.sessions.get(sessionId)
     if (!state || !state.currentCommand) return
 
@@ -367,8 +381,8 @@ class CommandExecutor {
 
     let outputContent = cmd.outputBuffer
     if (outputContent.length > MAX_OUTPUT_SIZE) {
-      const head = outputContent.slice(0, 30000)
-      const tail = outputContent.slice(-20000)
+      const head = outputContent.slice(0, TRUNCATION_HEAD_SIZE)
+      const tail = outputContent.slice(-TRUNCATION_TAIL_SIZE)
       outputContent = `${head}\n\n... [truncated, total ${cmd.outputBuffer.length} bytes] ...\n\n${tail}`
       isTruncated = true
     }

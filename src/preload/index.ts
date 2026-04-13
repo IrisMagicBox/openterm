@@ -1,11 +1,32 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { ApprovalStatus } from '../shared/types'
+import type {
+  Host,
+  Task,
+  TaskStep,
+  Approval,
+  Artifact,
+  Message,
+  ModelSettings,
+  Provider,
+  Model,
+  PermissionSettings,
+  TerminalSession
+} from '../shared/types'
+import type {
+  TopicUpdatedPayload,
+  AgentThinkingPayload,
+  TerminalCommandStartPayload,
+  TerminalCommandEndPayload,
+  DebugLogEntry,
+  SessionRecoveredPayload
+} from '../shared/ipc/channels'
 
 // Custom APIs for renderer
 const api = {
   getHosts: () => ipcRenderer.invoke('get-hosts'),
-  createHost: (host: any) => ipcRenderer.invoke('create-host', host),
+  createHost: (host: Omit<Host, 'id' | 'createdAt'>) => ipcRenderer.invoke('create-host', host),
   deleteHost: (id: string) => ipcRenderer.invoke('delete-host', id),
   getTopics: () => ipcRenderer.invoke('get-topics'),
   createTopic: (title: string, hostIds: string[]) =>
@@ -18,17 +39,30 @@ const api = {
   getMessages: (topicId: string) => ipcRenderer.invoke('get-messages', topicId),
   getTasks: (topicId?: string) => ipcRenderer.invoke('get-tasks', topicId),
   getLatestTask: (topicId: string) => ipcRenderer.invoke('get-latest-task', topicId),
-  createTask: (task: any) => ipcRenderer.invoke('create-task', task),
-  updateTask: (id: string, updates: any) => ipcRenderer.invoke('update-task', id, updates),
+  createTask: (
+    task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> &
+      Partial<Pick<Task, 'id' | 'createdAt' | 'updatedAt'>>
+  ) => ipcRenderer.invoke('create-task', task),
+  updateTask: (id: string, updates: Partial<Omit<Task, 'id' | 'topicId' | 'createdAt'>>) =>
+    ipcRenderer.invoke('update-task', id, updates),
   getTaskSteps: (taskId: string) => ipcRenderer.invoke('get-task-steps', taskId),
-  createTaskStep: (step: any) => ipcRenderer.invoke('create-task-step', step),
-  updateTaskStep: (id: string, updates: any) => ipcRenderer.invoke('update-task-step', id, updates),
+  createTaskStep: (
+    step: Omit<TaskStep, 'id' | 'createdAt' | 'updatedAt'> &
+      Partial<Pick<TaskStep, 'id' | 'createdAt' | 'updatedAt'>>
+  ) => ipcRenderer.invoke('create-task-step', step),
+  updateTaskStep: (id: string, updates: Partial<Omit<TaskStep, 'id' | 'taskId' | 'createdAt'>>) =>
+    ipcRenderer.invoke('update-task-step', id, updates),
   getApprovals: (taskId: string) => ipcRenderer.invoke('get-approvals', taskId),
-  createApproval: (approval: any) => ipcRenderer.invoke('create-approval', approval),
-  updateApprovalStatus: (id: string, status: ApprovalStatus) =>
+  createApproval: (
+    approval: Omit<Approval, 'id' | 'createdAt'> & Partial<Pick<Approval, 'id' | 'createdAt'>>
+  ) => ipcRenderer.invoke('create-approval', approval),
+  updateApprovalStatus: (id: string, status: Approval['status']) =>
     ipcRenderer.invoke('update-approval-status', id, status),
   getArtifacts: (taskId: string) => ipcRenderer.invoke('get-artifacts', taskId),
-  createArtifact: (artifact: any) => ipcRenderer.invoke('create-artifact', artifact),
+  createArtifact: (
+    artifact: Omit<Artifact, 'id' | 'createdAt' | 'updatedAt'> &
+      Partial<Pick<Artifact, 'id' | 'createdAt' | 'updatedAt'>>
+  ) => ipcRenderer.invoke('create-artifact', artifact),
 
   // Host Pool Management
   getTopicHosts: (topicId: string) => ipcRenderer.invoke('agent:get-topic-hosts', topicId),
@@ -38,7 +72,8 @@ const api = {
     ipcRenderer.invoke('agent:remove-host', topicId, hostId),
 
   // SSH Terminal APIs
-  connectSSH: (hostId: string) => ipcRenderer.invoke('ssh:connect', hostId),
+  connectSSH: (hostId: string, topicId?: string) =>
+    ipcRenderer.invoke('ssh:connect', hostId, topicId),
   sendSSHInput: (id: string, data: string, topicId?: string) =>
     ipcRenderer.send('ssh:input', id, data, topicId),
   resizeSSH: (id: string, cols: number, rows: number) =>
@@ -86,51 +121,51 @@ const api = {
   },
   sendAgentAuthResponse: (requestId: string, approved: boolean, alwaysAllow?: boolean) =>
     ipcRenderer.invoke('agent:auth-response', requestId, approved, alwaysAllow),
-  onTopicUpdated: (callback: (data: { topicId: string; title: string }) => void) => {
-    const listener = (_event, data: any) => callback(data)
+  onTopicUpdated: (callback: (data: TopicUpdatedPayload) => void) => {
+    const listener = (_event: IpcRendererEvent, data: TopicUpdatedPayload) => callback(data)
     ipcRenderer.on('topic:updated', listener)
     return () => ipcRenderer.removeListener('topic:updated', listener)
   },
-  onAgentThinking: (callback: (data: { topicId: string; thinking: boolean }) => void) => {
-    const listener = (_event, data: any) => callback(data)
+  onAgentThinking: (callback: (data: AgentThinkingPayload) => void) => {
+    const listener = (_event: IpcRendererEvent, data: AgentThinkingPayload) => callback(data)
     ipcRenderer.on('agent:thinking', listener)
     return () => ipcRenderer.removeListener('agent:thinking', listener)
   },
-  onAgentStep: (callback: (step: any) => void) => {
-    const listener = (_event, step: any) => callback(step)
+  onAgentStep: (callback: (step: Message) => void) => {
+    const listener = (_event: IpcRendererEvent, step: Message) => callback(step)
     ipcRenderer.on('agent:step', listener)
     return () => ipcRenderer.removeListener('agent:step', listener)
   },
 
-  onAgentTerminalShow: (callback: (data: any) => void) => {
-    const listener = (_event, data: any) => callback(data)
+  onAgentTerminalShow: (callback: (data: TerminalSession) => void) => {
+    const listener = (_event: IpcRendererEvent, data: TerminalSession) => callback(data)
     ipcRenderer.on('agent:terminal-show', listener)
     return () => ipcRenderer.removeListener('agent:terminal-show', listener)
   },
   onAgentTerminalHide: (callback: (data: { id: string }) => void) => {
-    const listener = (_event, data: any) => callback(data)
+    const listener = (_event: IpcRendererEvent, data: { id: string }) => callback(data)
     ipcRenderer.on('agent:terminal-hide', listener)
     return () => ipcRenderer.removeListener('agent:terminal-hide', listener)
   },
-  onAgentSessionCreated: (callback: (data: any) => void) => {
-    const listener = (_event, data: any) => callback(data)
+  onAgentSessionCreated: (callback: (data: TerminalSession) => void) => {
+    const listener = (_event: IpcRendererEvent, data: TerminalSession) => callback(data)
     ipcRenderer.on('agent:session-created', listener)
     return () => ipcRenderer.removeListener('agent:session-created', listener)
   },
   onAgentSessionClosed: (callback: (data: { id: string }) => void) => {
-    const listener = (_event, data: any) => callback(data)
+    const listener = (_event: IpcRendererEvent, data: { id: string }) => callback(data)
     ipcRenderer.on('agent:session-closed', listener)
     return () => ipcRenderer.removeListener('agent:session-closed', listener)
   },
 
-  onTerminalCommandStart: (id: string, callback: (data: any) => void) => {
-    const listener = (_event, data: any) => callback(data)
+  onTerminalCommandStart: (id: string, callback: (data: TerminalCommandStartPayload) => void) => {
+    const listener = (_event: IpcRendererEvent, data: TerminalCommandStartPayload) => callback(data)
     ipcRenderer.on(`terminal:command-start:${id}`, listener)
     return () => ipcRenderer.removeListener(`terminal:command-start:${id}`, listener)
   },
 
-  onTerminalCommandEnd: (id: string, callback: (data: any) => void) => {
-    const listener = (_event, data: any) => callback(data)
+  onTerminalCommandEnd: (id: string, callback: (data: TerminalCommandEndPayload) => void) => {
+    const listener = (_event: IpcRendererEvent, data: TerminalCommandEndPayload) => callback(data)
     ipcRenderer.on(`terminal:command-end:${id}`, listener)
     return () => ipcRenderer.removeListener(`terminal:command-end:${id}`, listener)
   },
@@ -164,24 +199,26 @@ const api = {
     ipcRenderer.invoke('agent:toggle-terminal-pin', id, isPinned),
 
   getModelSettings: () => ipcRenderer.invoke('get-model-settings'),
-  saveModelSettings: (settings: any) => ipcRenderer.invoke('save-model-settings', settings),
+  saveModelSettings: (settings: Partial<ModelSettings>) =>
+    ipcRenderer.invoke('save-model-settings', settings),
 
   getProviders: () => ipcRenderer.invoke('get-providers'),
   getProvider: (id: string) => ipcRenderer.invoke('get-provider', id),
-  saveProvider: (provider: any) => ipcRenderer.invoke('save-provider', provider),
+  saveProvider: (provider: Provider) => ipcRenderer.invoke('save-provider', provider),
   deleteProvider: (id: string) => ipcRenderer.invoke('delete-provider', id),
-  testProviderConnection: (provider: any, modelId?: string) =>
+  testProviderConnection: (provider: Provider, modelId?: string) =>
     ipcRenderer.invoke('test-provider-connection', provider, modelId),
 
   getModels: (providerId?: string) => ipcRenderer.invoke('get-models', providerId),
-  saveModel: (model: any) => ipcRenderer.invoke('save-model', model),
+  saveModel: (model: Model) => ipcRenderer.invoke('save-model', model),
   deleteModel: (id: string) => ipcRenderer.invoke('delete-model', id),
 
   // Permission Settings APIs
   getPermissions: () => ipcRenderer.invoke('get-permissions'),
-  savePermissions: (permissions: any) => ipcRenderer.invoke('save-permissions', permissions),
-  onDebugLog: (callback: (entry: any) => void) => {
-    const listener = (_event, entry: any) => callback(entry)
+  savePermissions: (permissions: Partial<PermissionSettings>) =>
+    ipcRenderer.invoke('save-permissions', permissions),
+  onDebugLog: (callback: (entry: DebugLogEntry) => void) => {
+    const listener = (_event: IpcRendererEvent, entry: DebugLogEntry) => callback(entry)
     ipcRenderer.on('debug:log', listener)
     return () => ipcRenderer.removeListener('debug:log', listener)
   },
@@ -206,8 +243,8 @@ const api = {
   pfList: (hostId?: string) => ipcRenderer.invoke('pf:list', hostId),
 
   getRecoverableSessions: () => ipcRenderer.invoke('session:get-recoverable'),
-  onSessionRecovered: (callback: (data: any) => void) => {
-    const listener = (_event: any, data: any) => callback(data)
+  onSessionRecovered: (callback: (data: SessionRecoveredPayload) => void) => {
+    const listener = (_event: IpcRendererEvent, data: SessionRecoveredPayload) => callback(data)
     ipcRenderer.on('session:recovered', listener)
     return () => ipcRenderer.removeListener('session:recovered', listener)
   }

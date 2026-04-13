@@ -1,6 +1,9 @@
 import OpenAI from 'openai'
 import { providerDB, modelDB } from './db'
 import type { Provider } from '../shared/types'
+import { DEFAULT_MODEL } from '../shared/constants'
+import { PROVIDER_CONNECTION_TIMEOUT_MS } from './constants'
+import { getErrorMessage } from '../shared/errors'
 
 let cachedClient: OpenAI | null = null
 let cachedConfig = ''
@@ -91,7 +94,7 @@ export const getCurrentModel = (): string => {
   const enabledProviders = providers.filter((p) => p.enabled)
 
   if (enabledProviders.length === 0) {
-    return 'gpt-4o-mini'
+    return DEFAULT_MODEL
   }
 
   const provider = enabledProviders[0]
@@ -159,3 +162,113 @@ export const SYSTEM_PROMPT = `你是 OpenTerm Agent，一个专为 macOS 设计�
 - **验证行动**：运行 \`systemctl status nginx\` 或端口探测。
 - **最终回答**：确认 Nginx 已启动（PID: 1234），验证成功。
 `
+
+export async function testProviderConnection(
+  provider: Provider,
+  modelId?: string
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    const chatUrl = buildProviderChatUrl(provider)
+    if (!chatUrl) return { ok: false, message: 'API Host is required.' }
+
+    // Get model to test
+    const models = modelDB.getModels(provider.id)
+    let testModel = modelId || (models.length > 0 ? models[0].id : '')
+
+    if (!testModel) {
+      // Fallback defaults for testing if no models configured
+      if (provider.id === 'openai' || provider.type === 'openai') testModel = 'gpt-4o-mini'
+      else if (provider.id === 'anthropic' || provider.type === 'anthropic')
+        testModel = 'claude-3-haiku-20240307'
+      else if (provider.id === 'deepseek') testModel = 'deepseek-chat'
+      else if (provider.id === 'groq') testModel = 'llama3-8b-8192'
+    }
+
+    if (!testModel && provider.type !== 'gemini') {
+      return { ok: false, message: '请先在该提供商下添加至少一个模型以进行对话测试。' }
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    }
+
+    let body: any = {}
+
+    if (provider.type === 'anthropic') {
+      headers['x-api-key'] = provider.apiKey || ''
+      headers['anthropic-version'] = '2023-06-01'
+      body = {
+        model: testModel,
+        messages: [{ role: 'user', content: 'hi' }],
+        max_tokens: 5
+      }
+    } else if (provider.type === 'gemini') {
+      // Gemini specific quick test
+      const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${provider.apiKey || ''}`
+      const response = await fetch(testUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'hi' }] }],
+          generationConfig: { maxOutputTokens: 5 }
+        })
+      })
+      const data: any = await response.json()
+      if (data.error) return { ok: false, message: data.error.message || 'Gemini API Error' }
+      return {
+        ok: response.ok,
+        message: response.ok ? 'Connection successful.' : `HTTP ${response.status}`
+      }
+    } else {
+      // OpenAI format (default)
+      if (provider.apiKey) {
+        headers.Authorization = `Bearer ${provider.apiKey}`
+      }
+      body = {
+        model: testModel,
+        messages: [{ role: 'user', content: 'hi' }],
+        max_tokens: 5
+      }
+    }
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), PROVIDER_CONNECTION_TIMEOUT_MS)
+
+    try {
+      const response = await fetch(chatUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal
+      })
+      clearTimeout(timeoutId)
+
+      const data: any = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        const errorMsg = data.error?.message || data.error || response.statusText
+        return { ok: false, message: `HTTP ${response.status}: ${errorMsg}` }
+      }
+
+      if (data.error) {
+        return { ok: false, message: data.error.message || 'API error' }
+      }
+
+      return { ok: true, message: `连接成功！已通过模型 ${testModel} 完成对话测试。` }
+    } catch (error: unknown) {
+      clearTimeout(timeoutId)
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return {
+          ok: false,
+          message: `连接超时（${PROVIDER_CONNECTION_TIMEOUT_MS / 1000}秒）。这可能是因为 API 地址不通或模型响应过慢。`
+        }
+      }
+      throw error
+    }
+  } catch (error: unknown) {
+    return {
+      ok: false,
+      message: getErrorMessage(error)
+    }
+  }
+}

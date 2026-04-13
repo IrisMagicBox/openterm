@@ -1,5 +1,6 @@
 import { ApprovalRiskLevel, TrustLevel } from '../shared/types'
 import { commandPatternDB } from './db'
+import { TRUST_APPROVAL_THRESHOLD, TRUST_FAMILIAR_THRESHOLD } from './constants'
 
 export type PolicyAction = 'allow' | 'confirm' | 'deny'
 
@@ -131,10 +132,16 @@ export class PolicyEngine {
 
     // 2. Dangerous execution methods
     const dynamicExecPatterns = [
-      { pattern: /\|\s*(bash|sh|zsh|python|node|perl|php)\b/, reason: '警告：检测到管道符直接执行外部脚本。' },
+      {
+        pattern: /\|\s*(bash|sh|zsh|python|node|perl|php)\b/,
+        reason: '警告：检测到管道符直接执行外部脚本。'
+      },
       { pattern: /\b(python|node|perl|php)\s+-c\b/, reason: '警告：检测到内联代码执行。' },
       { pattern: /\beval\s+/, reason: '警告：检测到 eval 动态执行。' },
-      { pattern: />\s*\/dev\/(sd|nvme|mem|kmem|port|hd)/, reason: '警告：检测到对硬件设备的直接写操作。' }
+      {
+        pattern: />\s*\/dev\/(sd|nvme|mem|kmem|port|hd)/,
+        reason: '警告：检测到对硬件设备的直接写操作。'
+      }
     ]
 
     for (const { pattern, reason } of dynamicExecPatterns) {
@@ -145,9 +152,11 @@ export class PolicyEngine {
 
     // 3. Command classification
     const firstWord = lower.split(/\s+/)[0]
-    
+
     // Modification commands
-    const foundModify = this.MODIFY_COMMANDS.find(cmd => firstWord === cmd || lower.startsWith(cmd + ' '))
+    const foundModify = this.MODIFY_COMMANDS.find(
+      (cmd) => firstWord === cmd || lower.startsWith(cmd + ' ')
+    )
     if (foundModify) {
       const isCriticalPath = this.DANGEROUS_PATHS.some((path) => lower.includes(path))
       if (isCriticalPath) {
@@ -165,7 +174,7 @@ export class PolicyEngine {
     }
 
     // System administration
-    const foundSystem = this.SYSTEM_COMMANDS.find(cmd => lower.includes(cmd))
+    const foundSystem = this.SYSTEM_COMMANDS.find((cmd) => lower.includes(cmd))
     if (foundSystem) {
       return {
         action: 'confirm',
@@ -175,7 +184,9 @@ export class PolicyEngine {
     }
 
     // Network commands
-    const foundNetwork = this.NETWORK_COMMANDS.find(cmd => firstWord === cmd || lower.startsWith(cmd + ' '))
+    const foundNetwork = this.NETWORK_COMMANDS.find(
+      (cmd) => firstWord === cmd || lower.startsWith(cmd + ' ')
+    )
     if (foundNetwork) {
       return {
         action: 'confirm',
@@ -185,7 +196,17 @@ export class PolicyEngine {
     }
 
     // Sensitive path access (even for read-only commands)
-    const sensitiveReadCommands = ['cat', 'less', 'more', 'tail', 'head', 'grep', 'vi', 'nano', 'ls']
+    const sensitiveReadCommands = [
+      'cat',
+      'less',
+      'more',
+      'tail',
+      'head',
+      'grep',
+      'vi',
+      'nano',
+      'ls'
+    ]
     if (sensitiveReadCommands.includes(firstWord)) {
       const foundDangerousPath = this.DANGEROUS_PATHS.find((path) => lower.includes(path))
       if (foundDangerousPath) {
@@ -237,7 +258,7 @@ export class PolicyEngine {
       }
     }
 
-    if (existing.approvalCount >= 3 && existing.rejectionCount === 0) {
+    if (existing.approvalCount >= TRUST_APPROVAL_THRESHOLD && existing.rejectionCount === 0) {
       return {
         action: 'allow',
         riskLevel: baseResult.riskLevel,
@@ -248,7 +269,7 @@ export class PolicyEngine {
       }
     }
 
-    if (existing.approvalCount >= 2 && existing.rejectionCount <= 1) {
+    if (existing.approvalCount >= TRUST_FAMILIAR_THRESHOLD && existing.rejectionCount <= 1) {
       return {
         ...baseResult,
         trustLevel: 'familiar',

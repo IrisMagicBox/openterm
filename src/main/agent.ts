@@ -1,14 +1,21 @@
 import { WebContents, ipcMain } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
 import { topicDB, messageDB, hostDB, taskDB, memoryDB } from './db'
+import { getErrorMessage } from '../shared/errors'
 import { Message, TerminalSession, Task } from '../shared/types'
 import { AgentRunner, AgentContext, AuthResponse } from './AgentRunner'
 import { commandExecutor } from './terminal'
 import { logger } from './logger'
 
-let createAgentSessionRef: any = null
+type CreateAgentSessionFn = (
+  hostId: string,
+  webContents: import('electron').WebContents,
+  topicId?: string
+) => Promise<string>
 
-export function setCreateAgentSession(fn: any) {
+let createAgentSessionRef: CreateAgentSessionFn | null = null
+
+export function setCreateAgentSession(fn: CreateAgentSessionFn | null) {
   createAgentSessionRef = fn
 }
 
@@ -61,7 +68,7 @@ export class AgentService {
   async createTerminal(topicId: string, hostId: string, name?: string) {
     const host = hostDB.getHostById(hostId)
     if (!host) throw new Error('Host not found')
-    
+
     // Explicitly create a NEW session instead of ensuring one (which might reuse)
     const session = await this.createNewSession(topicId, hostId, host.alias, name, true)
     return session
@@ -74,6 +81,8 @@ export class AgentService {
     name?: string,
     showInUI = false
   ): Promise<AgentSession> {
+    if (!createAgentSessionRef) throw new Error('SSH service not initialized')
+    if (!this.webContents) throw new Error('WebContents not initialized')
     const sessionId = await createAgentSessionRef(hostId, this.webContents, topicId)
     const session: AgentSession = {
       id: sessionId,
@@ -311,14 +320,14 @@ export class AgentService {
 
       this.webContents?.send('agent:thinking', { topicId, thinking: false })
       return result
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.webContents?.send('agent:thinking', { topicId, thinking: false })
-      logger.error('Agent', `Error processing message: ${error.message}`)
+      logger.error('Agent', `Error processing message: ${getErrorMessage(error)}`)
       const errorMsg: Message = {
         id: uuidv4(),
         topicId,
         role: 'assistant',
-        content: `抱歉，处理您的请求时出现错误: ${error.message}`,
+        content: `抱歉，处理您的请求时出现错误: ${getErrorMessage(error)}`,
         timestamp: Date.now()
       }
       messageDB.createMessage(errorMsg)

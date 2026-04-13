@@ -13,6 +13,11 @@ import {
   Artifact,
   TerminalSession
 } from '../shared/types'
+import type {
+  DebugLogEntry,
+  SessionRecoveredPayload,
+  RecoverableSession
+} from '../shared/ipc/channels'
 
 declare global {
   interface Window {
@@ -65,7 +70,7 @@ declare global {
       addHostToTopic: (topicId: string, hostId: string) => Promise<boolean>
       removeHostFromTopic: (topicId: string, hostId: string) => Promise<boolean>
 
-      connectSSH: (hostId: string) => Promise<string>
+      connectSSH: (hostId: string, topicId?: string) => Promise<string>
       sendSSHInput: (id: string, data: string, topicId?: string) => void
       resizeSSH: (id: string, cols: number, rows: number) => void
       onSSHData: (id: string, callback: (data: string) => void) => () => void
@@ -86,10 +91,14 @@ declare global {
       ) => Promise<void>
       onTopicUpdated: (callback: (data: { topicId: string; title: string }) => void) => () => void
       onAgentStep: (callback: (step: Message) => void) => () => void
+      onAgentThinking: (
+        callback: (data: { topicId: string; thinking: boolean }) => void
+      ) => () => void
 
       onAgentTerminalShow: (callback: (data: TerminalSession) => void) => () => void
       onAgentTerminalHide: (callback: (data: { id: string }) => void) => () => void
       onAgentSessionCreated: (callback: (data: TerminalSession) => void) => () => void
+      onAgentSessionClosed: (callback: (data: { id: string }) => void) => () => void
 
       onTerminalCommandStart: (
         id: string,
@@ -149,7 +158,7 @@ declare global {
       // Permission Settings APIs
       getPermissions: () => Promise<PermissionSettings>
       savePermissions: (permissions: Partial<PermissionSettings>) => Promise<void>
-      onDebugLog: (callback: (entry: any) => void) => () => void
+      onDebugLog: (callback: (entry: DebugLogEntry) => void) => () => void
 
       // Local Terminal APIs
       connectLocal: (topicId: string) => Promise<TerminalSession>
@@ -212,6 +221,10 @@ declare global {
           createdAt: number
         }[]
       >
+
+      // Session Recovery
+      getRecoverableSessions: () => Promise<RecoverableSession[]>
+      onSessionRecovered: (callback: (data: SessionRecoveredPayload) => void) => () => void
     }
   }
 }

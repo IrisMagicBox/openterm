@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Search, Terminal as TerminalIcon, X } from 'lucide-react'
 
-const api = window.api as any
+const api = window.api
 
 interface HistoryEntry {
   content: string

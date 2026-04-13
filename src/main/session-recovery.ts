@@ -1,9 +1,11 @@
 import { terminalSessionDB } from './db'
 import { createAgentSession } from './ssh'
 import { createLocalSession } from './local-terminal'
+import { getErrorMessage } from '../shared/errors'
 import { logger } from './logger'
 import type { TerminalSession } from '../shared/types'
 import { WebContents } from 'electron'
+import { agentService } from './agent'
 
 interface RecoveredSession {
   originalSession: TerminalSession
@@ -52,8 +54,11 @@ export async function recoverSessions(webContents: WebContents): Promise<Recover
         )
         results.push({ originalSession: session, newSessionId: null, recovered: false })
       }
-    } catch (err: any) {
-      logger.error('SessionRecovery', `Error recovering session ${session.id}: ${err.message}`)
+    } catch (err: unknown) {
+      logger.error(
+        'SessionRecovery',
+        `Error recovering session ${session.id}: ${getErrorMessage(err)}`
+      )
       results.push({ originalSession: session, newSessionId: null, recovered: false })
     }
   }
@@ -63,4 +68,44 @@ export async function recoverSessions(webContents: WebContents): Promise<Recover
 
 export function getRecoverableSessions(): TerminalSession[] {
   return terminalSessionDB.getActiveSessions()
+}
+
+export function handleSessionRecovery(webContents: WebContents): void {
+  recoverSessions(webContents).then((results) => {
+    if (results.length === 0) return
+    const recovered = results.filter((r) => r.recovered)
+    const failed = results.filter((r) => !r.recovered)
+    for (const res of recovered) {
+      if (res.newSessionId) {
+        agentService.registerSession({
+          id: res.newSessionId,
+          topicId: res.originalSession.topicId,
+          hostId: res.originalSession.hostId,
+          hostAlias: res.originalSession.hostAlias,
+          status: 'active',
+          shellType: res.originalSession.shellType,
+          shellIntegrationReady: false,
+          createdAt: Date.now(),
+          paused: false,
+          name: res.originalSession.name
+        })
+      }
+    }
+    logger.info(
+      'SessionRecovery',
+      `Recovered ${recovered.length}/${results.length} sessions, ${failed.length} failed`
+    )
+    webContents.send('session:recovered', {
+      recovered: recovered.map((r) => ({
+        originalId: r.originalSession.id,
+        newSessionId: r.newSessionId,
+        hostAlias: r.originalSession.hostAlias,
+        topicId: r.originalSession.topicId
+      })),
+      failed: failed.map((r) => ({
+        hostAlias: r.originalSession.hostAlias,
+        topicId: r.originalSession.topicId
+      }))
+    })
+  })
 }

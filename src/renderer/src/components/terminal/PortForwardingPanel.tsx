@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../../../shared/errors'
 import { useState, useEffect } from 'react'
 import { Globe, Plus, X, ArrowRight, Trash2 } from 'lucide-react'
 
@@ -28,8 +29,8 @@ export function PortForwardingPanel({ hostId, hostAlias, onClose }: PortForwardi
     try {
       const list = await window.api.pfList(hostId)
       setTunnels(list)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(getErrorMessage(err))
     }
   }
 
@@ -51,8 +52,8 @@ export function PortForwardingPanel({ hostId, hostAlias, onClose }: PortForwardi
       setRemotePort('localhost')
       setRemotePort('')
       refresh()
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(getErrorMessage(err))
     }
   }
 
@@ -60,8 +61,8 @@ export function PortForwardingPanel({ hostId, hostAlias, onClose }: PortForwardi
     try {
       await window.api.pfClose(tunnelId)
       refresh()
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(getErrorMessage(err))
     }
   }
 

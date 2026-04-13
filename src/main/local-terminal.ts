@@ -3,7 +3,15 @@ import { commandExecutor } from './terminal'
 import { logger } from './logger'
 import { terminalSessionDB } from './db'
 import { TerminalSession } from '../shared/types'
+import { getErrorMessage } from '../shared/errors'
 import { v4 as uuidv4 } from 'uuid'
+import {
+  LOCAL_BUFFER_MAX,
+  LOCAL_BUFFER_TRIM,
+  DEFAULT_TERMINAL_COLS,
+  DEFAULT_TERMINAL_ROWS,
+  TERMINAL_BUFFER_SIZE
+} from './constants'
 
 interface LocalPtySession {
   id: string
@@ -48,8 +56,8 @@ export function createLocalSession(
 
       const ptyProcess = nodePty.spawn(shell, [], {
         name: 'xterm-256color',
-        cols: 80,
-        rows: 24,
+        cols: DEFAULT_TERMINAL_COLS,
+        rows: DEFAULT_TERMINAL_ROWS,
         cwd: process.env.HOME,
         env: { ...process.env } as Record<string, string>
       })
@@ -78,8 +86,8 @@ export function createLocalSession(
 
       ptyProcess.onData((data: string) => {
         localSession.buffer += data
-        if (localSession.buffer.length > 50000) {
-          localSession.buffer = localSession.buffer.slice(-30000)
+        if (localSession.buffer.length > LOCAL_BUFFER_MAX) {
+          localSession.buffer = localSession.buffer.slice(-LOCAL_BUFFER_TRIM)
         }
 
         const result = commandExecutor.handleStreamOutput(sessionId, Buffer.from(data))
@@ -109,8 +117,8 @@ export function createLocalSession(
 
       sessions.set(sessionId, localSession)
       resolve(session)
-    } catch (err: any) {
-      logger.error('LocalTerminal', `Failed to create local session: ${err.message}`)
+    } catch (err: unknown) {
+      logger.error('LocalTerminal', `Failed to create local session: ${getErrorMessage(err)}`)
       reject(err)
     }
   })
@@ -142,7 +150,7 @@ export function resizeLocalTerminal(sessionId: string, cols: number, rows: numbe
 
 export function getLocalSessionBuffer(sessionId: string): string {
   const session = sessions.get(sessionId)
-  return session ? session.buffer.slice(-2000) : ''
+  return session ? session.buffer.slice(-TERMINAL_BUFFER_SIZE) : ''
 }
 
 export function closeLocalSession(sessionId: string): void {

@@ -1,23 +1,43 @@
 import { WebContents } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
-import { hostDB, messageDB, taskDB, taskStepDB, approvalDB, permissionDB, commandPatternDB } from './db'
+import type {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+  ChatCompletionMessageFunctionToolCall
+} from 'openai/resources/chat/completions/completions'
+import { messageDB, taskDB, taskStepDB } from './db'
+import { getErrorMessage } from '../shared/errors'
 import { commandExecutor } from './terminal'
 import { logger } from './logger'
-import { Message, TaskStep, ToolResult } from '../shared/types'
+import { Message, TaskStep, ToolResult, Host } from '../shared/types'
+import { AgentSession } from './agent'
 import { getAIClient, getCurrentModel, SYSTEM_PROMPT } from './ai'
 import { MemoryManager } from './MemoryManager'
-import { PolicyEngine } from './PolicyEngine'
+import { MAX_AGENT_TURNS, AGENT_TEMPERATURE, TASK_SUMMARY_MAX_LENGTH } from './constants'
+import { createDefaultRegistry, ToolRegistry } from './tools'
 
 export interface AuthResponse {
   approved: boolean
   alwaysAllow: boolean
 }
 
+/** Interface for the agent service methods used by tools via AgentContext */
+export interface IAgentService {
+  getSessions(topicId: string): Promise<AgentSession[]>
+  createTerminal(topicId: string, hostId: string, name?: string): Promise<AgentSession>
+  closeTerminal(id: string): Promise<void>
+  renameTerminal(id: string, name: string): Promise<void>
+  updateHostMetadata(hostId: string, metadata: Record<string, unknown>): Promise<void>
+  searchTopics(query: string): Promise<unknown[]>
+  searchMemories(query: string, hostId?: string, topicId?: string): Promise<unknown[]>
+  getTopicHosts(topicId: string): Promise<(Host | undefined)[]>
+}
+
 export interface AgentContext {
   topicId: string
   taskId: string
   webContents: WebContents
-  agentService: any
+  agentService: IAgentService
   ensureSession: (hostId: string, hostAlias: string, name?: string) => Promise<string>
   requestAuthorization: (
     command: string,
@@ -25,20 +45,23 @@ export interface AgentContext {
     reason: string
   ) => Promise<AuthResponse>
   notifyStep: (message: Message) => void
+  stepId?: string
 }
 
 export class AgentRunner {
   private context: AgentContext
+  private toolRegistry: ToolRegistry
 
   constructor(context: AgentContext) {
     this.context = context
+    this.toolRegistry = createDefaultRegistry()
   }
 
   async run(history: Message[]): Promise<Message> {
     const client = getAIClient()
     const model = getCurrentModel()
     let turnCount = 0
-    const maxTurns = 10
+    const maxTurns = MAX_AGENT_TURNS
 
     // Recall relevant context
     const lastUserMsg = history.filter((m) => m.role === 'user').pop()
@@ -47,26 +70,26 @@ export class AgentRunner {
       lastUserMsg?.content || ''
     )
 
-    // Build terminal state context
-    const terminalContext = commandExecutor.buildTerminalContext(this.context.topicId)
+    const messagesHistory = history.map(
+      (m): ChatCompletionMessageParam =>
+        ({
+          role: m.role,
+          content: m.content,
+          tool_calls: m.toolCalls,
+          tool_call_id: m.toolCallId,
+          name: m.name
+        }) as ChatCompletionMessageParam
+    )
 
-    const messagesHistory: any[] = history.map((m) => ({
-      role: m.role,
-      content: m.content,
-      tool_calls: (m as any).toolCalls,
-      tool_call_id: m.toolCallId,
-      name: m.name
-    }))
-
-    const turnMessages: any[] = []
+    const turnMessages: ChatCompletionMessageParam[] = []
 
     while (turnCount < maxTurns) {
       turnCount++
 
       // REBUILD context in each turn to ensure state consistency
       const terminalContext = commandExecutor.buildTerminalContext(this.context.topicId)
-      
-      const currentMessages: any[] = [
+
+      const currentMessages: ChatCompletionMessageParam[] = [
         { role: 'system', content: SYSTEM_PROMPT + terminalContext + extraContext },
         ...messagesHistory,
         ...turnMessages
@@ -90,7 +113,7 @@ export class AgentRunner {
         messages: currentMessages,
         tools: this.getTools(),
         tool_choice: turnCount === maxTurns ? 'none' : 'auto',
-        temperature: 0.1
+        temperature: AGENT_TEMPERATURE
       })
 
       const assistantMessage = response.choices[0].message
@@ -109,16 +132,16 @@ export class AgentRunner {
             agentStatus: 'thinking'
           }
         }
-        
+
         // 1. Update task status to completed
-        taskDB.updateTask(this.context.taskId, { 
-          status: 'completed', 
-          summary: finalContent.slice(0, 500) 
+        taskDB.updateTask(this.context.taskId, {
+          status: 'completed',
+          summary: finalContent.slice(0, TASK_SUMMARY_MAX_LENGTH)
         })
 
         // 2. Trigger asynchronous reflection
         // We don't await this to avoid blocking the user response
-        MemoryManager.reflectOnTask(this.context.taskId).catch(err => {
+        MemoryManager.reflectOnTask(this.context.taskId).catch((err) => {
           logger.error('AgentRunner', 'Failed to trigger reflection:', err)
         })
 
@@ -142,11 +165,11 @@ export class AgentRunner {
           }
         })
 
-        const result = await this.executeTool(toolCall)
+        const result = await this.executeTool(toolCall as ChatCompletionMessageFunctionToolCall)
 
         // After command execution, try to distill the raw output for the agent's next turn
         let observation = result.content
-        const tc = toolCall as any // Narrowing for simplified access
+        const tc = toolCall as ChatCompletionMessageFunctionToolCall
         if (tc.function && tc.function.name === 'execute_command') {
           try {
             const parsed = JSON.parse(result.content)
@@ -169,9 +192,9 @@ export class AgentRunner {
     }
 
     // Update task status to failed (max turns reached)
-    taskDB.updateTask(this.context.taskId, { 
-      status: 'failed', 
-      summary: '任务达到多轮推理上限 (10步)，未能完全解决。' 
+    taskDB.updateTask(this.context.taskId, {
+      status: 'failed',
+      summary: `任务达到多轮推理上限 (${MAX_AGENT_TURNS}步)，未能完全解决。`
     })
 
     // Fallback if max turns reached
@@ -179,8 +202,7 @@ export class AgentRunner {
       id: uuidv4(),
       topicId: this.context.topicId,
       role: 'assistant',
-      content:
-        '对不起，我已达到多轮推理上限 (10步)，未能完全解决任务。请根据当前进度给出进一步指令。',
+      content: `对不起，我已达到多轮推理上限 (${MAX_AGENT_TURNS}步)，未能完全解决任务。请根据当前进度给出进一步指令。`,
       timestamp: Date.now(),
       metadata: {
         taskId: this.context.taskId,
@@ -192,162 +214,11 @@ export class AgentRunner {
     return timeoutMsg
   }
 
-  private getTools(): any[] {
-    return [
-      {
-        type: 'function',
-        function: {
-          name: 'execute_command',
-          description:
-            '在指定主机上执行终端命令。当你需要检查系统状态、验证服务运行、收集信息或执行任何操作时，必须使用此工具而非猜测结果。主动执行命令来获取实时信息。',
-          parameters: {
-            type: 'object',
-            properties: {
-              hostId: { type: 'string', description: '主机ID' },
-              terminalName: {
-                type: 'string',
-                description:
-                  '终端名称（可选，默认为 default。指定新名称可开启并锁定新终端窗口实现并发）'
-              },
-              command: { type: 'string', description: '要执行的命令' },
-              reason: { type: 'string', description: '执行该命令的原因' }
-            },
-            required: ['hostId', 'command', 'reason']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'read_file',
-          description:
-            '从指定主机读取文件内容。当用户提到配置文件、日志文件或任何文件内容时，必须使用此工具读取实际内容，而非猜测。',
-          parameters: {
-            type: 'object',
-            properties: {
-              hostId: { type: 'string', description: '主机ID' },
-              path: { type: 'string', description: '文件路径' }
-            },
-            required: ['hostId', 'path']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'list_hosts',
-          description:
-            '列出当前 Topic 下的所有可用主机。当你需要确认可用主机或不确定主机ID时，主动调用此工具。',
-          parameters: { type: 'object', properties: {} }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'manage_terminal',
-          description:
-            '显式管理终端窗口（开启、关闭、重命名）。当你需要执行命令但无合适终端时主动创建；任务完成后主动关闭终端释放资源。',
-          parameters: {
-            type: 'object',
-            properties: {
-              hostId: { type: 'string', description: '主机ID' },
-              action: {
-                type: 'string',
-                enum: ['open', 'close', 'rename'],
-                description: '操作类型'
-              },
-              terminalName: { type: 'string', description: '终端名称。对于 open/rename 必须提供' },
-              sessionId: {
-                type: 'string',
-                description:
-                  '操作 close/rename 时指定的会话ID（可选，若不提供则根据 terminalName 查找）'
-              }
-            },
-            required: ['hostId', 'action']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'list_terminals',
-          description:
-            '列出当前话题下所有活动终端的详细信息（包括ID、名称、主机、状态）。在执行任何终端操作前，应先调用此工具了解当前环境。当你不确定有哪些终端时，必须主动调用。',
-          parameters: {
-            type: 'object',
-            properties: {}
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'manage_host',
-          description:
-            '管理主机元数据（更新别名、标签）。当你通过执行命令探测到主机角色（如 Redis Master）时，主动更新主机别名或添加标签。',
-          parameters: {
-            type: 'object',
-            properties: {
-              hostId: { type: 'string', description: '主机ID' },
-              alias: { type: 'string', description: '新别名' },
-              tags: { type: 'array', items: { type: 'string' }, description: '新标签列表' }
-            },
-            required: ['hostId']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'search_memory',
-          description:
-            '在全局经验库或当前主机/话题中搜索关联记忆。当信息不足或需要参考历史操作时，主动发起搜索。',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: { type: 'string', description: '搜索关键词' },
-              hostId: { type: 'string', description: '限定主机ID（可选）' }
-            },
-            required: ['query']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'search_topics',
-          description:
-            '搜索历史话题（对话），寻找处理类似问题的历史记录。当遇到类似之前处理过的问题时，主动搜索历史经验。',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: { type: 'string', description: '搜索关键词' }
-            },
-            required: ['query']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'write_file',
-          description:
-            '向指定主机写入或覆盖文件内容。修改配置文件、创建脚本或写入多行文本时，必须使用此工具。',
-          parameters: {
-            type: 'object',
-            properties: {
-              hostId: { type: 'string', description: '主机ID' },
-              path: { type: 'string', description: '文件路径' },
-              content: { type: 'string', description: '文件内容' }
-            },
-            required: ['hostId', 'path', 'content']
-          }
-        }
-      }
-    ]
+  private getTools(): ChatCompletionTool[] {
+    return this.toolRegistry.getDefinitions()
   }
 
-  private async executeTool(toolCall: any): Promise<ToolResult> {
+  private async executeTool(toolCall: ChatCompletionMessageFunctionToolCall): Promise<ToolResult> {
     const { name, arguments: argsJson } = toolCall.function
     const args = JSON.parse(argsJson)
 
@@ -364,283 +235,15 @@ export class AgentRunner {
     taskStepDB.createStep(step)
 
     try {
-      let data: any
-      switch (name) {
-        case 'execute_command':
-          data = await this.handleExecuteCommand(args, step)
-          break
-        case 'read_file':
-          data = await this.handleReadFile(args)
-          break
-        case 'list_hosts':
-          data = await this.handleListHosts()
-          break
-        case 'manage_terminal':
-          data = await this.handleManageTerminal(args)
-          break
-        case 'list_terminals':
-          data = await this.handleListTerminals()
-          break
-        case 'manage_host':
-          data = await this.handleManageHost(args)
-          break
-        case 'search_memory':
-          data = await this.handleSearchMemory(args)
-          break
-        case 'search_topics':
-          data = await this.handleSearchTopics(args)
-          break
-        case 'write_file':
-          data = await this.handleWriteFile(args)
-          break
-        default:
-          throw new Error(`Unknown tool: ${name}`)
-      }
+      this.context.stepId = step.id
+      const data = await this.toolRegistry.execute(name, args, this.context)
 
       const resultString = `[Host: ${args.hostId}, Terminal: ${args.terminalName || 'default'}]: ${JSON.stringify(data)}`
       taskStepDB.updateStep(step.id, { status: 'completed', rawOutput: resultString })
       return { toolCallId: toolCall.id, content: resultString }
-    } catch (error: any) {
-      taskStepDB.updateStep(step.id, { status: 'failed', rawOutput: error.message })
-      return { toolCallId: toolCall.id, content: `Error: ${error.message}` }
+    } catch (error: unknown) {
+      taskStepDB.updateStep(step.id, { status: 'failed', rawOutput: getErrorMessage(error) })
+      return { toolCallId: toolCall.id, content: `Error: ${getErrorMessage(error)}` }
     }
-  }
-
-  private async handleExecuteCommand(args: any, step: TaskStep) {
-    const { hostId, command, reason, terminalName } = args
-    const normalizedHostId = hostId.startsWith('@') ? hostId.slice(1) : hostId
-    const hosts = hostDB.getHosts()
-    const host = hosts.find((h) => h.id === normalizedHostId || h.alias === normalizedHostId)
-    if (!host)
-      throw new Error(
-        `Host ${hostId} not found. Please list_hosts to see available hosts in this topic.`
-      )
-
-    const policyResult = PolicyEngine.evaluateWithTrust(command, host.id)
-    if (policyResult.action === 'deny') {
-      throw new Error(`Command blocked by policy: ${policyResult.reason}`)
-    }
-
-    const commandPattern = policyResult.commandPattern || PolicyEngine.normalizeCommand(command)
-    const permissions = permissionDB.getPermissions()
-
-    if (policyResult.action === 'confirm' && permissions.requireConfirmation) {
-      const authResult = await this.context.requestAuthorization(
-        command,
-        policyResult.riskLevel,
-        reason
-      )
-      if (!authResult.approved) {
-        this.recordPatternRejection(host.id, commandPattern)
-        approvalDB.createApproval({
-          id: uuidv4(),
-          taskId: this.context.taskId,
-          stepId: step.id,
-          command,
-          riskLevel: policyResult.riskLevel,
-          reason,
-          status: 'rejected',
-          createdAt: Date.now()
-        })
-        throw new Error('User rejected command authorization')
-      }
-
-      this.recordPatternApproval(host.id, commandPattern, authResult.alwaysAllow)
-
-      approvalDB.createApproval({
-        id: uuidv4(),
-        taskId: this.context.taskId,
-        stepId: step.id,
-        command,
-        riskLevel: policyResult.riskLevel,
-        reason,
-        status: 'approved',
-        createdAt: Date.now()
-      })
-    }
-
-    // Update the step with actual hostId for trace and memory reflection
-    taskStepDB.updateStep(step.id, { hostId: host.id })
-
-    const sessionId = await this.context.ensureSession(host.id, host.alias, terminalName)
-    const result = await commandExecutor.execute(
-      sessionId,
-      command,
-      this.context.topicId,
-      this.context.taskId,
-      step.id
-    )
-    return result
-  }
-
-  private recordPatternApproval(hostId: string, commandPattern: string, alwaysAllow: boolean) {
-    const existing = commandPatternDB.getPatternByHostAndPattern(hostId, commandPattern)
-    if (existing) {
-      if (alwaysAllow) {
-        for (let i = 0; i < 3; i++) {
-          commandPatternDB.incrementApprovalCount(existing.id)
-        }
-      } else {
-        commandPatternDB.incrementApprovalCount(existing.id)
-      }
-    } else {
-      commandPatternDB.createCommandPattern({
-        hostId,
-        commandPattern,
-        approvalCount: alwaysAllow ? 3 : 1,
-        rejectionCount: 0,
-        trustLevel: alwaysAllow ? 'trusted' : 'untrusted',
-        lastSeen: Date.now()
-      })
-    }
-  }
-
-  private recordPatternRejection(hostId: string, commandPattern: string) {
-    const existing = commandPatternDB.getPatternByHostAndPattern(hostId, commandPattern)
-    if (existing) {
-      commandPatternDB.incrementRejectionCount(existing.id)
-    } else {
-      commandPatternDB.createCommandPattern({
-        hostId,
-        commandPattern,
-        approvalCount: 0,
-        rejectionCount: 1,
-        trustLevel: 'untrusted',
-        lastSeen: Date.now()
-      })
-    }
-  }
-
-  private async handleReadFile(args: any) {
-    const { hostId, path, terminalName } = args
-    const normalizedHostId = hostId.startsWith('@') ? hostId.slice(1) : hostId
-    const hosts = hostDB.getHosts()
-    const host = hosts.find((h) => h.id === normalizedHostId || h.alias === normalizedHostId)
-    if (!host) throw new Error(`Host ${hostId} not found`)
-
-    const sessionId = await this.context.ensureSession(host.id, host.alias, terminalName)
-    const result = await commandExecutor.execute(
-      sessionId,
-      `cat "${path}"`,
-      this.context.topicId,
-      this.context.taskId
-    )
-
-    if (result.exitCode !== 0) {
-      throw new Error(`Failed to read file: ${result.content}`)
-    }
-
-    return result.content
-  }
-
-  private async handleWriteFile(args: any) {
-    const { hostId, path, content } = args
-    const normalizedHostId = hostId.startsWith('@') ? hostId.slice(1) : hostId
-
-    // Ensure we have a session
-    const sessionId = await this.context.ensureSession(normalizedHostId, normalizedHostId)
-
-    // Use base64 to avoid shell escaping issues with complex characters
-    const b64 = Buffer.from(content).toString('base64')
-    // We try to use 'base64 -d' (common on Linux) or 'openssl base64 -d'
-    const commandRegex = `printf "%s" '${b64}' | base64 -d > "${path}"`
-
-    const result = await commandExecutor.execute(
-      sessionId,
-      commandRegex,
-      this.context.topicId,
-      this.context.taskId
-    )
-
-    if (result.exitCode !== 0) {
-      throw new Error(`Failed to write file: ${result.content}`)
-    }
-
-    return { message: 'File written successfully', path }
-  }
-
-  private async handleListHosts() {
-    return this.context.agentService.getTopicHosts(this.context.topicId)
-  }
-
-  private async handleManageTerminal(args: any) {
-    const { action, hostId, terminalName, sessionId } = args
-    const normalizedHostId = hostId.startsWith('@') ? hostId.slice(1) : hostId
-
-    switch (action) {
-      case 'open':
-        const session = await this.context.agentService.createTerminal(
-          this.context.topicId,
-          normalizedHostId,
-          terminalName
-        )
-        return { message: 'Terminal opened', sessionId: session.id, name: session.name }
-      case 'close': {
-        let targetSessionId = sessionId
-        if (!targetSessionId && terminalName) {
-          const sessions = await this.context.agentService.getSessions(this.context.topicId)
-          const match = sessions.find(
-            (s: any) => s.name === terminalName && s.hostId === normalizedHostId
-          )
-          if (match) targetSessionId = match.id
-        }
-        if (!targetSessionId)
-          throw new Error('No session found. Use list_terminals to see available sessions.')
-        await this.context.agentService.closeTerminal(targetSessionId)
-        return { message: 'Terminal closed', sessionId: targetSessionId }
-      }
-      case 'rename':
-        await this.context.agentService.renameTerminal(sessionId, terminalName)
-        return { message: 'Terminal renamed', sessionId, newName: terminalName }
-      default:
-        throw new Error('Invalid action for manage_terminal')
-    }
-  }
-
-  private async handleListTerminals() {
-    const sessions = await this.context.agentService.getSessions(this.context.topicId)
-    return sessions.map((s: any) => ({
-      id: s.id,
-      name: s.name,
-      hostId: s.hostId,
-      hostAlias: s.hostAlias,
-      status: s.status,
-      paused: s.paused,
-      isPinned: s.isPinned,
-      createdAt: s.createdAt
-    }))
-  }
-
-  private async handleManageHost(args: any) {
-    const { hostId, alias, tags } = args
-    const normalizedHostId = hostId.startsWith('@') ? hostId.slice(1) : hostId
-    await this.context.agentService.updateHostMetadata(normalizedHostId, { alias, tags })
-    return { message: 'Host metadata updated', hostId: normalizedHostId }
-  }
-
-  private async handleSearchMemory(args: any) {
-    const { query, hostId } = args
-    const normalizedHostId = hostId?.startsWith('@') ? hostId.slice(1) : hostId
-    const memories = await this.context.agentService.searchMemories(
-      query,
-      normalizedHostId,
-      this.context.topicId
-    )
-    return memories.map((m: any) => ({
-      type: m.type,
-      content: m.content,
-      importance: m.importance,
-      timestamp: new Date(m.timestamp).toISOString()
-    }))
-  }
-
-  private async handleSearchTopics(args: any) {
-    const { query } = args
-    const topics = await this.context.agentService.searchTopics(query)
-    return topics.map((t: any) => ({
-      id: t.id,
-      title: t.title,
-      lastAt: new Date(t.lastMessageAt).toISOString()
-    }))
   }
 }

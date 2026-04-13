@@ -1,8 +1,9 @@
 import { Client } from 'ssh2'
 import { ipcMain } from 'electron'
 import { hostDB } from './db'
-import { readFileSync, createReadStream, createWriteStream } from 'fs'
+import { createReadStream, createWriteStream } from 'fs'
 import { logger } from './logger'
+import { buildSSHConfig } from './utils/ssh-config'
 
 interface SFTPSession {
   client: Client
@@ -16,16 +17,7 @@ export async function createSFTPSession(hostId: string): Promise<string> {
   const host = hostDB.getHostById(hostId)
   if (!host) throw new Error('Host not found')
 
-  const config: any = { host: host.ip, port: host.port || 22, username: host.username }
-  if (host.keyPath) {
-    try {
-      config.privateKey = readFileSync(host.keyPath)
-    } catch {
-      if (host.password) config.password = host.password
-    }
-  } else if (host.password) {
-    config.password = host.password
-  }
+  const config = buildSSHConfig(host)
 
   return new Promise((resolve, reject) => {
     const client = new Client()

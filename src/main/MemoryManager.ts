@@ -1,35 +1,47 @@
 import { getAIClient, getCurrentModel } from './ai'
 import { logger } from './logger'
-import { taskDB, taskStepDB, memoryDB, topicDB } from './db'
+import { taskDB, taskStepDB, memoryDB, topicDB, hostDB } from './db'
+import { getErrorMessage } from '../shared/errors'
+import {
+  DISTILLATION_THRESHOLD,
+  DISTILLATION_MAX_LENGTH,
+  REFLECTION_STEPS_LIMIT,
+  REFLECTION_STEP_CONTENT_MAX
+} from './constants'
 
 export class MemoryManager {
   /**
    * Distills large terminal output into a concise summary to save context and focus the Agent.
    */
-  static async distillObservation(command: string, output: string, exitCode: number): Promise<string> {
+  static async distillObservation(
+    command: string,
+    output: string,
+    exitCode: number
+  ): Promise<string> {
     if (!output.trim()) return `命令 "${command}" 已执行，退出代码 ${exitCode}（无输出）。`
-    
+
     // If output is short enough, just return it
-    if (output.length < 500 && !output.includes('\x1b')) {
+    if (output.length < DISTILLATION_THRESHOLD && !output.includes('\x1b')) {
       return output
     }
 
     try {
       const aiClient = getAIClient()
       const model = getCurrentModel()
-      
+
       logger.info('MemoryManager', `正在提纯命令输出: ${command.slice(0, 30)}...`)
-      
+
       const response = await aiClient.chat.completions.create({
         model,
         messages: [
           {
             role: 'system',
-            content: '你是一位资深的 Linux 管理员。你的任务是将原始终端输出提纯为 1-3 句简洁的观察结论。重点关注关键事实：是否成功？具体的系统状态发生了什么变化？是否有错误？剔除所有 ANSI 颜色代码和冗余的日志。'
+            content:
+              '你是一位资深的 Linux 管理员。你的任务是将原始终端输出提纯为 1-3 句简洁的观察结论。重点关注关键事实：是否成功？具体的系统状态发生了什么变化？是否有错误？剔除所有 ANSI 颜色代码和冗余的日志。'
           },
           {
             role: 'user',
-            content: `命令: ${command}\n退出代码: ${exitCode}\n\n原始输出:\n${output.slice(0, 5000)}` 
+            content: `命令: ${command}\n退出代码: ${exitCode}\n\n原始输出:\n${output.slice(0, DISTILLATION_MAX_LENGTH)}`
           }
         ]
       })
@@ -38,7 +50,7 @@ export class MemoryManager {
       return `[提纯后的观察结论]: ${summary}`
     } catch (err) {
       logger.error('MemoryManager', '提纯失败', err)
-      return `[原始输出 (已截断)]: ${output.slice(0, 500)}...`
+      return `[原始输出 (已截断)]: ${output.slice(0, DISTILLATION_THRESHOLD)}...`
     }
   }
 
@@ -50,7 +62,7 @@ export class MemoryManager {
     if (!task || task.status !== 'completed') return
 
     const steps = taskStepDB.getTaskSteps(taskId)
-    
+
     try {
       const aiClient = getAIClient()
       const model = getCurrentModel()
@@ -58,9 +70,13 @@ export class MemoryManager {
       logger.info('MemoryManager', `正在对任务 ${taskId} 进行回顾并提取记忆...`)
 
       // Limit the number of steps and content size to avoid context overflow (400 error)
-      const truncatedSteps = steps.slice(-20).map(s => 
-        `- ${s.title}: ${s.content.slice(0, 500)}${s.content.length > 500 ? '...' : ''}`
-      ).join('\n')
+      const truncatedSteps = steps
+        .slice(-REFLECTION_STEPS_LIMIT)
+        .map(
+          (s) =>
+            `- ${s.title}: ${s.content.slice(0, REFLECTION_STEP_CONTENT_MAX)}${s.content.length > REFLECTION_STEP_CONTENT_MAX ? '...' : ''}`
+        )
+        .join('\n')
 
       const response = await aiClient.chat.completions.create({
         model,
@@ -91,7 +107,7 @@ export class MemoryManager {
       })
 
       let raw = response.choices[0].message.content || '{}'
-      
+
       // Basic JSON cleaning in case the model returns markdown code blocks
       if (raw.trim().startsWith('```json')) {
         raw = raw.replace(/```json\n?/, '').replace(/```\n?$/, '')
@@ -101,7 +117,7 @@ export class MemoryManager {
 
       const data = JSON.parse(raw)
       const entries = data.memories || []
-      const hostId = steps.find(s => s.hostId && s.hostId !== 'undefined')?.hostId
+      const hostId = steps.find((s) => s.hostId && s.hostId !== 'undefined')?.hostId
 
       for (const entry of entries) {
         // Double check host existence if we have a hostId to avoid FK errors
@@ -123,12 +139,11 @@ export class MemoryManager {
           topicId: task.topicId
         })
       }
-      
+
       logger.info('MemoryManager', `成功从任务 ${taskId} 中提取了 ${entries.length} 条记忆`)
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error('MemoryManager', '回顾环节失败', {
-        message: err.message,
-        status: err.status,
+        message: getErrorMessage(err),
         taskId
       })
     }
@@ -139,12 +154,14 @@ export class MemoryManager {
    */
   static async recallRelevantContext(topicId: string, query: string): Promise<string> {
     const topic = topicDB.getTopicById(topicId)
-    const hostId = topic?.hostIds[0] 
+    const hostId = topic?.hostIds[0]
 
     const memories = memoryDB.searchRelevantMemories(query, hostId)
     if (memories.length === 0) return ''
 
-    return `\n### 全局经验与用户习惯：\n` + 
-      memories.map(m => `- [${m.type.toUpperCase()}] ${m.content}`).join('\n')
+    return (
+      `\n### 全局经验与用户习惯：\n` +
+      memories.map((m) => `- [${m.type.toUpperCase()}] ${m.content}`).join('\n')
+    )
   }
 }
