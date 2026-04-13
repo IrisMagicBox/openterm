@@ -30,6 +30,7 @@ interface SessionState {
   stream: TerminalStream
   webContents?: WebContents
   currentCommand?: ActiveCommand
+  commandQueue: Promise<void> // Queue for serializing agent commands
   outputBuffer: string
   rawBuffer: string
   isLocked: boolean
@@ -67,6 +68,7 @@ class CommandExecutor {
       session,
       stream,
       webContents,
+      commandQueue: Promise.resolve(),
       outputBuffer: '',
       rawBuffer: '',
       isLocked: false,
@@ -92,12 +94,35 @@ class CommandExecutor {
     taskId?: string,
     stepId?: string
   ): Promise<CommandResult> {
-    logger.info('Terminal', `Executing agent command in session ${sessionId}`, { command })
     const state = this.sessions.get(sessionId)
     if (!state) {
       logger.error('Terminal', `Session not found for command execution: ${sessionId}`)
       throw new Error('Session not found')
     }
+
+    // Capture the promise for this specific command and chain it to the session queue
+    const commandPromise = state.commandQueue.then(async () => {
+      return this._doExecuteAgentCommand(sessionId, command, topicId, taskId, stepId)
+    })
+
+    // Update the queue to wait for this command (don't let errors break the queue)
+    state.commandQueue = commandPromise.then(
+      () => {},
+      () => {}
+    )
+
+    return commandPromise
+  }
+
+  private async _doExecuteAgentCommand(
+    sessionId: string,
+    command: string,
+    topicId: string,
+    taskId?: string,
+    stepId?: string
+  ): Promise<CommandResult> {
+    logger.info('Terminal', `Executing agent command in session ${sessionId}`, { command })
+    const state = this.sessions.get(sessionId)!
 
     if (state.isLocked && state.lockedBy === 'user') {
       throw new Error('Session is locked by user, cannot execute agent command')
@@ -132,15 +157,8 @@ class CommandExecutor {
 
     const cmdWithNewline = command.endsWith('\n') ? command : command + '\n'
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        if (state.currentCommand && state.currentCommand.inputId === inputId) {
-          this.completeCommand(sessionId, -1, '', true)
-          reject(
-            new Error(`Command execution timed out after ${COMMAND_TIMEOUT_MS / 1000} seconds`)
-          )
-        }
-      }, COMMAND_TIMEOUT_MS)
-
+      // 1. REGISTER the active command BEFORE writing to the stream
+      // This prevents race conditions where output arrives before registration
       const activeCommand: ActiveCommand = {
         inputId,
         sessionId,
@@ -159,6 +177,15 @@ class CommandExecutor {
       }
 
       state.currentCommand = activeCommand
+
+      const timeout = setTimeout(() => {
+        if (state.currentCommand && state.currentCommand.inputId === inputId) {
+          this.completeCommand(sessionId, -1, '', true)
+          reject(
+            new Error(`Command execution timed out after ${COMMAND_TIMEOUT_MS / 1000} seconds`)
+          )
+        }
+      }, COMMAND_TIMEOUT_MS)
 
       if (activeCommand.isStreaming) {
         this.startStreamingFlush(sessionId, inputId)
@@ -523,6 +550,28 @@ class CommandExecutor {
     return true
   }
 
+  closeSessionsByTopic(topicId: string): void {
+    logger.info('Terminal', `Closing all sessions for topic: ${topicId}`)
+    const sessionsToClose = Array.from(this.sessions.values()).filter(
+      (s) => s.session.topicId === topicId
+    )
+
+    for (const state of sessionsToClose) {
+      this.closeSession(state.session.id)
+    }
+  }
+
+  closeSessionsByTopic(topicId: string): void {
+    logger.info('Terminal', `Closing all sessions for topic: ${topicId}`)
+    const sessionsToClose = Array.from(this.sessions.values()).filter(
+      (s) => s.session.topicId === topicId
+    )
+
+    for (const state of sessionsToClose) {
+      this.closeSession(state.session.id)
+    }
+  }
+
   closeSession(sessionId: string): void {
     const state = this.sessions.get(sessionId)
     if (state) {
@@ -538,6 +587,10 @@ class CommandExecutor {
 
       terminalSessionDB.closeSession(sessionId)
       this.sessions.delete(sessionId)
+
+      if (state.webContents) {
+        state.webContents.send(`terminal:session-closed:${sessionId}`)
+      }
     }
   }
 

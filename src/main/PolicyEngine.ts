@@ -1,6 +1,7 @@
 import { ApprovalRiskLevel, TrustLevel } from '../shared/types'
 import { commandPatternDB } from './db'
 import { TRUST_APPROVAL_THRESHOLD, TRUST_FAMILIAR_THRESHOLD } from './constants'
+import { ShellAnalyzer } from './utils/shell-analyzer'
 
 export type PolicyAction = 'allow' | 'confirm' | 'deny'
 
@@ -115,113 +116,144 @@ export class PolicyEngine {
 
   static evaluate(command: string): PolicyResult {
     const trimmed = command.trim()
-    const lower = trimmed.toLowerCase()
-
     if (!trimmed) {
       return { action: 'allow', riskLevel: 'low', reason: '空命令。' }
     }
 
-    // 1. Critical destructive patterns
-    if (this.isNeverAutoApprove(command)) {
-      return {
-        action: 'deny',
-        riskLevel: 'critical',
-        reason: '检测到极度危险的系统操作（如全盘删除或格式化），已自动拦截。'
-      }
-    }
+    const segments = ShellAnalyzer.splitSegments(trimmed)
+    const results: PolicyResult[] = []
 
-    // 2. Dangerous execution methods
-    const dynamicExecPatterns = [
-      {
-        pattern: /\|\s*(bash|sh|zsh|python|node|perl|php)\b/,
-        reason: '警告：检测到管道符直接执行外部脚本。'
-      },
-      { pattern: /\b(python|node|perl|php)\s+-c\b/, reason: '警告：检测到内联代码执行。' },
-      { pattern: /\beval\s+/, reason: '警告：检测到 eval 动态执行。' },
-      {
-        pattern: />\s*\/dev\/(sd|nvme|mem|kmem|port|hd)/,
-        reason: '警告：检测到对硬件设备的直接写操作。'
-      }
-    ]
+    for (const segment of segments) {
+      const lowerCmd = segment.command.toLowerCase()
+      const lowerRaw = segment.raw.toLowerCase()
 
-    for (const { pattern, reason } of dynamicExecPatterns) {
-      if (pattern.test(lower)) {
-        return { action: 'confirm', riskLevel: 'high', reason }
-      }
-    }
-
-    // 3. Command classification
-    const firstWord = lower.split(/\s+/)[0]
-
-    // Modification commands
-    const foundModify = this.MODIFY_COMMANDS.find(
-      (cmd) => firstWord === cmd || lower.startsWith(cmd + ' ')
-    )
-    if (foundModify) {
-      const isCriticalPath = this.DANGEROUS_PATHS.some((path) => lower.includes(path))
-      if (isCriticalPath) {
+      // 1. Critical destructive patterns (per segment)
+      if (this.isNeverAutoApprove(segment.raw)) {
         return {
+          action: 'deny',
+          riskLevel: 'critical',
+          reason: `片段 '${segment.raw}' 包含极度危险的操作，已拦截。`
+        }
+      }
+
+      // 2. Dangerous execution methods
+      const dynamicExecPatterns = [
+        {
+          pattern: /\|\s*(bash|sh|zsh|python|node|perl|php)\b/,
+          reason: '警告：检测到管道符直接执行外部脚本。'
+        },
+        { pattern: /\b(python|node|perl|php)\s+-c\b/, reason: '警告：检测到内联代码执行。' },
+        { pattern: /\beval\s+/, reason: '警告：检测到 eval 动态执行。' },
+        {
+          pattern: />\s*\/dev\/(sd|nvme|mem|kmem|port|hd)/,
+          reason: '警告：检测到对硬件设备的直接写操作。'
+        }
+      ]
+
+      for (const { pattern, reason } of dynamicExecPatterns) {
+        if (pattern.test(lowerRaw)) {
+          results.push({ action: 'confirm', riskLevel: 'high', reason })
+        }
+      }
+
+      // Redirection audit
+      if (ShellAnalyzer.hasDangerousRedirection(segment.raw)) {
+        results.push({
           action: 'confirm',
           riskLevel: 'critical',
-          reason: `破坏性命令 '${foundModify}' 尝试操作系统关键路径。`
+          reason: `警告：检测到试图通过重定向修改系统敏感路径: ${segment.raw}`
+        })
+      }
+
+      // 3. Command classification
+      // Modification commands
+      const foundModify = this.MODIFY_COMMANDS.find(
+        (cmd) => lowerCmd === cmd || lowerRaw.startsWith(cmd + ' ')
+      )
+      if (foundModify) {
+        const isCriticalPath = this.DANGEROUS_PATHS.some((path) => lowerRaw.includes(path))
+        if (isCriticalPath) {
+          results.push({
+            action: 'confirm',
+            riskLevel: 'critical',
+            reason: `破坏性命令 '${foundModify}' 尝试操作关键路径: ${segment.raw}`
+          })
+        } else {
+          results.push({
+            action: 'confirm',
+            riskLevel: 'high',
+            reason: `检测到修改或删除操作: ${foundModify}`
+          })
         }
       }
-      return {
-        action: 'confirm',
-        riskLevel: 'high',
-        reason: `检测到修改或删除操作: ${foundModify}`
-      }
-    }
 
-    // System administration
-    const foundSystem = this.SYSTEM_COMMANDS.find((cmd) => lower.includes(cmd))
-    if (foundSystem) {
-      return {
-        action: 'confirm',
-        riskLevel: 'high',
-        reason: `涉及系统配置或权限管理: ${foundSystem}`
+      // System administration
+      const foundSystem = this.SYSTEM_COMMANDS.find((cmd) => lowerRaw.includes(cmd))
+      if (foundSystem) {
+        results.push({
+          action: 'confirm',
+          riskLevel: 'high',
+          reason: `涉及系统配置或权限管理: ${foundSystem}`
+        })
       }
-    }
 
-    // Network commands
-    const foundNetwork = this.NETWORK_COMMANDS.find(
-      (cmd) => firstWord === cmd || lower.startsWith(cmd + ' ')
-    )
-    if (foundNetwork) {
-      return {
-        action: 'confirm',
-        riskLevel: 'medium',
-        reason: `涉及外部网络访问: ${foundNetwork}`
-      }
-    }
-
-    // Sensitive path access (even for read-only commands)
-    const sensitiveReadCommands = [
-      'cat',
-      'less',
-      'more',
-      'tail',
-      'head',
-      'grep',
-      'vi',
-      'nano',
-      'ls'
-    ]
-    if (sensitiveReadCommands.includes(firstWord)) {
-      const foundDangerousPath = this.DANGEROUS_PATHS.find((path) => lower.includes(path))
-      if (foundDangerousPath) {
-        return {
+      // Network commands
+      const foundNetwork = this.NETWORK_COMMANDS.find(
+        (cmd) => lowerCmd === cmd || lowerRaw.startsWith(cmd + ' ')
+      )
+      if (foundNetwork) {
+        results.push({
           action: 'confirm',
           riskLevel: 'medium',
-          reason: `正在访问系统敏感目录或文件: ${foundDangerousPath}`
+          reason: `涉及外部网络访问: ${foundNetwork}`
+        })
+      }
+
+      // Sensitive path access (even for read-only commands)
+      const sensitiveReadCommands = [
+        'cat',
+        'less',
+        'more',
+        'tail',
+        'head',
+        'grep',
+        'vi',
+        'nano',
+        'ls'
+      ]
+      if (sensitiveReadCommands.includes(lowerCmd)) {
+        const foundDangerousPath = this.DANGEROUS_PATHS.find((path) => lowerRaw.includes(path))
+        if (foundDangerousPath) {
+          results.push({
+            action: 'confirm',
+            riskLevel: 'medium',
+            reason: `正在访问系统敏感目录或文件: ${foundDangerousPath}`
+          })
         }
       }
     }
 
+    // Determine aggregate result: highest risk wins
+    if (results.length === 0) {
+      return {
+        action: 'allow',
+        riskLevel: 'low',
+        reason: '命令符合基础安全策略，可以自动执行。'
+      }
+    }
+
+    // Sort by risk level importance
+    const riskPriority: Record<ApprovalRiskLevel, number> = {
+      critical: 4,
+      high: 3,
+      medium: 2,
+      low: 1
+    }
+
+    const worstResult = results.sort((a, b) => riskPriority[b.riskLevel] - riskPriority[a.riskLevel])[0]
     return {
-      action: 'allow',
-      riskLevel: 'low',
-      reason: '命令符合基础安全策略，可以自动执行。'
+      ...worstResult,
+      action: 'confirm' // Aggregate result that hit a policy is always confirm
     }
   }
 

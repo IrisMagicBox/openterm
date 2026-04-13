@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { topicDB } from '../db'
+import { commandExecutor } from '../terminal'
 
 export function registerTopicIPC(): void {
   ipcMain.removeHandler('get-topics')
@@ -14,7 +15,13 @@ export function registerTopicIPC(): void {
   )
 
   ipcMain.removeHandler('delete-topic')
-  ipcMain.handle('delete-topic', (_, topicId) => topicDB.deleteTopic(topicId))
+  ipcMain.handle('delete-topic', (_, topicId) => {
+    // 1. Close all active terminal processes first
+    commandExecutor.closeSessionsByTopic(topicId)
+
+    // 2. Delete from DB (cascades will handle messages, sessions, etc.)
+    return topicDB.deleteTopic(topicId)
+  })
 
   ipcMain.removeHandler('update-topic-hosts')
   ipcMain.handle('update-topic-hosts', (_, topicId, hostIds) =>

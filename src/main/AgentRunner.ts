@@ -95,6 +95,14 @@ export class AgentRunner {
         ...turnMessages
       ]
 
+      // Determine if we are likely in a verification phase based on previous turn
+      const lastAssistantMsg = turnMessages.length > 0 ? turnMessages[turnMessages.length - 1] : null;
+      const isVerifying = turnCount > 1 || (lastAssistantMsg?.content && (
+        lastAssistantMsg.content.toLowerCase().includes('验证') ||
+        lastAssistantMsg.content.toLowerCase().includes('verify') ||
+        lastAssistantMsg.content.toLowerCase().includes('check')
+      ));
+
       // Notify UI we are thinking
       this.context.notifyStep({
         id: uuidv4(),
@@ -104,7 +112,7 @@ export class AgentRunner {
         timestamp: Date.now(),
         metadata: {
           taskId: this.context.taskId,
-          agentStatus: turnCount === 1 ? 'thinking' : 'verifying'
+          agentStatus: isVerifying ? 'verifying' : 'thinking'
         }
       })
 
@@ -129,7 +137,9 @@ export class AgentRunner {
           timestamp: Date.now(),
           metadata: {
             taskId: this.context.taskId,
-            agentStatus: 'thinking'
+            agentStatus: 'thinking',
+            memoryRecalled: extraContext.length > 0,
+            isVerifying: isVerifying
           }
         }
 
@@ -140,7 +150,6 @@ export class AgentRunner {
         })
 
         // 2. Trigger asynchronous reflection
-        // We don't await this to avoid blocking the user response
         MemoryManager.reflectOnTask(this.context.taskId).catch((err) => {
           logger.error('AgentRunner', 'Failed to trigger reflection:', err)
         })

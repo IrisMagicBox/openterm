@@ -74,7 +74,7 @@ export function MessageBubble({ message, expandedThoughts, onToggleThought }: Me
           )}
 
           <div
-            className={`px-5 py-3.5 text-sm leading-relaxed rounded-2xl shadow-sm ${
+            className={`px-5 py-3.5 text-sm leading-relaxed rounded-2xl shadow-sm select-text no-drag cursor-auto ${
               msg.role === 'user'
                 ? 'bg-blue-600 text-white rounded-br-sm'
                 : msg.role === 'tool'

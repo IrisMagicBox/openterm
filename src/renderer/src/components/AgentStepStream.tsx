@@ -31,11 +31,11 @@ export function AgentStepStream({ steps }: AgentStepStreamProps) {
                     className={`font-semibold ${status === 'executing' ? 'text-emerald-600' : status === 'verifying' ? 'text-amber-600' : 'text-blue-600'}`}
                   >
                     {status === 'thinking'
-                      ? '思考分析中...'
+                      ? '思考方案中...'
                       : status === 'executing'
-                        ? '正在执行命令...'
+                        ? '正在执行环境指令...'
                         : status === 'verifying'
-                          ? '正在验证结果...'
+                          ? '正在验证目标达成情况...'
                           : '处理中...'}
                   </span>
                   {isLast && <Loader2 size={10} className="animate-spin text-gray-400" />}

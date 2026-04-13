@@ -55,6 +55,9 @@ export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | nul
       setAgentSessions((prev) => prev.filter((s) => s.id !== id))
     })
 
+    // Reset sessions when topic changes to avoid stale data
+    setAgentSessions([])
+
     return () => {
       unlistenAuth()
       unlistenThinking()

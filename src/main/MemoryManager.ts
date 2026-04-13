@@ -150,18 +150,45 @@ export class MemoryManager {
   }
 
   /**
-   * Recalls relevant global memories to inject into the Agent's system prompt.
+   * Recalls layered memory context (Topic, Host, Global) to inject into the Agent's system prompt.
    */
   static async recallRelevantContext(topicId: string, query: string): Promise<string> {
     const topic = topicDB.getTopicById(topicId)
     const hostId = topic?.hostIds[0]
 
-    const memories = memoryDB.searchRelevantMemories(query, hostId)
-    if (memories.length === 0) return ''
+    // 1. Topic-specific context (memories linked to this topic)
+    const topicMemories = topicId ? memoryDB.searchMemories(query, { topicId }) : []
 
-    return (
-      `\n### 全局经验与用户习惯：\n` +
-      memories.map((m) => `- [${m.type.toUpperCase()}] ${m.content}`).join('\n')
-    )
+    // 2. Host-specific facts (memories linked to the primary host)
+    const hostMemories = hostId
+      ? memoryDB.searchMemories('', { hostId }).filter((m) => m.type === 'host_fact')
+      : []
+
+    // 3. Global habits and experiences (relevant to the query but not tied to a specific topic/host)
+    const globalMemories = memoryDB
+      .searchRelevantMemories(query)
+      .filter((m) => !m.topicId && !m.hostId)
+
+    if (topicMemories.length === 0 && hostMemories.length === 0 && globalMemories.length === 0) {
+      return ''
+    }
+
+    let context = '\n### 记忆与背景知识 (Layered Context):\n'
+
+    if (topicMemories.length > 0) {
+      context += `\n[当前话题记忆]:\n` + topicMemories.map((m) => `- ${m.content}`).join('\n')
+    }
+
+    if (hostMemories.length > 0) {
+      context += `\n[目标主机事实]:\n` + hostMemories.map((m) => `- ${m.content}`).join('\n')
+    }
+
+    if (globalMemories.length > 0) {
+      context +=
+        `\n[全局习惯与经验]:\n` +
+        globalMemories.map((m) => `- [${m.type.toUpperCase()}] ${m.content}`).join('\n')
+    }
+
+    return context
   }
 }
