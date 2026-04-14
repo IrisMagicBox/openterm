@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { ClipboardAddon } from '@xterm/addon-clipboard'
 import '@xterm/xterm/css/xterm.css'
+import { FileDragData } from './terminal/FileBrowser'
 
 interface TerminalViewProps {
   id: string
@@ -13,17 +14,28 @@ interface TerminalViewProps {
   fontSize?: number
   command?: string
   commandStatus?: string
+  onFileDrop?: (
+    sourceHostId: string,
+    sourcePath: string,
+    fileName: string,
+    destHostId: string,
+    destPath: string
+  ) => void
 }
 
 export function TerminalView({
   id,
   onClose,
   topicId,
+  hostId,
   onFocusSession,
-  fontSize = 13
+  fontSize = 13,
+  onFileDrop
 }: TerminalViewProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
+  const fitAddonRef = useRef<FitAddon | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
 
   const onCloseRef = useRef(onClose)
   const onFocusSessionRef = useRef(onFocusSession)
@@ -41,24 +53,25 @@ export function TerminalView({
       fontSize: fontSize,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: {
-        background: '#1a1b1e',
-        foreground: '#d1d5db',
-        cursor: '#60a5fa',
-        selectionBackground: '#374151',
-        black: '#1a1b1e',
-        red: '#ef4444',
-        green: '#22c55e',
-        yellow: '#f59e0b',
-        blue: '#3b82f6',
-        magenta: '#d946ef',
-        cyan: '#06b6d4',
-        white: '#d1d5db',
-        brightBlack: '#6b7280',
-        brightRed: '#f87171',
-        brightGreen: '#4ade80',
-        brightYellow: '#fbbf24',
+        background: '#ffffff',
+        foreground: '#1f2937',
+        cursor: '#3b82f6',
+        cursorAccent: '#ffffff',
+        selectionBackground: '#e5e7eb',
+        black: '#000000',
+        red: '#dc2626',
+        green: '#16a34a',
+        yellow: '#ca8a04',
+        blue: '#2563eb',
+        magenta: '#d33bbd',
+        cyan: '#0891b2',
+        white: '#ffffff',
+        brightBlack: '#4b5563',
+        brightRed: '#ef4444',
+        brightGreen: '#22c55e',
+        brightYellow: '#eab308',
         brightBlue: '#60a5fa',
-        brightMagenta: '#e879f9',
+        brightMagenta: '#f472b6',
         brightCyan: '#22d3ee',
         brightWhite: '#ffffff'
       }
@@ -69,7 +82,7 @@ export function TerminalView({
     term.loadAddon(fitAddon)
     term.loadAddon(clipboardAddon)
     term.open(terminalRef.current)
-    fitAddon.fit()
+    fitAddonRef.current = fitAddon
 
     const handleMouseDown = () => {
       term.focus()
@@ -79,9 +92,34 @@ export function TerminalView({
 
     xtermRef.current = term
 
-    // Initial resize and attach
-    window.api.resizeSSH(id, term.cols, term.rows)
-    window.api.attachSSH(id)
+    const isLocal = hostId === 'local'
+
+    const doFitAndResize = () => {
+      try {
+        fitAddon.fit()
+        if (term.cols > 0 && term.rows > 0) {
+          if (isLocal) {
+            window.api.resizeLocal(id, term.cols, term.rows)
+          } else {
+            window.api.resizeSSH(id, term.cols, term.rows)
+          }
+          if (isLocal) {
+            window.api.attachLocal(id)
+          } else {
+            window.api.attachSSH(id)
+          }
+        } else {
+          requestAnimationFrame(doFitAndResize)
+        }
+      } catch {
+        requestAnimationFrame(doFitAndResize)
+      }
+    }
+
+    requestAnimationFrame(() => {
+      doFitAndResize()
+      term.focus()
+    })
 
     let isBufferLoaded = false
     const cleanupData = window.api.onSSHData(id, (data) => {
@@ -91,8 +129,8 @@ export function TerminalView({
     })
 
     // Load initial buffer
-    window.api
-      .getSSHBuffer(id)
+    const bufferPromise = isLocal ? window.api.getLocalBuffer(id) : window.api.getSSHBuffer(id)
+    bufferPromise
       .then((buffer) => {
         if (buffer) {
           term.write(buffer)
@@ -110,13 +148,20 @@ export function TerminalView({
     })
 
     term.onData((data) => {
-      term.focus()
       onFocusSessionRef.current?.()
-      window.api.sendSSHInput(id, data, topicId || '')
+      if (isLocal) {
+        window.api.sendLocalInput(id, data)
+      } else {
+        window.api.sendSSHInput(id, data, topicId || '')
+      }
     })
 
     term.onResize(({ cols, rows }) => {
-      window.api.resizeSSH(id, cols, rows)
+      if (isLocal) {
+        window.api.resizeLocal(id, cols, rows)
+      } else {
+        window.api.resizeSSH(id, cols, rows)
+      }
     })
 
     const resizeObserver = new ResizeObserver(() => {
@@ -149,18 +194,72 @@ export function TerminalView({
   useEffect(() => {
     if (xtermRef.current) {
       xtermRef.current.options.fontSize = fontSize
-      // We need to wait a tiny bit for the font to apply before fitting
+      // Wait for the font to apply before re-fitting
       setTimeout(() => {
-        const fitAddon = new FitAddon()
-        xtermRef.current?.loadAddon(fitAddon)
-        fitAddon.fit()
+        try {
+          fitAddonRef.current?.fit()
+        } catch {
+          // Ignore fit errors
+        }
       }, 50)
     }
   }, [fontSize])
 
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('application/json')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return
+    setIsDragOver(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+
+    const raw = e.dataTransfer.getData('application/json')
+    if (!raw) return
+
+    let dragData: FileDragData
+    try {
+      dragData = JSON.parse(raw)
+    } catch {
+      return
+    }
+
+    if (dragData.type !== 'file-transfer' || !hostId) return
+
+    if (dragData.sourceHostId === hostId) return
+
+    if (!onFileDrop) return
+
+    const destPath = `~/Downloads/${dragData.fileName}`
+    onFileDrop(dragData.sourceHostId, dragData.sourcePath, dragData.fileName, hostId, destPath)
+  }
+
   return (
-    <div className="w-full h-full relative">
-      <div ref={terminalRef} className="w-full h-full p-1" />
+    <div
+      className="w-full h-full relative"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragOver && (
+        <div className="absolute inset-0 z-10 bg-blue-500/10 border-2 border-blue-400/50 rounded pointer-events-none flex items-center justify-center">
+          <span className="text-blue-400 text-xs font-bold bg-gray-900/80 px-3 py-1.5 rounded-lg">
+            释放以下载文件
+          </span>
+        </div>
+      )}
+      <div
+        ref={terminalRef}
+        className="w-full h-full p-1"
+        onMouseDown={() => xtermRef.current?.focus()}
+      />
     </div>
   )
 }

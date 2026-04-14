@@ -8,6 +8,7 @@ import { setupSSHHandlers, setAgentService, createAgentSession } from './ssh'
 import { setupAgentHandlers, agentService, setCreateAgentSession } from './agent'
 import { registerLocalTerminalIPC } from './local-terminal'
 import { registerSFTPIPC } from './sftp'
+import { registerLocalFsIPC } from './local-fs'
 import { registerPortForwardIPC } from './port-forward'
 import { handleSessionRecovery } from './session-recovery'
 import { logger } from './logger'
@@ -60,6 +61,7 @@ app.whenReady().then(() => {
   setupAgentHandlers()
   registerLocalTerminalIPC()
   registerSFTPIPC()
+  registerLocalFsIPC()
   registerPortForwardIPC()
   setAgentService(agentService)
   setCreateAgentSession(createAgentSession)

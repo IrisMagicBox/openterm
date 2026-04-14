@@ -14,6 +14,8 @@ export interface Topic {
   id: string
   title: string
   hostIds: string[]
+  selectedProviderId?: string
+  selectedModelId?: string
   lastMessageAt: number
   createdAt: number
 }

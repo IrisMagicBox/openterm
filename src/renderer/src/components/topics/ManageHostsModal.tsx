@@ -1,5 +1,6 @@
-import { X, Server, Minus, Plus } from 'lucide-react'
+import { X, Server, Minus, Plus, Monitor } from 'lucide-react'
 import type { Host, Topic } from '../../../../shared/types'
+import { useConfirm } from '../../hooks/useConfirm'
 
 interface ManageHostsModalProps {
   topic: Topic
@@ -16,8 +17,10 @@ export function ManageHostsModal({
   onAddHost,
   onRemoveHost
 }: ManageHostsModalProps) {
+  const { confirm, ConfirmDialogComponent } = useConfirm()
   const topicHosts = allHosts.filter((h) => topic.hostIds.includes(h.id))
   const availableHosts = allHosts.filter((h) => !topic.hostIds.includes(h.id))
+  const hasLocal = topic.hostIds.includes('local')
 
   return (
     <div
@@ -46,10 +49,38 @@ export function ManageHostsModal({
             <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
               已连接主机
             </h3>
-            {topicHosts.length === 0 ? (
+            {topicHosts.length === 0 && !hasLocal ? (
               <p className="text-sm text-gray-400 italic">暂无主机</p>
             ) : (
               <div className="space-y-2">
+                {hasLocal && (
+                  <div className="flex items-center justify-between p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
+                        <Monitor size={18} />
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm text-gray-900">本机</div>
+                        <div className="text-xs text-gray-400">本地终端</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: '移除本机',
+                          message: '确定从话题中移除本机终端？',
+                          confirmText: '移除',
+                          variant: 'danger'
+                        })
+                        if (!ok) return
+                        onRemoveHost('local')
+                      }}
+                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition"
+                    >
+                      <Minus size={16} />
+                    </button>
+                  </div>
+                )}
                 {topicHosts.map((host) => (
                   <div
                     key={host.id}
@@ -67,7 +98,16 @@ export function ManageHostsModal({
                       </div>
                     </div>
                     <button
-                      onClick={() => onRemoveHost(host.id)}
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: '移除主机',
+                          message: `确定从话题中移除主机"${host.alias}"？`,
+                          confirmText: '移除',
+                          variant: 'danger'
+                        })
+                        if (!ok) return
+                        onRemoveHost(host.id)
+                      }}
                       className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition"
                     >
                       <Minus size={16} />
@@ -78,12 +118,31 @@ export function ManageHostsModal({
             )}
           </div>
 
-          {availableHosts.length > 0 && (
+          {(availableHosts.length > 0 || !hasLocal) && (
             <div>
               <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
                 可用主机
               </h3>
               <div className="space-y-2">
+                {!hasLocal && (
+                  <div className="flex items-center justify-between p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
+                        <Monitor size={18} />
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm text-gray-900">本机</div>
+                        <div className="text-xs text-gray-400">本地终端</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onAddHost('local')}
+                      className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                )}
                 {availableHosts.map((host) => (
                   <div
                     key={host.id}
@@ -113,6 +172,7 @@ export function ManageHostsModal({
           )}
         </div>
       </div>
+      {ConfirmDialogComponent}
     </div>
   )
 }

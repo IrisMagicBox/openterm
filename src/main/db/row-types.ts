@@ -26,6 +26,8 @@ export interface TopicRow {
   id: string
   title: string
   hostIds: string // JSON-encoded string[]
+  selectedProviderId: string | null
+  selectedModelId: string | null
   lastMessageAt: number
   createdAt: number
 }

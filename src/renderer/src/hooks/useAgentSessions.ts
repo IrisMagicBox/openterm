@@ -115,7 +115,16 @@ export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | nul
   const handleCreateTerminal = useCallback(
     async (hostId: string) => {
       if (!selectedTopic) return
-      await window.api.createAgentTerminal(selectedTopic.id, hostId)
+      if (hostId === 'local') {
+        const session = await window.api.connectLocal(selectedTopic.id)
+        setAgentSessions((prev) => {
+          const exists = prev.find((s) => s.id === session.id)
+          if (exists) return prev
+          return [...prev, { ...session, visible: true, paused: false }]
+        })
+      } else {
+        await window.api.createAgentTerminal(selectedTopic.id, hostId)
+      }
     },
     [selectedTopic]
   )

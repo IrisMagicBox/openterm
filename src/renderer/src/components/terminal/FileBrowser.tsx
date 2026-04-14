@@ -12,6 +12,7 @@ import {
   X,
   Loader2
 } from 'lucide-react'
+import { useConfirm } from '../../hooks/useConfirm'
 
 interface FileItem {
   name: string
@@ -21,10 +22,25 @@ interface FileItem {
   permissions: number
 }
 
+export interface FileDragData {
+  type: 'file-transfer'
+  sourceHostId: string
+  sourcePath: string
+  fileName: string
+  fileType: 'file' | 'directory'
+}
+
 interface FileBrowserProps {
   hostId: string
   hostAlias: string
   onClose: () => void
+  onFileDrop?: (
+    sourceHostId: string,
+    sourcePath: string,
+    fileName: string,
+    destHostId: string,
+    destPath: string
+  ) => void
 }
 
 const api = window.api
@@ -45,9 +61,19 @@ function formatDate(ts: number): string {
   })
 }
 
-export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
+export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrowserProps) {
+  const { confirm, ConfirmDialogComponent } = useConfirm()
+  const isLocal = hostId === 'local'
+  const fsConnect = isLocal ? () => api.localFsConnect() : () => api.sftpConnect(hostId)
+  const fsList = isLocal ? api.localFsList : api.sftpList
+  const fsUpload = isLocal ? api.localFsUpload : api.sftpUpload
+  const fsDownload = isLocal ? api.localFsDownload : api.sftpDownload
+  const fsMkdir = isLocal ? api.localFsMkdir : api.sftpMkdir
+  const fsDelete = isLocal ? api.localFsDelete : api.sftpDelete
+  const fsClose = isLocal ? api.localFsClose : api.sftpClose
+
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [currentPath, setCurrentPath] = useState('/')
+  const [currentPath, setCurrentPath] = useState(isLocal ? process.env.HOME || '/' : '/')
   const [items, setItems] = useState<FileItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -55,20 +81,36 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
   const [showMkdir, setShowMkdir] = useState(false)
   const [mkdirName, setMkdirName] = useState('')
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const isConnectedRef = useRef(false)
+  const sessionIdRef = useRef(sessionId)
+  const fsCloseRef = useRef(fsClose)
+  sessionIdRef.current = sessionId
+  fsCloseRef.current = fsClose
+
   const connect = useCallback(async () => {
+    if (sessionId || isConnectedRef.current) return
+    isConnectedRef.current = true
     setLoading(true)
     setError(null)
     try {
-      const result = await api.sftpConnect(hostId)
+      const result = await fsConnect()
       setSessionId(result.sessionId)
     } catch (err: unknown) {
       setError(getErrorMessage(err) || '连接失败')
+      isConnectedRef.current = false
     } finally {
       setLoading(false)
     }
-  }, [hostId])
+  }, [sessionId, fsConnect])
+
+  useEffect(() => {
+    return () => {
+      if (sessionIdRef.current) fsCloseRef.current(sessionIdRef.current)
+    }
+  }, [])
 
   const loadDirectory = useCallback(
     async (path: string) => {
@@ -76,7 +118,7 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
       setLoading(true)
       setError(null)
       try {
-        const list = await api.sftpList(sessionId, path)
+        const list = await fsList(sessionId, path)
         const sorted = list.sort((a: FileItem, b: FileItem) => {
           if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
           return a.name.localeCompare(b.name)
@@ -89,7 +131,7 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
         setLoading(false)
       }
     },
-    [sessionId]
+    [sessionId, fsList]
   )
 
   useEffect(() => {
@@ -98,11 +140,11 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
 
   useEffect(() => {
     if (sessionId) loadDirectory(currentPath)
-  }, [sessionId])
+  }, [sessionId, loadDirectory])
 
   useEffect(() => {
     return () => {
-      if (sessionId) api.sftpClose(sessionId)
+      if (sessionIdRef.current) fsCloseRef.current(sessionIdRef.current)
     }
   }, [])
 
@@ -137,7 +179,7 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
     setError(null)
     try {
       const remotePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`
-      await api.sftpUpload(sessionId, (file as any).path, remotePath)
+      await fsUpload(sessionId, (file as any).path, remotePath)
       await loadDirectory(currentPath)
     } catch (err: unknown) {
       setError(getErrorMessage(err) || '上传失败')
@@ -154,7 +196,7 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
     setLoading(true)
     setError(null)
     try {
-      await api.sftpDownload(sessionId, remotePath, localPath)
+      await fsDownload(sessionId, remotePath, localPath)
     } catch (err: unknown) {
       setError(getErrorMessage(err) || '下载失败')
     } finally {
@@ -169,7 +211,7 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
     try {
       const newPath =
         currentPath === '/' ? `/${mkdirName.trim()}` : `${currentPath}/${mkdirName.trim()}`
-      await api.sftpMkdir(sessionId, newPath)
+      await fsMkdir(sessionId, newPath)
       setShowMkdir(false)
       setMkdirName('')
       await loadDirectory(currentPath)
@@ -182,12 +224,18 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
 
   const handleDelete = async () => {
     if (!selectedItem || !sessionId) return
-    if (!confirm(`确定删除 ${selectedItem} 吗？`)) return
+    const ok = await confirm({
+      title: '删除文件',
+      message: `确定删除 ${selectedItem} 吗？此操作不可恢复。`,
+      confirmText: '删除',
+      variant: 'danger'
+    })
+    if (!ok) return
     setLoading(true)
     setError(null)
     try {
       const remotePath = currentPath === '/' ? `/${selectedItem}` : `${currentPath}/${selectedItem}`
-      await api.sftpDelete(sessionId, remotePath)
+      await fsDelete(sessionId, remotePath)
       setSelectedItem(null)
       await loadDirectory(currentPath)
     } catch (err: unknown) {
@@ -204,10 +252,109 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
     navigateTo('/' + parts.join('/'))
   }
 
+  const handleRowDragStart = (e: React.DragEvent, item: FileItem) => {
+    const fullPath =
+      currentPath === '/' ? `/${item.name}` : `${currentPath}/${item.name}`
+
+    // If local, use native drag
+    if (isLocal) {
+      e.preventDefault()
+      api.startNativeDrag(fullPath)
+      return
+    }
+
+    const dragData: FileDragData = {
+      type: 'file-transfer',
+      sourceHostId: hostId,
+      sourcePath: fullPath,
+      fileName: item.name,
+      fileType: item.type
+    }
+    e.dataTransfer.setData('application/json', JSON.stringify(dragData))
+    e.dataTransfer.effectAllowed = 'copy'
+  }
+
+  const handleContainerDragOver = (e: React.DragEvent) => {
+    const isInternal = e.dataTransfer.types.includes('application/json')
+    const isFiles = e.dataTransfer.types.includes('Files')
+    if (!isInternal && !isFiles) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setIsDragOver(true)
+  }
+
+  const handleContainerDragLeave = (e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return
+    setIsDragOver(false)
+  }
+
+  const handleContainerDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+
+    // Handle OS files
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      if (!sessionId) return
+      setUploading(true)
+      try {
+        for (let i = 0; i < e.dataTransfer.files.length; i++) {
+          const file = e.dataTransfer.files[i]
+          const filePath = (file as any).path
+          if (!filePath) continue
+          const remotePath =
+            currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`
+          await fsUpload(sessionId, filePath, remotePath)
+        }
+        await loadDirectory(currentPath)
+      } catch (err: unknown) {
+        setError(getErrorMessage(err) || '上传失败')
+      } finally {
+        setUploading(false)
+      }
+      return
+    }
+
+    const raw = e.dataTransfer.getData('application/json')
+    if (!raw) return
+
+    let dragData: FileDragData
+    try {
+      dragData = JSON.parse(raw)
+    } catch {
+      return
+    }
+
+    if (dragData.type !== 'file-transfer') return
+
+    if (dragData.sourceHostId === hostId) {
+      setError('同一主机无需传输')
+      setTimeout(() => setError(null), 2000)
+      return
+    }
+
+    if (!onFileDrop) return
+
+    const destPath =
+      currentPath === '/' ? `/${dragData.fileName}` : `${currentPath}/${dragData.fileName}`
+    onFileDrop(dragData.sourceHostId, dragData.sourcePath, dragData.fileName, hostId, destPath)
+  }
+
   const pathParts = currentPath.split('/').filter(Boolean)
 
   return (
-    <div className="flex flex-col h-full bg-[#1a1a2e] text-gray-200 text-sm">
+    <div
+      className="flex flex-col h-full bg-[#1a1a2e] text-gray-200 text-sm relative"
+      onDragOver={handleContainerDragOver}
+      onDragLeave={handleContainerDragLeave}
+      onDrop={handleContainerDrop}
+    >
+      {isDragOver && (
+        <div className="absolute inset-0 z-10 bg-blue-500/10 border-2 border-blue-400/50 rounded pointer-events-none flex items-center justify-center">
+          <span className="text-blue-400 text-xs font-bold bg-gray-900/80 px-3 py-1.5 rounded-lg">
+            释放以传输文件
+          </span>
+        </div>
+      )}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700/50 bg-[#16162a]">
         <div className="flex items-center gap-2 min-w-0">
           <Folder className="w-4 h-4 text-blue-400 shrink-0" />
@@ -354,6 +501,8 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
                 <tr
                   key={item.name}
                   onClick={() => handleItemClick(item)}
+                  draggable
+                  onDragStart={(e) => handleRowDragStart(e, item)}
                   className={`cursor-pointer border-b border-gray-800/30 hover:bg-gray-700/20 ${
                     selectedItem === item.name ? 'bg-blue-900/20' : ''
                   }`}
@@ -378,6 +527,7 @@ export function FileBrowser({ hostId, hostAlias, onClose }: FileBrowserProps) {
           </table>
         )}
       </div>
+      {ConfirmDialogComponent}
     </div>
   )
 }

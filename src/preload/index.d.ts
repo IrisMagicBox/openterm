@@ -28,9 +28,10 @@ declare global {
       deleteHost: (id: string) => Promise<void>
       getTopics: () => Promise<Topic[]>
       createTopic: (title: string, hostIds: string[]) => Promise<Topic>
-      updateTopicTitle: (topicId: string, title: string) => Promise<void>
-      deleteTopic: (topicId: string) => Promise<void>
-      updateTopicHosts: (topicId: string, hostIds: string[]) => Promise<void>
+      updateTopicTitle: (id: string, title: string) => Promise<void>
+      deleteTopic: (id: string) => Promise<void>
+      updateTopicHosts: (id: string, hostIds: string[]) => Promise<void>
+      updateTopicModel: (id: string, providerId: string, modelId: string) => Promise<void>
       getMessages: (topicId: string) => Promise<Message[]>
       getTasks: (topicId?: string) => Promise<Task[]>
       getLatestTask: (topicId: string) => Promise<Task | undefined>
@@ -187,6 +188,39 @@ declare global {
       sftpMkdir: (sessionId: string, path: string) => Promise<void>
       sftpDelete: (sessionId: string, path: string) => Promise<void>
       sftpClose: (sessionId: string) => Promise<boolean>
+
+      // Local Filesystem APIs
+      localFsConnect: () => Promise<{ sessionId: string; hostId: string }>
+      localFsList: (
+        sessionId: string,
+        path: string
+      ) => Promise<
+        {
+          name: string
+          type: 'directory' | 'file'
+          size: number
+          modifyTime: number
+          permissions: number
+        }[]
+      >
+      localFsUpload: (sessionId: string, localPath: string, remotePath: string) => Promise<void>
+      localFsDownload: (sessionId: string, remotePath: string, localPath: string) => Promise<void>
+      localFsMkdir: (sessionId: string, path: string) => Promise<void>
+      localFsDelete: (sessionId: string, path: string) => Promise<void>
+      localFsClose: (sessionId: string) => Promise<void>
+      startNativeDrag: (filePath: string, iconPath?: string) => void
+
+      sftpTransferBetweenHosts: (
+        transferId: string,
+        sourceHostId: string,
+        sourcePath: string,
+        destHostId: string,
+        destPath: string
+      ) => Promise<{ success: boolean; transferId: string }>
+      onSftpTransferProgress: (
+        transferId: string,
+        callback: (data: { phase: string; progress: number; transferId: string }) => void
+      ) => () => void
 
       // Command History Search
       searchCommands: (

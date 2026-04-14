@@ -27,7 +27,15 @@ export class TopicRepository extends BaseRepository<TopicRow> {
     `
     ).run(id, title, hostsStr, now, now)
 
-    return { id, title, hostIds, lastMessageAt: now, createdAt: now }
+    return {
+      id,
+      title,
+      hostIds,
+      lastMessageAt: now,
+      createdAt: now,
+      selectedProviderId: undefined,
+      selectedModelId: undefined
+    }
   }
 
   updateTopicTitle(id: string, title: string): void {
@@ -41,6 +49,14 @@ export class TopicRepository extends BaseRepository<TopicRow> {
   updateTopicHosts(id: string, hostIds: string[]): void {
     const hostsStr = JSON.stringify(hostIds)
     this.stmt('UPDATE topics SET hostIds = ? WHERE id = ?').run(hostsStr, id)
+  }
+
+  updateTopicModel(id: string, providerId: string, modelId: string): void {
+    this.stmt('UPDATE topics SET selectedProviderId = ?, selectedModelId = ? WHERE id = ?').run(
+      providerId,
+      modelId,
+      id
+    )
   }
 
   getTopicById(id: string): Topic | undefined {

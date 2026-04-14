@@ -2,6 +2,7 @@ import { X, Monitor, Terminal as TerminalIcon, Pause, Play } from 'lucide-react'
 import { TerminalView } from '../TerminalView'
 import { TerminalTabBar } from '../terminal/TerminalTabBar'
 import type { TerminalSession } from '../../../../shared/types'
+import { useConfirm } from '../../hooks/useConfirm'
 
 interface TerminalSessionGridProps {
   visibleSessions: TerminalSession[]
@@ -42,6 +43,8 @@ export function TerminalSessionGrid({
   onSetFocusedSessionId,
   onFocusSession
 }: TerminalSessionGridProps) {
+  const { confirm, ConfirmDialogComponent } = useConfirm()
+
   return (
     <>
       <div
@@ -81,7 +84,7 @@ export function TerminalSessionGrid({
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={onOpenCommandPalette}
-                className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition bg-gray-900 text-white hover:bg-black"
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
                 title="Command+K"
               >
                 Cmd+K
@@ -98,7 +101,16 @@ export function TerminalSessionGrid({
               active: s.id === focusedSessionId
             }))}
             onTabSelect={(id) => onSetFocusedSessionId(id)}
-            onTabClose={(id) => onCloseAgentTerminal(id)}
+            onTabClose={async (id) => {
+              const ok = await confirm({
+                title: '关闭终端',
+                message: '确定关闭此终端？',
+                confirmText: '关闭',
+                variant: 'danger'
+              })
+              if (!ok) return
+              onCloseAgentTerminal(id)
+            }}
             onNewTab={() => {
               const hostId = focusedSession?.hostId || topicHosts[0]?.id
               if (hostId) onCreateTerminal(hostId)
@@ -116,33 +128,33 @@ export function TerminalSessionGrid({
                 className={`bg-white rounded-2xl border overflow-hidden shadow-sm transition cursor-pointer flex flex-col ${focusedSession?.id === session.id ? 'border-blue-300 ring-2 ring-blue-100 shadow-blue-100/70' : 'border-gray-200 hover:border-gray-300'}`}
               >
                 <div
-                  className={`px-3 py-2.5 text-white flex items-center justify-between gap-2 ${focusedSession?.id === session.id ? 'bg-slate-950' : 'bg-gray-900'}`}
+                  className={`px-3 py-2.5 text-gray-800 flex items-center justify-between gap-2 border-b border-gray-100 ${focusedSession?.id === session.id ? 'bg-gray-50' : 'bg-white'}`}
                 >
                   <div className="flex items-center gap-2 min-w-0 shrink">
                     <TerminalIcon
                       size={12}
-                      className={session.paused ? 'text-amber-300' : 'text-emerald-400'}
+                      className={session.paused ? 'text-amber-500' : 'text-emerald-500'}
                     />
                     <span className="text-xs font-bold truncate">{session.hostAlias}</span>
                     {focusedSession?.id === session.id && (
-                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/10 text-blue-100">
+                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
                         当前
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <div className="flex bg-white/10 rounded-lg overflow-hidden border border-white/5 mr-1">
+                    <div className="flex bg-gray-100 rounded-lg overflow-hidden border border-gray-200 mr-1">
                       <button
                         onClick={() => onSetTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
-                        className="px-2 py-1 text-[10px] font-black hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                        className="px-2 py-1 text-[10px] font-black hover:bg-gray-200 text-gray-500 hover:text-gray-800 transition-colors"
                         title="缩小 (Cmd -)"
                       >
                         -
                       </button>
-                      <div className="w-[1px] bg-white/5" />
+                      <div className="w-[1px] bg-gray-200" />
                       <button
                         onClick={() => onSetTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
-                        className="px-2 py-1 text-[10px] font-black hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+                        className="px-2 py-1 text-[10px] font-black hover:bg-gray-200 text-gray-500 hover:text-gray-800 transition-colors"
                         title="放大 (Cmd +)"
                       >
                         +
@@ -152,19 +164,26 @@ export function TerminalSessionGrid({
                       onClick={() => onToggleAgentTerminalPaused(session.id, !session.paused)}
                       className={`px-2 py-1 rounded-lg text-[11px] font-bold transition ${
                         session.paused
-                          ? 'bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30'
-                          : 'bg-amber-500/20 text-amber-100 hover:bg-amber-500/30'
+                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                          : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
                       }`}
                       title={session.paused ? '恢复 Agent 控制' : '暂停 Agent，人工接管'}
                     >
                       {session.paused ? <Play size={12} /> : <Pause size={12} />}
                     </button>
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation()
+                        const ok = await confirm({
+                          title: '关闭终端',
+                          message: '确定关闭此终端？',
+                          confirmText: '关闭',
+                          variant: 'danger'
+                        })
+                        if (!ok) return
                         onCloseAgentTerminal(session.id)
                       }}
-                      className="p-1 hover:bg-gray-700 rounded transition"
+                      className="p-1 hover:bg-gray-100 text-gray-400 hover:text-gray-600 rounded transition"
                     >
                       <X size={12} />
                     </button>
@@ -218,7 +237,7 @@ export function TerminalSessionGrid({
                     </div>
                   </div>
                 )}
-                <div className="flex-1 min-h-0 bg-[#1a1b1e] relative">
+                <div className="flex-1 min-h-0 bg-white relative">
                   <TerminalView
                     id={session.id}
                     topicId={topicId}
@@ -270,6 +289,7 @@ export function TerminalSessionGrid({
           </div>
         </div>
       </div>
+      {ConfirmDialogComponent}
     </>
   )
 }

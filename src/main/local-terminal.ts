@@ -72,7 +72,9 @@ export function createLocalSession(
         createdAt: Date.now()
       }
 
-      terminalSessionDB.createSession(session)
+      if (topicId && topicId !== '') {
+        terminalSessionDB.createSession(session)
+      }
 
       const localSession: LocalPtySession = {
         id: sessionId,
@@ -92,15 +94,18 @@ export function createLocalSession(
 
         const result = commandExecutor.handleStreamOutput(sessionId, Buffer.from(data))
 
-        if (webContents) {
-          webContents.send(`ssh:data:${sessionId}`, result.cleanData)
+        // IMPORTANT: Use localSession.webContents instead of webContents from the closure
+        if (localSession.webContents) {
+          localSession.webContents.send(`ssh:data:${sessionId}`, result.cleanData)
         }
       })
 
       ptyProcess.onExit(({ exitCode }: { exitCode: number }) => {
         logger.info('LocalTerminal', `Local PTY exited with code ${exitCode}`)
         sessions.delete(sessionId)
-        terminalSessionDB.closeSession(sessionId)
+        if (topicId && topicId !== '') {
+          terminalSessionDB.closeSession(sessionId)
+        }
         if (webContents) {
           webContents.send(`ssh:closed:${sessionId}`)
         }
@@ -112,7 +117,8 @@ export function createLocalSession(
         'local',
         '本地终端',
         ptyProcess,
-        webContents
+        webContents,
+        false
       )
 
       sessions.set(sessionId, localSession)
@@ -126,14 +132,15 @@ export function createLocalSession(
 
 export function sendLocalInput(sessionId: string, data: string): void {
   const session = sessions.get(sessionId)
-  if (!session) return
-
-  commandExecutor.handleUserInput(sessionId, data, session.topicId)
-
+  if (!session) {
+    logger.error('LocalTerminal', `sendLocalInput: session not found ${sessionId}`)
+    return
+  }
   try {
     session.pty.write(data)
+    logger.info('LocalTerminal', `sendLocalInput wrote ${data.length} bytes`)
   } catch (err) {
-    logger.error('LocalTerminal', `Failed to write to PTY: ${err}`)
+    logger.error('LocalTerminal', `sendLocalInput write error: ${err}`)
   }
 }
 
@@ -184,6 +191,7 @@ export function registerLocalTerminalIPC(): void {
   })
 
   ipcMain.on('local:input', (_, sessionId: string, data: string) => {
+    logger.info('LocalTerminal', `IPC RECEIVED [local:input] session=${sessionId}, len=${data.length}, data=${JSON.stringify(data)}`)
     sendLocalInput(sessionId, data)
   })
 

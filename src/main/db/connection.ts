@@ -227,6 +227,27 @@ export function initializeSchema(db: Database.Database): void {
   if (!sessionColumns.includes('name')) {
     db.exec('ALTER TABLE terminal_sessions ADD COLUMN name TEXT')
   }
+
+  const topicInfo = db.prepare('PRAGMA table_info(topics)').all() as any[]
+  const topicColumns = topicInfo.map((c) => c.name)
+  if (!topicColumns.includes('selectedProviderId')) {
+    db.exec('ALTER TABLE topics ADD COLUMN selectedProviderId TEXT')
+  }
+  if (!topicColumns.includes('selectedModelId')) {
+    db.exec('ALTER TABLE topics ADD COLUMN selectedModelId TEXT')
+  }
+
+  // Ensure 'local' host exists for foreign key constraints
+  const localHost = db.prepare('SELECT id FROM hosts WHERE id = ?').get('local')
+  if (!localHost) {
+    db.prepare(
+      `INSERT INTO hosts (id, alias, ip, port, username, createdAt) 
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run('local', '本机', 'localhost', 0, '', Date.now())
+  }
+
+  // Cleanup redundant coreshub providers if duplicates exist
+  db.prepare("DELETE FROM providers WHERE id = 'coreshub' AND isSystem = 1 AND name = 'coreshub'").run()
 }
 
 export function closeDatabase(): void {

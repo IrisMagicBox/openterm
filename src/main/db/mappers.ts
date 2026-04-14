@@ -71,6 +71,8 @@ export const mapTopicRow = (row: TopicRow): Topic => ({
   id: row.id,
   title: row.title,
   hostIds: parseJSON(row.hostIds, []),
+  selectedProviderId: row.selectedProviderId ?? undefined,
+  selectedModelId: row.selectedModelId ?? undefined,
   lastMessageAt: row.lastMessageAt,
   createdAt: row.createdAt
 })

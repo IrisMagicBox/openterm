@@ -23,8 +23,12 @@ export function registerTopicIPC(): void {
     return topicDB.deleteTopic(topicId)
   })
 
-  ipcMain.removeHandler('update-topic-hosts')
   ipcMain.handle('update-topic-hosts', (_, topicId, hostIds) =>
     topicDB.updateTopicHosts(topicId, hostIds)
+  )
+
+  ipcMain.removeHandler('update-topic-model')
+  ipcMain.handle('update-topic-model', (_, topicId, providerId, modelId) =>
+    topicDB.updateTopicModel(topicId, providerId, modelId)
   )
 }

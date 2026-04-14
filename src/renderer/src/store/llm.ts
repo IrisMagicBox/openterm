@@ -170,7 +170,17 @@ export const loadProvidersFromDB = createAsyncThunk('llm/loadProviders', async (
 
   const mergedProviders = systemProviders.map((sysProvider) => {
     const dbProvider = dbProviders.find((p) => p.id === sysProvider.id)
-    return dbProvider ? { ...sysProvider, ...dbProvider } : sysProvider
+    return dbProvider
+      ? {
+          ...dbProvider,
+          ...sysProvider,
+          // Keep user settings from DB
+          apiKey: dbProvider.apiKey || sysProvider.apiKey,
+          enabled: dbProvider.enabled,
+          apiHost: dbProvider.apiHost || sysProvider.apiHost,
+          config: dbProvider.config || sysProvider.config
+        }
+      : sysProvider
   })
 
   const customProviders = dbProviders.filter(

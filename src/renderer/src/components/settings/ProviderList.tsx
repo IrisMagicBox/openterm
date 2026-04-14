@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Cloud, Server, Cpu, ToggleLeft, ToggleRight, Plus, Trash2, RefreshCw } from 'lucide-react'
 import type { Provider } from '../../../../shared/types'
+import { useConfirm } from '../../hooks/useConfirm'
 
 interface ProviderListProps {
   providers: Provider[]
@@ -49,6 +50,7 @@ export function ProviderList({
   onDeleteProvider,
   onResetProvider
 }: ProviderListProps) {
+  const { confirm, ConfirmDialogComponent } = useConfirm()
   const [filter, setFilter] = useState('')
 
   const filteredProviders = providers.filter((p) =>
@@ -128,8 +130,15 @@ export function ProviderList({
 
                   {!provider.isSystem && (
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation()
+                        const ok = await confirm({
+                          title: '删除提供商',
+                          message: `确定删除提供商"${provider.name}"吗？此操作不可恢复。`,
+                          confirmText: '删除',
+                          variant: 'danger'
+                        })
+                        if (!ok) return
                         onDeleteProvider(provider.id)
                       }}
                       className="p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -161,6 +170,7 @@ export function ProviderList({
       <div className="p-3 border-t border-gray-200 bg-white text-xs text-gray-500">
         点击提供商以配置其设置
       </div>
+      {ConfirmDialogComponent}
     </div>
   )
 }

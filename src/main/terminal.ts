@@ -30,11 +30,12 @@ interface SessionState {
   stream: TerminalStream
   webContents?: WebContents
   currentCommand?: ActiveCommand
-  commandQueue: Promise<void> // Queue for serializing agent commands
+  commandQueue: Promise<void>
   outputBuffer: string
   rawBuffer: string
   isLocked: boolean
   lockedBy: 'agent' | 'user' | null
+  shellIntegrationInjected: boolean
 }
 
 const OSC_START = '\x1b]6973;OPENTERM_CMD_START\x07'
@@ -50,7 +51,8 @@ class CommandExecutor {
     hostId: string,
     hostAlias: string,
     stream: TerminalStream,
-    webContents?: WebContents
+    webContents?: WebContents,
+    autoInject = true
   ): Promise<TerminalSession> {
     const session: TerminalSession = {
       id: sessionId,
@@ -62,7 +64,9 @@ class CommandExecutor {
       createdAt: Date.now()
     }
 
-    terminalSessionDB.createSession(session)
+    if (topicId) {
+      terminalSessionDB.createSession(session)
+    }
 
     this.sessions.set(sessionId, {
       session,
@@ -72,19 +76,24 @@ class CommandExecutor {
       outputBuffer: '',
       rawBuffer: '',
       isLocked: false,
-      lockedBy: null
+      lockedBy: null,
+      shellIntegrationInjected: false
     })
 
-    this.injectShellIntegration(stream)
+    if (autoInject) {
+      this.injectShellIntegration(stream)
+    }
 
     return session
   }
 
-  private injectShellIntegration(stream: TerminalStream): void {
-    const bashScript =
-      `__openterm_end() { printf '\\x1b]6973;OPENTERM_CMD_END;%s;%s\\x07' "$?" "$PWD"; }; if [ -n "$BASH_VERSION" ]; then PROMPT_COMMAND='__openterm_end'; elif [ -n "$ZSH_VERSION" ]; then precmd_functions+=(__openterm_end); fi`.trim()
+  private shellIntegrationScript = `printf '\\x1b]6973;OPENTERM_CMD_START\\x07'; __openterm_end() { printf '\\x1b]6973;OPENTERM_CMD_END;%s;%s\\x07' "$?" "$PWD"; }; if [ -n "$BASH_VERSION" ]; then PROMPT_COMMAND='__openterm_end'; elif [ -n "$ZSH_VERSION" ]; then precmd_functions+=(__openterm_end); fi`
 
-    stream.write(bashScript + '\n')
+  injectShellIntegration(stream: TerminalStream): void {
+    // Separate newline to clear current line if any
+    stream.write('\n')
+    // Send script without stty wrap which was causing more issues
+    stream.write(this.shellIntegrationScript + '\n')
   }
 
   async executeAgentCommand(
@@ -319,16 +328,41 @@ class CommandExecutor {
     data: Buffer
   ): { cleanData: string; isCommandEnd: boolean } {
     const state = this.sessions.get(sessionId)
-    if (!state) return { cleanData: data.toString(), isCommandEnd: false }
+    const textDataRaw = data.toString()
+    if (!state) return { cleanData: textDataRaw, isCommandEnd: false }
 
-    state.rawBuffer += data.toString()
+    let textData = data.toString()
+
+    // Strip shell integration noise regardless of injection state
+    if (textData.includes('__openterm_end') || textData.includes('OPENTERM_CMD')) {
+      // Mark as injected if not yet done
+      if (!state.shellIntegrationInjected) {
+        state.shellIntegrationInjected = true
+      }
+      // Filter out lines containing our injection artifacts
+      textData = textData
+        .replace(/\x1b\][^\x07]*\x07/g, '')
+        .split('\n')
+        .filter((line) => {
+          const s = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
+          return s.length > 0 && !s.includes('__openterm_end') && !s.includes('OPENTERM_CMD') && !s.includes('stty')
+        })
+        .join('\n')
+      if (!textData.trim()) {
+        return { cleanData: '', isCommandEnd: false }
+      }
+    }
+
+    state.rawBuffer += textData
     let isCommandEnd = false
     let exitCode: number | undefined
     let cwd: string | undefined
 
     if (state.rawBuffer.includes(OSC_START)) {
       state.session.shellIntegrationReady = true
-      terminalSessionDB.updateSessionShellIntegration(sessionId, true)
+      if (state.session.topicId) {
+        terminalSessionDB.updateSessionShellIntegration(sessionId, true)
+      }
       state.rawBuffer = state.rawBuffer.replace(new RegExp(OSC_START, 'g'), '')
     }
 
@@ -346,8 +380,7 @@ class CommandExecutor {
       state.rawBuffer = state.rawBuffer.slice(-RAW_BUFFER_TRIM)
     }
 
-    const cleanData = data
-      .toString()
+    const cleanData = textData
       .replace(new RegExp(OSC_START, 'g'), '')
       .replace(new RegExp(`${OSC_END_PREFIX}(-?\\d+)\\x07`, 'g'), '')
 
@@ -561,17 +594,6 @@ class CommandExecutor {
     }
   }
 
-  closeSessionsByTopic(topicId: string): void {
-    logger.info('Terminal', `Closing all sessions for topic: ${topicId}`)
-    const sessionsToClose = Array.from(this.sessions.values()).filter(
-      (s) => s.session.topicId === topicId
-    )
-
-    for (const state of sessionsToClose) {
-      this.closeSession(state.session.id)
-    }
-  }
-
   closeSession(sessionId: string): void {
     const state = this.sessions.get(sessionId)
     if (state) {
@@ -585,7 +607,9 @@ class CommandExecutor {
         this.streamingTimers.delete(sessionId)
       }
 
-      terminalSessionDB.closeSession(sessionId)
+      if (state.session.topicId) {
+        terminalSessionDB.closeSession(sessionId)
+      }
       this.sessions.delete(sessionId)
 
       if (state.webContents) {

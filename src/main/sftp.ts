@@ -142,6 +142,80 @@ export function closeSFTPSession(sessionId: string): void {
   }
 }
 
+function findSessionIdByHostId(hostId: string): string | undefined {
+  for (const [sessionId, session] of sessions) {
+    if (session.hostId === hostId) return sessionId
+  }
+  return undefined
+}
+
+export async function transferBetweenHosts(
+  sourceHostId: string,
+  sourcePath: string,
+  destHostId: string,
+  destPath: string,
+  transferId: string,
+  event: Electron.IpcMainInvokeEvent
+): Promise<void> {
+  const os = await import('os')
+  const path = await import('path')
+  const fs = await import('fs/promises')
+
+  const tmpDir = os.tmpdir()
+  const tmpFile = path.join(tmpDir, `openterm-transfer-${transferId}`)
+
+  try {
+    event.sender.send(`sftp:transfer-progress:${transferId}`, {
+      phase: 'downloading',
+      progress: 0,
+      transferId
+    })
+
+    if (sourceHostId === 'local') {
+      await fs.copyFile(sourcePath, tmpFile)
+    } else {
+      const sourceSessionId = findSessionIdByHostId(sourceHostId)
+      if (!sourceSessionId) throw new Error(`No SFTP session for source host ${sourceHostId}`)
+      logger.info('Transfer', `Using session ${sourceSessionId} for download from ${sourceHostId}`)
+      await downloadFile(sourceSessionId, sourcePath, tmpFile)
+    }
+
+    event.sender.send(`sftp:transfer-progress:${transferId}`, {
+      phase: 'uploading',
+      progress: 50,
+      transferId
+    })
+
+    if (destHostId === 'local') {
+      await fs.copyFile(tmpFile, destPath)
+    } else {
+      const destSessionId = findSessionIdByHostId(destHostId)
+      if (!destSessionId) throw new Error(`No SFTP session for destination host ${destHostId}`)
+      logger.info('Transfer', `Using session ${destSessionId} for upload to ${destHostId}`)
+      await uploadFile(destSessionId, tmpFile, destPath)
+    }
+
+    event.sender.send(`sftp:transfer-progress:${transferId}`, {
+      phase: 'complete',
+      progress: 100,
+      transferId
+    })
+  } catch (err) {
+    logger.error('Transfer', `Failed: ${err}`)
+    event.sender.send(`sftp:transfer-progress:${transferId}`, {
+      phase: 'error',
+      progress: 0,
+      transferId,
+      error: String(err)
+    })
+    throw err
+  } finally {
+    try {
+      await fs.unlink(tmpFile)
+    } catch {}
+  }
+}
+
 export function registerSFTPIPC(): void {
   ipcMain.handle('sftp:connect', async (_, hostId: string) => {
     const sessionId = await createSFTPSession(hostId)
@@ -164,4 +238,18 @@ export function registerSFTPIPC(): void {
     closeSFTPSession(sessionId)
     return true
   })
+  ipcMain.handle(
+    'sftp:transfer-between-hosts',
+    async (
+      event,
+      transferId: string,
+      sourceHostId: string,
+      sourcePath: string,
+      destHostId: string,
+      destPath: string
+    ) => {
+      await transferBetweenHosts(sourceHostId, sourcePath, destHostId, destPath, transferId, event)
+      return { success: true, transferId }
+    }
+  )
 }

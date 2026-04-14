@@ -1,6 +1,7 @@
 import { getErrorMessage } from '../../../../shared/errors'
 import { useState, useEffect } from 'react'
 import { Globe, Plus, X, ArrowRight, Trash2 } from 'lucide-react'
+import { useConfirm } from '../../hooks/useConfirm'
 
 interface Tunnel {
   id: string
@@ -19,6 +20,7 @@ interface PortForwardingPanelProps {
 }
 
 export function PortForwardingPanel({ hostId, hostAlias, onClose }: PortForwardingPanelProps) {
+  const { confirm, ConfirmDialogComponent } = useConfirm()
   const [tunnels, setTunnels] = useState<Tunnel[]>([])
   const [localPort, setLocalPort] = useState('')
   const [remoteHost, setRemoteHost] = useState('localhost')
@@ -58,6 +60,13 @@ export function PortForwardingPanel({ hostId, hostAlias, onClose }: PortForwardi
   }
 
   const handleClose = async (tunnelId: string) => {
+    const ok = await confirm({
+      title: '关闭隧道',
+      message: '确定关闭此端口转发隧道？',
+      confirmText: '关闭',
+      variant: 'danger'
+    })
+    if (!ok) return
     try {
       await window.api.pfClose(tunnelId)
       refresh()
@@ -145,6 +154,7 @@ export function PortForwardingPanel({ hostId, hostAlias, onClose }: PortForwardi
           </div>
         )}
       </div>
+      {ConfirmDialogComponent}
     </div>
   )
 }

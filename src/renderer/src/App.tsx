@@ -57,7 +57,8 @@ export default function App() {
     handleCommitRenameTopic,
     handleDeleteTopic,
     handleAddHostToTopic,
-    handleRemoveHostFromTopic
+    handleRemoveHostFromTopic,
+    handleUpdateTopicModel
   } = useTopics({ loadHosts })
 
   const {
@@ -100,6 +101,17 @@ export default function App() {
     loadTopics()
   }, [])
 
+  const handleCreateLocalAgentTopic = async () => {
+    try {
+      const topic = await createTopic(undefined, ['local'])
+      setActiveView('chat')
+      setPrefilledText('本机: ')
+      return topic
+    } catch (err) {
+      console.error('Failed to create local agent topic:', err)
+    }
+  }
+
   const handleCreateTopic = async (initialText?: string) => {
     await createTopic(initialText)
     setActiveView('chat')
@@ -128,8 +140,8 @@ export default function App() {
         setPrefilledText={setPrefilledText}
       />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {activeView === 'hosts' && (
+      <main className="flex-1 flex flex-col overflow-hidden relative">
+        <div className={activeView === 'hosts' ? 'flex-1 flex flex-col' : 'hidden'}>
           <HostsView
             filteredHosts={filteredHosts}
             searchQuery={searchQuery}
@@ -148,10 +160,11 @@ export default function App() {
             setFileBrowserHostId={setFileBrowserHostId}
             setFileBrowserHostAlias={setFileBrowserHostAlias}
             handleDeleteHost={handleDeleteHost}
+            onCreateLocalAgentTopic={handleCreateLocalAgentTopic}
           />
-        )}
+        </div>
 
-        {activeView === 'terminal' && terminalTabs.length > 0 && (
+        <div className={activeView === 'terminal' ? 'flex-1 flex flex-col' : 'hidden'}>
           <TerminalLayout
             terminalTabs={terminalTabs}
             setTerminalTabs={setTerminalTabs}
@@ -169,17 +182,23 @@ export default function App() {
             fileBrowserHostAlias={fileBrowserHostAlias}
             setFileBrowserHostAlias={setFileBrowserHostAlias}
           />
-        )}
+        </div>
 
-        {activeView === 'files' && fileBrowserHostId && (
+        <div
+          className={
+            activeView === 'files' && fileBrowserHostId ? 'flex-1 flex flex-col' : 'hidden'
+          }
+        >
+          {console.log('[App] Mounting FilesView for host:', fileBrowserHostId)}
           <FilesView
-            fileBrowserHostId={fileBrowserHostId}
+            fileBrowserHostId={fileBrowserHostId || ''}
             fileBrowserHostAlias={fileBrowserHostAlias}
             setFileBrowserHostId={setFileBrowserHostId}
             setFileBrowserHostAlias={setFileBrowserHostAlias}
             setActiveView={setActiveView}
+            hosts={hosts}
           />
-        )}
+        </div>
 
         {activeView === 'chat' && selectedTopic && (
           <ChatPanel
@@ -201,6 +220,7 @@ export default function App() {
             onCloseTerminal={handleCloseTerminal}
             onRenameTerminal={handleRenameTerminal}
             onToggleTerminalPin={handleToggleTerminalPin}
+            onUpdateModel={handleUpdateTopicModel}
           />
         )}
 

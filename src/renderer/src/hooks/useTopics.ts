@@ -21,9 +21,9 @@ export function useTopics(config: UseTopicsConfig) {
   }, [])
 
   const handleCreateTopic = useCallback(
-    async (initialText?: string): Promise<Topic> => {
+    async (initialText?: string, initialHostIds: string[] = []): Promise<Topic> => {
       const title = `Session ${topics.length + 1}`
-      const topic = await window.api.createTopic(title, [])
+      const topic = await window.api.createTopic(title, initialHostIds)
       setTopics((prev) => [topic, ...prev])
       setSelectedTopic(topic)
       setPrefilledText(initialText || '')
@@ -100,6 +100,19 @@ export function useTopics(config: UseTopicsConfig) {
     [selectedTopic, loadHosts]
   )
 
+  const handleUpdateTopicModel = useCallback(
+    async (topicId: string, providerId: string, modelId: string) => {
+      await window.api.updateTopicModel(topicId, providerId, modelId)
+      setTopics((prev) =>
+        prev.map((t) => (t.id === topicId ? { ...t, selectedProviderId: providerId, selectedModelId: modelId } : t))
+      )
+      if (selectedTopic?.id === topicId) {
+        setSelectedTopic((prev) => (prev ? { ...prev, selectedProviderId: providerId, selectedModelId: modelId } : null))
+      }
+    },
+    [selectedTopic]
+  )
+
   useEffect(() => {
     const unlistenTopic = window.api.onTopicUpdated(({ topicId, title }) => {
       setTopics((prev) => prev.map((t) => (t.id === topicId ? { ...t, title } : t)))
@@ -132,6 +145,7 @@ export function useTopics(config: UseTopicsConfig) {
     handleCommitRenameTopic,
     handleDeleteTopic,
     handleAddHostToTopic,
-    handleRemoveHostFromTopic
+    handleRemoveHostFromTopic,
+    handleUpdateTopicModel
   }
 }

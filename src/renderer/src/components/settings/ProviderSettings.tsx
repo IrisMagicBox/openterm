@@ -15,12 +15,16 @@ import {
 } from 'lucide-react'
 import type { Provider, Model } from '../../../../shared/types'
 import { PROVIDER_URLS } from '../../config/providers'
+import { useConfirm } from '../../hooks/useConfirm'
 
 interface ProviderSettingsProps {
   provider: Provider | null
   models: Model[]
   onSave: (provider: Provider) => void
-  onTestConnection?: (provider: Provider, modelId?: string) => Promise<{ ok: boolean; message: string }>
+  onTestConnection?: (
+    provider: Provider,
+    modelId?: string
+  ) => Promise<{ ok: boolean; message: string }>
   onAddModel?: (model: Omit<Model, 'createdAt'>) => Promise<Model> | void
   onRemoveModel?: (providerId: string, modelId: string) => Promise<void> | void
 }
@@ -33,6 +37,7 @@ export function ProviderSettings({
   onAddModel,
   onRemoveModel
 }: ProviderSettingsProps) {
+  const { confirm, ConfirmDialogComponent } = useConfirm()
   const [formData, setFormData] = useState<Partial<Provider>>({})
   const [showApiKey, setShowApiKey] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
@@ -90,7 +95,7 @@ export function ProviderSettings({
     if (!onTestConnection) return
     if (modelId) setTestingModelId(modelId)
     else setIsTesting(true)
-    
+
     setTestResult(null)
     setTestMessage('')
     try {
@@ -281,15 +286,15 @@ export function ProviderSettings({
                     // but for now, let's just use the apiHost/models endpoint
                     const headers: Record<string, string> = {}
                     if (formData.apiKey) headers['Authorization'] = `Bearer ${formData.apiKey}`
-                    
+
                     const url = `${formData.apiHost || ''}/models`
                     const response = await fetch(url, { headers })
                     if (!response.ok) throw new Error(`HTTP ${response.status}`)
                     const data = await response.json()
-                    
+
                     if (data.data && Array.isArray(data.data)) {
                       for (const m of data.data) {
-                        const exists = models.find(em => em.id === m.id)
+                        const exists = models.find((em) => em.id === m.id)
                         if (!exists && onAddModel) {
                           await onAddModel({
                             id: m.id,
@@ -397,7 +402,16 @@ export function ProviderSettings({
                     </button>
                     {onRemoveModel && (
                       <button
-                        onClick={() => onRemoveModel(model.providerId, model.id)}
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: '删除模型',
+                            message: `确定删除模型"${model.id}"吗？`,
+                            confirmText: '删除',
+                            variant: 'danger'
+                          })
+                          if (!ok) return
+                          onRemoveModel(model.providerId, model.id)
+                        }}
                         className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                         title="删除模型"
                       >
@@ -435,6 +449,7 @@ export function ProviderSettings({
           </p>
         </div>
       )}
+      {ConfirmDialogComponent}
     </div>
   )
 }

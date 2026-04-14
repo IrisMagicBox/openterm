@@ -31,11 +31,13 @@ const api = {
   getTopics: () => ipcRenderer.invoke('get-topics'),
   createTopic: (title: string, hostIds: string[]) =>
     ipcRenderer.invoke('create-topic', title, hostIds),
-  updateTopicTitle: (topicId: string, title: string) =>
-    ipcRenderer.invoke('update-topic-title', topicId, title),
-  deleteTopic: (topicId: string) => ipcRenderer.invoke('delete-topic', topicId),
-  updateTopicHosts: (topicId: string, hostIds: string[]) =>
-    ipcRenderer.invoke('update-topic-hosts', topicId, hostIds),
+  updateTopicTitle: (id: string, title: string) =>
+    ipcRenderer.invoke('update-topic-title', id, title),
+  deleteTopic: (id: string) => ipcRenderer.invoke('delete-topic', id),
+  updateTopicHosts: (id: string, hostIds: string[]) =>
+    ipcRenderer.invoke('update-topic-hosts', id, hostIds),
+  updateTopicModel: (id: string, providerId: string, modelId: string) =>
+    ipcRenderer.invoke('update-topic-model', id, providerId, modelId),
   getMessages: (topicId: string) => ipcRenderer.invoke('get-messages', topicId),
   getTasks: (topicId?: string) => ipcRenderer.invoke('get-tasks', topicId),
   getLatestTask: (topicId: string) => ipcRenderer.invoke('get-latest-task', topicId),
@@ -233,6 +235,45 @@ const api = {
   sftpDelete: (sessionId: string, path: string) =>
     ipcRenderer.invoke('sftp:delete', sessionId, path),
   sftpClose: (sessionId: string) => ipcRenderer.invoke('sftp:close', sessionId),
+
+  localFsConnect: () => ipcRenderer.invoke('local-fs:connect'),
+  localFsList: (sessionId: string, path: string) =>
+    ipcRenderer.invoke('local-fs:list', sessionId, path),
+  localFsUpload: (sessionId: string, localPath: string, remotePath: string) =>
+    ipcRenderer.invoke('local-fs:upload', sessionId, localPath, remotePath),
+  localFsDownload: (sessionId: string, remotePath: string, localPath: string) =>
+    ipcRenderer.invoke('local-fs:download', sessionId, remotePath, localPath),
+  localFsMkdir: (sessionId: string, path: string) =>
+    ipcRenderer.invoke('local-fs:mkdir', sessionId, path),
+  localFsDelete: (sessionId: string, itemPath: string) =>
+    ipcRenderer.invoke('local-fs:delete', sessionId, itemPath),
+  localFsClose: (sessionId: string) => ipcRenderer.invoke('local-fs:close', sessionId),
+  startNativeDrag: (filePath: string, iconPath?: string) =>
+    ipcRenderer.send('local-fs:start-native-drag', filePath, iconPath),
+
+  sftpTransferBetweenHosts: (
+    transferId: string,
+    sourceHostId: string,
+    sourcePath: string,
+    destHostId: string,
+    destPath: string
+  ) =>
+    ipcRenderer.invoke(
+      'sftp:transfer-between-hosts',
+      transferId,
+      sourceHostId,
+      sourcePath,
+      destHostId,
+      destPath
+    ),
+  onSftpTransferProgress: (
+    transferId: string,
+    callback: (data: { phase: string; progress: number; transferId: string }) => void
+  ) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on(`sftp:transfer-progress:${transferId}`, listener)
+    return () => ipcRenderer.removeListener(`sftp:transfer-progress:${transferId}`, listener)
+  },
 
   searchCommands: (query: string, limit?: number) =>
     ipcRenderer.invoke('search-commands', query, limit),

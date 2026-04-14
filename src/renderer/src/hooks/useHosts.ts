@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import type { Host } from '../../../shared/types'
+import { LOCAL_HOST } from '../constants'
 
 export function useHosts() {
   const [hosts, setHosts] = useState<Host[]>([])
@@ -9,7 +10,7 @@ export function useHosts() {
 
   const loadHosts = useCallback(async () => {
     const loadedHosts = await window.api.getHosts()
-    setHosts(loadedHosts)
+    setHosts([LOCAL_HOST, ...loadedHosts])
   }, [])
 
   const handleCreateHost = useCallback(async (hostData: Omit<Host, 'id' | 'createdAt'>) => {

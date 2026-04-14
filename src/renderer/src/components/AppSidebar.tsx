@@ -12,6 +12,7 @@ import logo from '../assets/logo.png'
 import { NavItem } from './NavItem'
 import { View } from '../types'
 import { Topic } from '../../../shared/types'
+import { useConfirm } from '../hooks/useConfirm'
 
 interface AppSidebarProps {
   sidebarCollapsed: boolean
@@ -54,6 +55,7 @@ export function AppSidebar({
   onDeleteTopic,
   setPrefilledText
 }: AppSidebarProps) {
+  const { confirm, ConfirmDialogComponent } = useConfirm()
   return (
     <aside
       className={`${sidebarCollapsed ? 'w-20' : 'w-72'} bg-gray-50/80 border-r border-gray-100 flex flex-col no-drag transition-all duration-300 relative group`}
@@ -197,6 +199,13 @@ export function AppSidebar({
                         <span
                           onClick={async (e) => {
                             e.stopPropagation()
+                            const ok = await confirm({
+                              title: '删除话题',
+                              message: `确定删除话题"${topic.title}"吗？此操作不可恢复。`,
+                              confirmText: '删除',
+                              variant: 'danger'
+                            })
+                            if (!ok) return
                             await onDeleteTopic(topic.id)
                           }}
                           className="p-1 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-500"
@@ -242,6 +251,7 @@ export function AppSidebar({
           </div>
         </div>
       </div>
+      {ConfirmDialogComponent}
     </aside>
   )
 }
