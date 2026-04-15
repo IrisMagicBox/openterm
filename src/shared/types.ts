@@ -131,6 +131,7 @@ export interface ToolCall {
 export interface ToolResult {
   toolCallId: string
   content: string
+  metadata?: Record<string, unknown>
 }
 
 export type TerminalSessionStatus = 'active' | 'streaming' | 'closed' | 'disconnected'
@@ -188,6 +189,19 @@ export interface CommandResult {
   isTruncated: boolean
   sessionId: string
   cwd?: string
+}
+
+export interface StructuredObservation {
+  hostId: string
+  terminalName: string
+  exitCode: number
+  cwd?: string
+  durationMs: number
+  stdout: string
+  stderr: string
+  isTruncated: boolean
+  truncatedAt?: number
+  diskPath?: string
 }
 
 export interface ModelSettings {

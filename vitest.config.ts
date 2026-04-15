@@ -9,7 +9,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@shared': new URL('./src/shared', import.meta.url).pathname
+      '@shared': new URL('./src/shared', import.meta.url).pathname,
+      '@main': new URL('./src/main', import.meta.url).pathname
     }
   }
 })

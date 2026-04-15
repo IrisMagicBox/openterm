@@ -306,6 +306,18 @@ interface IpcPushChannelsStatic {
   'agent:thinking': { payload: AgentThinkingPayload }
   'agent:step': { payload: Message }
   'agent:message': { payload: Message }
+  'agent:tool-call': {
+    payload: { topicId: string; taskId: string; toolName: string; args: Record<string, unknown> }
+  }
+  'agent:tool-result': {
+    payload: { topicId: string; taskId: string; toolName: string; output: string; error?: boolean }
+  }
+  'agent:doom-loop': {
+    payload: { topicId: string; taskId: string; toolName: string; callCount: number }
+  }
+  'agent:task-complete': {
+    payload: { topicId: string; taskId: string; status: 'completed' | 'failed'; summary: string }
+  }
   'agent:terminal-show': { payload: TerminalSession }
   'agent:terminal-hide': { payload: { id: string } }
   'agent:session-created': { payload: TerminalSession }

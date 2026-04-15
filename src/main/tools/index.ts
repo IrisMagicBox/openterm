@@ -1,28 +1,34 @@
 import { ToolRegistry } from './tool-registry'
 
-import executeCommandHandler from './execute-command'
-import readFileHandler from './read-file'
-import writeFileHandler from './write-file'
-import listHostsHandler from './list-hosts'
-import manageTerminalHandler from './manage-terminal'
-import listTerminalsHandler from './list-terminals'
-import manageHostHandler from './manage-host'
-import searchMemoryHandler from './search-memory'
-import searchTopicsHandler from './search-topics'
+import executeCommandTool from './execute-command'
+import readFileTool from './read-file'
+import writeFileTool from './write-file'
+import listHostsTool from './list-hosts'
+import manageTerminalTool from './manage-terminal'
+import listTerminalsTool from './list-terminals'
+import manageHostTool from './manage-host'
+import searchMemoryTool from './search-memory'
+import searchTopicsTool from './search-topics'
+import taskTool from '../agent/task-tool'
 
 export { ToolRegistry } from './tool-registry'
-export type { ToolHandler, ToolDefinition, ToolContext } from './types'
+export { define } from './tool-factory'
+export type { Tool } from './tool-factory'
+export type { ToolDefinition } from './types'
+/** @deprecated Use Tool.Info, Tool.Context, Tool.ExecuteResult from './tool-factory' */
+export type { ToolHandler, ToolContext, ToolResult } from './types'
 
 export function createDefaultRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
-  registry.register(executeCommandHandler)
-  registry.register(readFileHandler)
-  registry.register(writeFileHandler)
-  registry.register(listHostsHandler)
-  registry.register(manageTerminalHandler)
-  registry.register(listTerminalsHandler)
-  registry.register(manageHostHandler)
-  registry.register(searchMemoryHandler)
-  registry.register(searchTopicsHandler)
+  registry.register(executeCommandTool)
+  registry.register(readFileTool)
+  registry.register(writeFileTool)
+  registry.register(listHostsTool)
+  registry.register(manageTerminalTool)
+  registry.register(listTerminalsTool)
+  registry.register(manageHostTool)
+  registry.register(searchMemoryTool)
+  registry.register(searchTopicsTool)
+  registry.register(taskTool)
   return registry
 }

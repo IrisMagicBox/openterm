@@ -1,30 +1,20 @@
-import type { ToolHandler, ToolContext, ToolResult } from './types'
+import { z } from 'zod'
+import { define, Tool } from './tool-factory'
 import { normalizeHostId } from '../utils/host-resolver'
 import { commandExecutor } from '../terminal'
 
-const writeFileHandler: ToolHandler = {
-  name: 'write_file',
-  definition: {
-    type: 'function',
-    function: {
-      name: 'write_file',
-      description:
-        '向指定主机写入或覆盖文件内容。修改配置文件、创建脚本或写入多行文本时，必须使用此工具。',
-      parameters: {
-        type: 'object',
-        properties: {
-          hostId: { type: 'string', description: '主机ID' },
-          path: { type: 'string', description: '文件路径' },
-          content: { type: 'string', description: '文件内容' }
-        },
-        required: ['hostId', 'path', 'content']
-      }
-    }
-  },
-  async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<string | ToolResult> {
-    const hostId = args.hostId as string
-    const path = args.path as string
-    const content = args.content as string
+const parameters = z.object({
+  hostId: z.string().describe('主机ID'),
+  path: z.string().describe('文件路径'),
+  content: z.string().describe('文件内容')
+})
+
+export default define('write_file', {
+  description:
+    '向指定主机写入或覆盖文件内容。修改配置文件、创建脚本或写入多行文本时，必须使用此工具。',
+  parameters,
+  async execute(args: z.infer<typeof parameters>, ctx: Tool.Context): Promise<Tool.ExecuteResult> {
+    const { hostId, path, content } = args
     const normalizedHostId = normalizeHostId(hostId)
 
     const sessionId = await ctx.ensureSession(normalizedHostId, normalizedHostId)
@@ -35,11 +25,9 @@ const writeFileHandler: ToolHandler = {
     const result = await commandExecutor.execute(sessionId, command, ctx.topicId, ctx.taskId)
 
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to write file: ${result.content}`)
+      return { output: `Error: Failed to write file: ${result.content}` }
     }
 
-    return { message: 'File written successfully', path }
+    return { output: 'File written successfully', metadata: { path } }
   }
-}
-
-export default writeFileHandler
+})

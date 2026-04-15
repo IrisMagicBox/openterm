@@ -311,7 +311,8 @@ export class AgentService {
           if (this.webContents) {
             this.webContents.send('agent:step', msg)
           }
-        }
+        },
+        metadata: (_input) => {}
       }
 
       const runner = new AgentRunner(context)

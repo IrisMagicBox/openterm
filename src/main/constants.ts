@@ -52,3 +52,20 @@ export const MEMORY_SEARCH_SQL_LIMIT = 20
 export const TERMINAL_IO_SESSION_LIMIT = 100
 export const TERMINAL_IO_TOPIC_LIMIT = 200
 export const RECENT_INPUTS_LIMIT = 20
+
+// Tool output truncation (from truncation.ts)
+export const TRUNCATION_MAX_LINES = 2000
+export const TRUNCATION_MAX_BYTES = 51200 // 50KB
+export const TRUNCATION_DIR_NAME = 'truncation'
+
+// Context window / token budget (from token-counter.ts)
+// Default context window for common models (e.g., GPT-4o, Claude Sonnet)
+export const CONTEXT_WINDOW_TOKENS = 128_000
+// Tokens reserved for model output generation
+export const CONTEXT_RESERVE_TOKENS = 4_096
+// When pruning, protect the most recent N tokens of tool outputs
+export const CONTEXT_PRUNE_PROTECT_TOKENS = 40_000
+// Only prune if we can recover at least this many tokens
+export const CONTEXT_PRUNE_MINIMUM_TOKENS = 20_000
+// Auto-compact: trigger when context usage reaches this fraction of usable budget
+export const AUTO_COMPACT_THRESHOLD = 0.9

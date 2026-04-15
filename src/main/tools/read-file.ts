@@ -1,33 +1,25 @@
-import type { ToolHandler, ToolContext, ToolResult } from './types'
+import { z } from 'zod'
+import { define, Tool } from './tool-factory'
 import { resolveHostId } from '../utils/host-resolver'
 import { commandExecutor } from '../terminal'
 
-const readFileHandler: ToolHandler = {
-  name: 'read_file',
-  definition: {
-    type: 'function',
-    function: {
-      name: 'read_file',
-      description:
-        '从指定主机读取文件内容。当用户提到配置文件、日志文件或任何文件内容时，必须使用此工具读取实际内容，而非猜测。',
-      parameters: {
-        type: 'object',
-        properties: {
-          hostId: { type: 'string', description: '主机ID' },
-          path: { type: 'string', description: '文件路径' }
-        },
-        required: ['hostId', 'path']
-      }
-    }
-  },
-  async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<string | ToolResult> {
-    const hostId = args.hostId as string
-    const path = args.path as string
-    const terminalName = args.terminalName as string | undefined
-    const host = resolveHostId(hostId)
-    if (!host) throw new Error(`Host ${hostId} not found`)
+const parameters = z.object({
+  hostId: z.string().describe('主机ID'),
+  path: z.string().describe('文件路径')
+})
 
-    const sessionId = await ctx.ensureSession(host.id, host.alias, terminalName)
+export default define('read_file', {
+  description:
+    '从指定主机读取文件内容。当用户提到配置文件、日志文件或任何文件内容时，必须使用此工具读取实际内容，而非猜测。',
+  parameters,
+  async execute(args: z.infer<typeof parameters>, ctx: Tool.Context): Promise<Tool.ExecuteResult> {
+    const { hostId, path } = args
+    const host = resolveHostId(hostId)
+    if (!host) {
+      return { output: `Error: Host ${hostId} not found` }
+    }
+
+    const sessionId = await ctx.ensureSession(host.id, host.alias, undefined)
     const result = await commandExecutor.execute(
       sessionId,
       `cat "${path}"`,
@@ -36,11 +28,9 @@ const readFileHandler: ToolHandler = {
     )
 
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to read file: ${result.content}`)
+      return { output: `Error: Failed to read file: ${result.content}` }
     }
 
-    return result.content
+    return { output: result.content }
   }
-}
-
-export default readFileHandler
+})

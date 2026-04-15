@@ -138,6 +138,67 @@ const api = {
     ipcRenderer.on('agent:step', listener)
     return () => ipcRenderer.removeListener('agent:step', listener)
   },
+  onAgentToolCall: (
+    callback: (data: {
+      topicId: string
+      taskId: string
+      toolName: string
+      args: Record<string, unknown>
+    }) => void
+  ) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      data: { topicId: string; taskId: string; toolName: string; args: Record<string, unknown> }
+    ) => callback(data)
+    ipcRenderer.on('agent:tool-call', listener)
+    return () => ipcRenderer.removeListener('agent:tool-call', listener)
+  },
+  onAgentToolResult: (
+    callback: (data: {
+      topicId: string
+      taskId: string
+      toolName: string
+      output: string
+      error?: boolean
+    }) => void
+  ) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      data: { topicId: string; taskId: string; toolName: string; output: string; error?: boolean }
+    ) => callback(data)
+    ipcRenderer.on('agent:tool-result', listener)
+    return () => ipcRenderer.removeListener('agent:tool-result', listener)
+  },
+  onAgentDoomLoop: (
+    callback: (data: {
+      topicId: string
+      taskId: string
+      toolName: string
+      callCount: number
+    }) => void
+  ) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      data: { topicId: string; taskId: string; toolName: string; callCount: number }
+    ) => callback(data)
+    ipcRenderer.on('agent:doom-loop', listener)
+    return () => ipcRenderer.removeListener('agent:doom-loop', listener)
+  },
+  onAgentTaskComplete: (
+    callback: (data: {
+      topicId: string
+      taskId: string
+      status: 'completed' | 'failed'
+      summary: string
+    }) => void
+  ) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      data: { topicId: string; taskId: string; status: 'completed' | 'failed'; summary: string }
+    ) => callback(data)
+    ipcRenderer.on('agent:task-complete', listener)
+    return () => ipcRenderer.removeListener('agent:task-complete', listener)
+  },
 
   onAgentTerminalShow: (callback: (data: TerminalSession) => void) => {
     const listener = (_event: IpcRendererEvent, data: TerminalSession) => callback(data)
