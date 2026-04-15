@@ -155,13 +155,11 @@ export function HostsView({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredHosts
-              .filter((h) => h.id !== 'local')
-              .map((host) => (
-                <HostCard
-                  key={host.id}
-                  host={host}
-                  onDelete={async () => {
+            {filteredHosts.map((host) => (
+              <HostCard
+                key={host.id}
+                host={host}
+                onDelete={async () => {
                   const ok = await confirm({
                     title: '删除主机',
                     message: `确定要删除主机 "${host.alias}" 吗？此操作不可恢复。`,
