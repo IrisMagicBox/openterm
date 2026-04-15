@@ -1,4 +1,4 @@
-import type { CommandResult, StructuredObservation } from '@shared/types'
+import type { CommandResult, StructuredObservation } from '../../shared/types'
 
 export type { StructuredObservation }
 

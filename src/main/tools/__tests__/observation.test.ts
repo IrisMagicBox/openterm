@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { formatObservation, fromCommandResult } from '../observation'
-import type { CommandResult, StructuredObservation } from '@shared/types'
+import type { CommandResult, StructuredObservation } from '../../../shared/types'
 
 describe('fromCommandResult', () => {
   it('maps CommandResult fields to StructuredObservation', () => {

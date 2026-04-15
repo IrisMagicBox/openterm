@@ -91,7 +91,6 @@ export class AgentRunner {
     // Wire EventBus to renderer
     eventBus.setWebContents(context.webContents)
 
-    // Enforce agent permission rules by wrapping requestAuthorization
     const originalRequestAuth = context.requestAuthorization.bind(context)
     this.context.requestAuthorization = async (command, riskLevel, reason) => {
       const permission = this.config.permissions.find(
@@ -106,6 +105,10 @@ export class AgentRunner {
         }
       }
       return originalRequestAuth(command, riskLevel, reason)
+    }
+
+    if (!this.context.metadata) {
+      this.context.metadata = () => {}
     }
   }
 

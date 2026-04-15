@@ -20,8 +20,14 @@ export function truncateOutput(text: string, topicId: string, stepId?: string): 
     return { content: text, truncated: false }
   }
 
+  // Sanitize topicId to prevent path traversal attacks
+  const sanitizedTopicId = topicId.replace(/[^a-zA-Z0-9-_]/g, '')
+  if (sanitizedTopicId !== topicId) {
+    console.warn('[truncateOutput] TopicId contained invalid characters and was sanitized')
+  }
+
   // Save full output to disk
-  const truncationDir = path.join(app.getPath('userData'), TRUNCATION_DIR_NAME, topicId)
+  const truncationDir = path.join(app.getPath('userData'), TRUNCATION_DIR_NAME, sanitizedTopicId)
   fs.mkdirSync(truncationDir, { recursive: true })
 
   const filename = stepId ? `${stepId}.txt` : `${Date.now()}.txt`

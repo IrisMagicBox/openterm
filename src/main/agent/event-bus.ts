@@ -31,7 +31,7 @@ export const AgentEvents = {
     topicId: z.string(),
     taskId: z.string(),
     toolName: z.string(),
-    args: z.record(z.unknown())
+    args: z.record(z.string(), z.unknown())
   }),
 
   ToolResult: z.object({
@@ -227,7 +227,11 @@ export class EventBus {
 
     // Forward to renderer process
     if (this.webContents && !this.webContents.isDestroyed()) {
-      this.webContents.send(event, payload)
+      try {
+        this.webContents.send(event, payload)
+      } catch (err) {
+        logger.error('EventBus', `Failed to send event ${event} to renderer`, err)
+      }
     }
   }
 

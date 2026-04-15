@@ -109,6 +109,7 @@ export default function App() {
       return topic
     } catch (err) {
       console.error('Failed to create local agent topic:', err)
+      throw err
     }
   }
 
@@ -189,7 +190,10 @@ export default function App() {
             activeView === 'files' && fileBrowserHostId ? 'flex-1 flex flex-col' : 'hidden'
           }
         >
-          {console.log('[App] Mounting FilesView for host:', fileBrowserHostId)}
+          {(() => {
+            console.log('[App] Mounting FilesView for host:', fileBrowserHostId)
+            return null
+          })()}
           <FilesView
             fileBrowserHostId={fileBrowserHostId || ''}
             fileBrowserHostAlias={fileBrowserHostAlias}
