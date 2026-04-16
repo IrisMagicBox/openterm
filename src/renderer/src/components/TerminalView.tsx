@@ -21,6 +21,7 @@ interface TerminalViewProps {
     destHostId: string,
     destPath: string
   ) => void
+  onUserTakeover?: () => void
 }
 
 export function TerminalView({
@@ -30,20 +31,25 @@ export function TerminalView({
   hostId,
   onFocusSession,
   fontSize = 13,
-  onFileDrop
+  onFileDrop,
+  onUserTakeover
 }: TerminalViewProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [isAgentExecuting, setIsAgentExecuting] = useState(false)
+  const [isUserTakeover, setIsUserTakeover] = useState(false)
 
   const onCloseRef = useRef(onClose)
   const onFocusSessionRef = useRef(onFocusSession)
+  const onUserTakeoverRef = useRef(onUserTakeover)
 
   useEffect(() => {
     onCloseRef.current = onClose
     onFocusSessionRef.current = onFocusSession
-  }, [onClose, onFocusSession])
+    onUserTakeoverRef.current = onUserTakeover
+  }, [onClose, onFocusSession, onUserTakeover])
 
   useEffect(() => {
     if (!terminalRef.current) return
@@ -93,6 +99,16 @@ export function TerminalView({
     xtermRef.current = term
 
     const isLocal = hostId === 'local'
+
+    let cleanupAgentExecuting: (() => void) | undefined
+    let cleanupUserTakeover: (() => void) | undefined
+    if (isLocal) {
+      cleanupAgentExecuting = window.api.onTerminalAgentExecuting(id, setIsAgentExecuting)
+      cleanupUserTakeover = window.api.onTerminalUserTakeover(id, () => {
+        setIsUserTakeover(true)
+        onUserTakeoverRef.current?.()
+      })
+    }
 
     const doFitAndResize = () => {
       try {
@@ -186,6 +202,8 @@ export function TerminalView({
       resizeObserver.disconnect()
       cleanupData()
       cleanupClosed()
+      cleanupAgentExecuting?.()
+      cleanupUserTakeover?.()
       terminalRef.current?.removeEventListener('mousedown', handleMouseDown)
       term.dispose()
     }
@@ -253,6 +271,24 @@ export function TerminalView({
           <span className="text-blue-400 text-xs font-bold bg-gray-900/80 px-3 py-1.5 rounded-lg">
             释放以下载文件
           </span>
+        </div>
+      )}
+      {isAgentExecuting && !isUserTakeover && (
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 bg-blue-500 text-white text-xs font-medium px-2 py-1 rounded shadow-sm">
+          <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+          Agent 执行中...
+        </div>
+      )}
+      {isUserTakeover && (
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 bg-amber-500 text-white text-xs font-medium px-2 py-1 rounded shadow-sm">
+          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+            <path
+              fillRule="evenodd"
+              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+              clipRule="evenodd"
+            />
+          </svg>
+          用户已接管
         </div>
       )}
       <div

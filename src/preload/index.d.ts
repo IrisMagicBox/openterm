@@ -130,6 +130,10 @@ declare global {
       onSSHReady: (id: string, callback: (hostAlias: string) => void) => () => void
       onSSHCommand: (id: string, callback: (command: string) => void) => () => void
 
+      // Local Terminal Agent State
+      onTerminalAgentExecuting: (id: string, callback: (executing: boolean) => void) => () => void
+      onTerminalUserTakeover: (id: string, callback: () => void) => () => void
+
       // Multi-Terminal Management
       createAgentTerminal: (
         topicId: string,

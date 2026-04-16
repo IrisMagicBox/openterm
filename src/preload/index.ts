@@ -252,6 +252,18 @@ const api = {
     return () => ipcRenderer.removeListener(`ssh:command:${id}`, listener)
   },
 
+  onTerminalAgentExecuting: (id: string, callback: (executing: boolean) => void) => {
+    const listener = (_event, executing: boolean) => callback(executing)
+    ipcRenderer.on(`terminal:agent-executing:${id}`, listener)
+    return () => ipcRenderer.removeListener(`terminal:agent-executing:${id}`, listener)
+  },
+
+  onTerminalUserTakeover: (id: string, callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on(`terminal:user-takeover:${id}`, listener)
+    return () => ipcRenderer.removeListener(`terminal:user-takeover:${id}`, listener)
+  },
+
   // Multi-Terminal Management
   createAgentTerminal: (topicId: string, hostId: string, name?: string) =>
     ipcRenderer.invoke('agent:create-terminal', topicId, hostId, name),
