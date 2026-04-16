@@ -49,12 +49,22 @@ export class HostRepository extends BaseRepository<HostRow> {
     return row ? mapHostRow(row) : undefined
   }
 
-  updateHost(id: string, updates: Partial<Pick<Host, 'alias' | 'tags'>>): void {
+  updateHost(id: string, updates: Partial<Pick<Host, 'alias' | 'tags' | 'agentNotes'>>): void {
     const existing = this.getHostById(id)
     if (!existing) return
     const alias = updates.alias !== undefined ? updates.alias : existing.alias
     const tagsStr =
       updates.tags !== undefined ? JSON.stringify(updates.tags) : JSON.stringify(existing.tags)
-    this.stmt('UPDATE hosts SET alias = ?, tags = ? WHERE id = ?').run(alias, tagsStr, id)
+    const agentNotes = updates.agentNotes !== undefined ? updates.agentNotes : existing.agentNotes
+    this.stmt('UPDATE hosts SET alias = ?, tags = ?, agentNotes = ? WHERE id = ?').run(
+      alias,
+      tagsStr,
+      agentNotes,
+      id
+    )
+  }
+
+  updateAgentNotes(id: string, notes: string): void {
+    this.stmt('UPDATE hosts SET agentNotes = ? WHERE id = ?').run(notes, id)
   }
 }

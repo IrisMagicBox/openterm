@@ -43,21 +43,28 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
     }
   }
 
-  getSessionsByTopic(topicId: string): TerminalSession[] {
+  getSessionsByTopic(topicId: string, includeDeleted = false): TerminalSession[] {
+    let query = 'SELECT * FROM terminal_sessions WHERE topicId = ?'
+    if (!includeDeleted) {
+      query += ' AND isDeleted = 0'
+    }
+    query += ' ORDER BY createdAt DESC'
+    const rows = this.stmt(query).all(topicId) as TerminalSessionRow[]
+    return rows.map(mapTerminalSessionRow)
+  }
+
+  getActiveSessionsByTopic(topicId: string): TerminalSession[] {
     const rows = this.stmt(
-      'SELECT * FROM terminal_sessions WHERE topicId = ? AND status = ? ORDER BY createdAt DESC'
+      'SELECT * FROM terminal_sessions WHERE topicId = ? AND status = ? AND isDeleted = 0 ORDER BY createdAt DESC'
     ).all(topicId, 'active') as TerminalSessionRow[]
-    return rows.map((row) => ({
-      id: row.id,
-      topicId: row.topicId,
-      hostId: row.hostId,
-      hostAlias: row.hostAlias,
-      status: row.status as TerminalSessionStatus,
-      shellType: row.shellType ?? undefined,
-      shellIntegrationReady: row.shellIntegrationReady === 1,
-      createdAt: row.createdAt,
-      closedAt: row.closedAt ?? undefined
-    }))
+    return rows.map(mapTerminalSessionRow)
+  }
+
+  getDeletedSessionsByTopic(topicId: string): TerminalSession[] {
+    const rows = this.stmt(
+      'SELECT * FROM terminal_sessions WHERE topicId = ? AND isDeleted = 1 ORDER BY deletedAt DESC'
+    ).all(topicId) as TerminalSessionRow[]
+    return rows.map(mapTerminalSessionRow)
   }
 
   getSessionsByHost(hostId: string): TerminalSession[] {
@@ -92,21 +99,32 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
     this.stmt('UPDATE terminal_sessions SET name = ? WHERE id = ?').run(name, id)
   }
 
-  closeSession(id: string): void {
-    this.stmt('UPDATE terminal_sessions SET status = ?, closedAt = ? WHERE id = ?').run(
-      'closed',
-      Date.now(),
-      id
-    )
+  closeSession(id: string, deletedBy: 'user' | 'agent' | 'system' = 'agent'): void {
+    const now = Date.now()
+    this.stmt(
+      'UPDATE terminal_sessions SET status = ?, closedAt = ?, isDeleted = 1, deletedAt = ?, deletedBy = ? WHERE id = ?'
+    ).run('closed', now, now, deletedBy, id)
   }
 
-  deleteSession(id: string): void {
+  softDeleteSession(id: string, deletedBy: 'user' | 'agent' | 'system'): void {
+    this.stmt(
+      'UPDATE terminal_sessions SET isDeleted = 1, deletedAt = ?, deletedBy = ? WHERE id = ?'
+    ).run(Date.now(), deletedBy, id)
+  }
+
+  restoreSession(id: string): void {
+    this.stmt(
+      'UPDATE terminal_sessions SET isDeleted = 0, deletedAt = NULL, deletedBy = NULL WHERE id = ?'
+    ).run(id)
+  }
+
+  hardDeleteSession(id: string): void {
     this.stmt('DELETE FROM terminal_sessions WHERE id = ?').run(id)
   }
 
   getActiveSessions(): TerminalSession[] {
     const rows = this.stmt(
-      'SELECT * FROM terminal_sessions WHERE status = ? ORDER BY createdAt DESC'
+      'SELECT * FROM terminal_sessions WHERE status = ? AND isDeleted = 0 ORDER BY createdAt DESC'
     ).all('active') as TerminalSessionRow[]
     return rows.map(mapTerminalSessionRow)
   }
@@ -117,5 +135,9 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
       Date.now(),
       'active'
     )
+  }
+
+  updateAgentNotes(id: string, notes: string): void {
+    this.stmt('UPDATE terminal_sessions SET agentNotes = ? WHERE id = ?').run(notes, id)
   }
 }

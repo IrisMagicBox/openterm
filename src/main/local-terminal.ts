@@ -23,6 +23,7 @@ interface LocalPtySession {
   isAgentSession?: boolean
   agentPaused?: boolean
   agentPauseWaiters?: Array<() => void>
+  isAgentExecuting?: boolean
 }
 
 const sessions = new Map<string, LocalPtySession>()
@@ -70,10 +71,6 @@ export function createLocalSession(
         status: 'active',
         shellIntegrationReady: false,
         createdAt: Date.now()
-      }
-
-      if (topicId && topicId !== '') {
-        terminalSessionDB.createSession(session)
       }
 
       const localSession: LocalPtySession = {
@@ -130,12 +127,44 @@ export function createLocalSession(
   })
 }
 
-export function sendLocalInput(sessionId: string, data: string): void {
+export function setLocalSessionAgentExecuting(sessionId: string, executing: boolean): void {
+  const session = sessions.get(sessionId)
+  if (session) {
+    session.isAgentExecuting = executing
+    if (session.webContents) {
+      session.webContents.send(`terminal:agent-executing:${sessionId}`, executing)
+    }
+  }
+}
+
+export function isLocalSessionAgentExecuting(sessionId: string): boolean {
+  return sessions.get(sessionId)?.isAgentExecuting ?? false
+}
+
+export function sendLocalInput(sessionId: string, data: string, fromUser = true): void {
   const session = sessions.get(sessionId)
   if (!session) {
     logger.error('LocalTerminal', `sendLocalInput: session not found ${sessionId}`)
     return
   }
+
+  // Detect user input during agent execution
+  if (fromUser && session.isAgentExecuting && !session.agentPaused) {
+    logger.warn(
+      'LocalTerminal',
+      `User input detected while agent is executing in session ${sessionId}`
+    )
+
+    // Pause the agent session
+    session.agentPaused = true
+    commandExecutor.setSessionLock(sessionId, true, 'user')
+
+    // Notify the renderer that user has taken over
+    if (session.webContents) {
+      session.webContents.send(`terminal:user-takeover:${sessionId}`)
+    }
+  }
+
   try {
     session.pty.write(data)
     logger.info('LocalTerminal', `sendLocalInput wrote ${data.length} bytes`)
@@ -190,9 +219,13 @@ export function registerLocalTerminalIPC(): void {
     return await createLocalSession(sessionId, topicId)
   })
 
-  ipcMain.on('local:input', (_, sessionId: string, data: string) => {
-    logger.info('LocalTerminal', `IPC RECEIVED [local:input] session=${sessionId}, len=${data.length}, data=${JSON.stringify(data)}`)
-    sendLocalInput(sessionId, data)
+  ipcMain.on('local:input', (event, sessionId: string, data: string) => {
+    logger.info(
+      'LocalTerminal',
+      `IPC RECEIVED [local:input] session=${sessionId}, len=${data.length}, data=${JSON.stringify(data)}`
+    )
+    const fromUser = event.sender.id !== 0
+    sendLocalInput(sessionId, data, fromUser)
   })
 
   ipcMain.on('local:resize', (_, sessionId: string, cols: number, rows: number) => {

@@ -46,17 +46,31 @@ export class TerminalIORepository extends BaseRepository<TerminalIORow> {
     return row ? mapTerminalIORow(row) : undefined
   }
 
-  getIOBySession(sessionId: string, limit = TERMINAL_IO_SESSION_LIMIT): TerminalIO[] {
-    const rows = this.stmt(
-      'SELECT * FROM terminal_io WHERE sessionId = ? ORDER BY timestamp DESC LIMIT ?'
-    ).all(sessionId, limit) as TerminalIORow[]
+  getIOBySession(
+    sessionId: string,
+    limit = TERMINAL_IO_SESSION_LIMIT,
+    includeDeleted = false
+  ): TerminalIO[] {
+    let query = 'SELECT * FROM terminal_io WHERE sessionId = ?'
+    if (!includeDeleted) {
+      query += ' AND isDeleted = 0'
+    }
+    query += ' ORDER BY timestamp DESC LIMIT ?'
+    const rows = this.stmt(query).all(sessionId, limit) as TerminalIORow[]
     return rows.map(mapTerminalIORow).reverse()
   }
 
-  getIOByTopic(topicId: string, limit = TERMINAL_IO_TOPIC_LIMIT): TerminalIO[] {
-    const rows = this.stmt(
-      'SELECT * FROM terminal_io WHERE topicId = ? ORDER BY timestamp DESC LIMIT ?'
-    ).all(topicId, limit) as TerminalIORow[]
+  getIOByTopic(
+    topicId: string,
+    limit = TERMINAL_IO_TOPIC_LIMIT,
+    includeDeleted = false
+  ): TerminalIO[] {
+    let query = 'SELECT * FROM terminal_io WHERE topicId = ?'
+    if (!includeDeleted) {
+      query += ' AND isDeleted = 0'
+    }
+    query += ' ORDER BY timestamp DESC LIMIT ?'
+    const rows = this.stmt(query).all(topicId, limit) as TerminalIORow[]
     return rows.map(mapTerminalIORow).reverse()
   }
 
@@ -105,6 +119,43 @@ export class TerminalIORepository extends BaseRepository<TerminalIORow> {
 
   deleteIOBySession(sessionId: string): void {
     this.stmt('DELETE FROM terminal_io WHERE sessionId = ?').run(sessionId)
+  }
+
+  markIOAsDeletedBySession(sessionId: string, deletedAt: number, deletedBy: string): void {
+    this.stmt(
+      'UPDATE terminal_io SET isDeleted = 1, deletedAt = ?, deletedBy = ? WHERE sessionId = ?'
+    ).run(deletedAt, deletedBy, sessionId)
+  }
+
+  restoreIOBySession(sessionId: string): void {
+    this.stmt(
+      'UPDATE terminal_io SET isDeleted = 0, deletedAt = NULL, deletedBy = NULL WHERE sessionId = ?'
+    ).run(sessionId)
+  }
+
+  searchCommandHistory(
+    topicId: string,
+    query: string,
+    options: {
+      includeDeleted?: boolean
+      limit?: number
+    } = {}
+  ): Array<{ io: TerminalIO; isSessionDeleted: boolean }> {
+    let sql = `SELECT io.*, s.isDeleted as sessionIsDeleted 
+       FROM terminal_io io
+       LEFT JOIN terminal_sessions s ON io.sessionId = s.id
+       WHERE io.topicId = ? AND io.type = 'input' AND io.content LIKE ?`
+    if (!options.includeDeleted) {
+      sql += ' AND io.isDeleted = 0'
+    }
+    sql += ' ORDER BY io.timestamp DESC LIMIT ?'
+    const rows = this.stmt(sql).all(topicId, `%${query}%`, options.limit || 20) as Array<
+      TerminalIORow & { sessionIsDeleted: number }
+    >
+    return rows.map((row) => ({
+      io: mapTerminalIORow(row),
+      isSessionDeleted: row.sessionIsDeleted === 1
+    }))
   }
 
   searchCommandInputs(query: string, limit = 20): any[] {

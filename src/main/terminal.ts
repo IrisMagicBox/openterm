@@ -345,7 +345,12 @@ class CommandExecutor {
         .split('\n')
         .filter((line) => {
           const s = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
-          return s.length > 0 && !s.includes('__openterm_end') && !s.includes('OPENTERM_CMD') && !s.includes('stty')
+          return (
+            s.length > 0 &&
+            !s.includes('__openterm_end') &&
+            !s.includes('OPENTERM_CMD') &&
+            !s.includes('stty')
+          )
         })
         .join('\n')
       if (!textData.trim()) {
@@ -511,6 +516,31 @@ class CommandExecutor {
       context += `- (No hosts added to this topic yet)\n`
     }
 
+    // Add Agent Notes section
+    const hostsWithNotes = topicHosts.filter((h) => h.agentNotes)
+    const sessionsWithNotes = sessions.filter((s) => s.agentNotes)
+    if (hostsWithNotes.length > 0 || sessionsWithNotes.length > 0) {
+      context += `\n[Agent Notes]\n`
+      if (hostsWithNotes.length > 0) {
+        context += `Host Notes:\n`
+        hostsWithNotes.forEach((h) => {
+          context += `- ${h.alias}:\n${h.agentNotes
+            ?.split('\n')
+            .map((line) => `    ${line}`)
+            .join('\n')}\n`
+        })
+      }
+      if (sessionsWithNotes.length > 0) {
+        context += `Terminal Notes:\n`
+        sessionsWithNotes.forEach((s) => {
+          context += `- ${s.name || 'unnamed'} (${s.hostAlias}):\n${s.agentNotes
+            ?.split('\n')
+            .map((line) => `    ${line}`)
+            .join('\n')}\n`
+        })
+      }
+    }
+
     if (sessions.length === 0) {
       context += `Active Terminals: None\n`
       return context
@@ -609,6 +639,7 @@ class CommandExecutor {
 
       if (state.session.topicId) {
         terminalSessionDB.closeSession(sessionId)
+        terminalIODB.markIOAsDeletedBySession(sessionId, Date.now(), 'agent')
       }
       this.sessions.delete(sessionId)
 

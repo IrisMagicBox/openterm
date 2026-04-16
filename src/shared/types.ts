@@ -8,6 +8,7 @@ export interface Host {
   keyPath?: string
   tags: string[]
   createdAt: number
+  agentNotes?: string
 }
 
 export interface Topic {
@@ -157,6 +158,10 @@ export interface TerminalSession {
   commandStartTime?: number
   createdAt: number
   closedAt?: number
+  agentNotes?: string
+  isDeleted?: boolean
+  deletedAt?: number
+  deletedBy?: string
 }
 
 export type TerminalIOType = 'input' | 'output'
@@ -180,6 +185,9 @@ export interface TerminalIO {
   taskId?: string
   stepId?: string
   timestamp: number
+  isDeleted?: boolean
+  deletedAt?: number
+  deletedBy?: string
 }
 
 export interface CommandResult {

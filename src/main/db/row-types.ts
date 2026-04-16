@@ -19,6 +19,7 @@ export interface HostRow {
   keyPath: string | null
   tags: string | null // JSON-encoded string[]
   createdAt: number
+  agentNotes: string | null
 }
 
 // topics table
@@ -113,6 +114,10 @@ export interface TerminalSessionRow {
   createdAt: number
   closedAt: number | null
   name: string | null // Added via ALTER TABLE
+  agentNotes: string | null
+  isDeleted: number // 0 or 1
+  deletedAt: number | null
+  deletedBy: string | null
 }
 
 // terminal_io table
@@ -134,6 +139,9 @@ export interface TerminalIORow {
   taskId: string | null
   stepId: string | null
   timestamp: number
+  isDeleted: number // 0 or 1
+  deletedAt: number | null
+  deletedBy: string | null
 }
 
 // memories table

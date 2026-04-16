@@ -227,6 +227,42 @@ export function initializeSchema(db: Database.Database): void {
   if (!sessionColumns.includes('name')) {
     db.exec('ALTER TABLE terminal_sessions ADD COLUMN name TEXT')
   }
+  if (!sessionColumns.includes('agentNotes')) {
+    db.exec('ALTER TABLE terminal_sessions ADD COLUMN agentNotes TEXT')
+  }
+
+  // Add agentNotes to hosts table if not exists
+  const hostInfo = db.prepare('PRAGMA table_info(hosts)').all() as any[]
+  const hostColumns = hostInfo.map((c) => c.name)
+  if (!hostColumns.includes('agentNotes')) {
+    db.exec('ALTER TABLE hosts ADD COLUMN agentNotes TEXT')
+  }
+
+  // Add soft delete fields to terminal_sessions table
+  const sessionInfo2 = db.prepare('PRAGMA table_info(terminal_sessions)').all() as any[]
+  const sessionColumns2 = sessionInfo2.map((c) => c.name)
+  if (!sessionColumns2.includes('isDeleted')) {
+    db.exec('ALTER TABLE terminal_sessions ADD COLUMN isDeleted INTEGER DEFAULT 0')
+  }
+  if (!sessionColumns2.includes('deletedAt')) {
+    db.exec('ALTER TABLE terminal_sessions ADD COLUMN deletedAt INTEGER')
+  }
+  if (!sessionColumns2.includes('deletedBy')) {
+    db.exec('ALTER TABLE terminal_sessions ADD COLUMN deletedBy TEXT')
+  }
+
+  // Add soft delete fields to terminal_io table
+  const ioInfo = db.prepare('PRAGMA table_info(terminal_io)').all() as any[]
+  const ioColumns = ioInfo.map((c) => c.name)
+  if (!ioColumns.includes('isDeleted')) {
+    db.exec('ALTER TABLE terminal_io ADD COLUMN isDeleted INTEGER DEFAULT 0')
+  }
+  if (!ioColumns.includes('deletedAt')) {
+    db.exec('ALTER TABLE terminal_io ADD COLUMN deletedAt INTEGER')
+  }
+  if (!ioColumns.includes('deletedBy')) {
+    db.exec('ALTER TABLE terminal_io ADD COLUMN deletedBy TEXT')
+  }
 
   const topicInfo = db.prepare('PRAGMA table_info(topics)').all() as any[]
   const topicColumns = topicInfo.map((c) => c.name)
@@ -247,7 +283,9 @@ export function initializeSchema(db: Database.Database): void {
   }
 
   // Cleanup redundant coreshub providers if duplicates exist
-  db.prepare("DELETE FROM providers WHERE id = 'coreshub' AND isSystem = 1 AND name = 'coreshub'").run()
+  db.prepare(
+    "DELETE FROM providers WHERE id = 'coreshub' AND isSystem = 1 AND name = 'coreshub'"
+  ).run()
 }
 
 export function closeDatabase(): void {

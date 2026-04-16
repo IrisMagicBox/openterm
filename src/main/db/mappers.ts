@@ -61,7 +61,8 @@ export const mapHostRow = (row: HostRow): Host => ({
   password: row.password ?? undefined,
   keyPath: row.keyPath ?? undefined,
   tags: parseJSON(row.tags, []),
-  createdAt: row.createdAt
+  createdAt: row.createdAt,
+  agentNotes: row.agentNotes ?? undefined
 })
 
 /**
@@ -169,7 +170,11 @@ export const mapTerminalSessionRow = (row: TerminalSessionRow): TerminalSession 
   shellType: row.shellType ?? undefined,
   shellIntegrationReady: row.shellIntegrationReady === 1,
   createdAt: row.createdAt,
-  closedAt: row.closedAt ?? undefined
+  closedAt: row.closedAt ?? undefined,
+  agentNotes: row.agentNotes ?? undefined,
+  isDeleted: row.isDeleted === 1,
+  deletedAt: row.deletedAt ?? undefined,
+  deletedBy: row.deletedBy ?? undefined
 })
 
 /**
@@ -192,7 +197,10 @@ export const mapTerminalIORow = (row: TerminalIORow): TerminalIO => ({
   cwd: row.cwd ?? undefined,
   taskId: row.taskId ?? undefined,
   stepId: row.stepId ?? undefined,
-  timestamp: row.timestamp
+  timestamp: row.timestamp,
+  isDeleted: row.isDeleted === 1,
+  deletedAt: row.deletedAt ?? undefined,
+  deletedBy: row.deletedBy ?? undefined
 })
 
 /**
