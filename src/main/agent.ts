@@ -6,6 +6,7 @@ import { Message, TerminalSession, Task } from '../shared/types'
 import { AgentRunner, AgentContext, AuthResponse } from './AgentRunner'
 import { commandExecutor } from './terminal'
 import { logger } from './logger'
+import { createLocalSession } from './local-terminal'
 
 type CreateAgentSessionFn = (
   hostId: string,
@@ -81,21 +82,36 @@ export class AgentService {
     name?: string,
     showInUI = false
   ): Promise<AgentSession> {
-    if (!createAgentSessionRef) throw new Error('SSH service not initialized')
     if (!this.webContents) throw new Error('WebContents not initialized')
-    const sessionId = await createAgentSessionRef(hostId, this.webContents, topicId)
-    const session: AgentSession = {
-      id: sessionId,
-      topicId,
-      hostId,
-      hostAlias,
-      status: 'active',
-      shellType: 'bash',
-      shellIntegrationReady: false,
-      createdAt: Date.now(),
-      paused: false,
-      name: name || `终端-${(this.topicSessions.get(topicId)?.get(hostId)?.length || 0) + 1}`,
-      visible: showInUI
+
+    let session: AgentSession
+
+    if (hostId === 'local') {
+      // Create local terminal session
+      const localSession = await createLocalSession(uuidv4(), topicId, this.webContents, true)
+      session = {
+        ...localSession,
+        paused: false,
+        name: name || `本地终端-${(this.topicSessions.get(topicId)?.get(hostId)?.length || 0) + 1}`,
+        visible: showInUI
+      } as AgentSession
+    } else {
+      // Create SSH session
+      if (!createAgentSessionRef) throw new Error('SSH service not initialized')
+      const sessionId = await createAgentSessionRef(hostId, this.webContents, topicId)
+      session = {
+        id: sessionId,
+        topicId,
+        hostId,
+        hostAlias,
+        status: 'active',
+        shellType: 'bash',
+        shellIntegrationReady: false,
+        createdAt: Date.now(),
+        paused: false,
+        name: name || `终端-${(this.topicSessions.get(topicId)?.get(hostId)?.length || 0) + 1}`,
+        visible: showInUI
+      }
     }
 
     this.registerSession(session)
@@ -219,22 +235,33 @@ export class AgentService {
 
     // 2. Create a new real session if none exists
     if (!this.webContents) throw new Error('WebContents not initialized')
-    if (!createAgentSessionRef) throw new Error('SSH service not initialized')
 
-    const sessionId = await createAgentSessionRef(hostId, this.webContents, topicId)
+    let session: AgentSession
 
-    const session: AgentSession = {
-      id: sessionId,
-      topicId,
-      hostId,
-      hostAlias,
-      name: name || `${hostAlias} Terminal ${(sessions?.length || 0) + 1}`,
-      status: 'active',
-      shellIntegrationReady: false,
-      isPinned: false,
-      visible: true,
-      paused: false,
-      createdAt: Date.now()
+    if (hostId === 'local') {
+      // Create local terminal session
+      const localSession = await createLocalSession(uuidv4(), topicId, this.webContents, true)
+      session = {
+        ...localSession,
+        paused: false
+      }
+    } else {
+      // Create SSH session
+      if (!createAgentSessionRef) throw new Error('SSH service not initialized')
+      const sessionId = await createAgentSessionRef(hostId, this.webContents, topicId)
+      session = {
+        id: sessionId,
+        topicId,
+        hostId,
+        hostAlias,
+        name: name || `${hostAlias} Terminal ${(sessions?.length || 0) + 1}`,
+        status: 'active',
+        shellIntegrationReady: false,
+        isPinned: false,
+        visible: true,
+        paused: false,
+        createdAt: Date.now()
+      }
     }
 
     await this.registerSession(session)

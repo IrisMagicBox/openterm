@@ -62,6 +62,19 @@ export interface AgentContext {
   notifyStep: (message: Message) => void
   metadata: (input: { title?: string; metadata?: Record<string, unknown> }) => void
   stepId?: string
+  /** Request permission for an action */
+  ask?: (request: {
+    permission: string
+    pattern: string
+    always?: boolean
+    metadata?: Record<string, unknown>
+  }) => Promise<void>
+  /** Abort signal for cancellation */
+  abort?: AbortSignal
+  /** Message history for context */
+  messages?: Array<{ role: string; content: string }>
+  /** Current agent name */
+  agent?: string
 }
 
 export class AgentRunner {
@@ -88,7 +101,8 @@ export class AgentRunner {
     this.config = getAgentConfig(agentName)
     this.provider = new ProviderAdapter()
 
-    // Wire EventBus to renderer
+    void this.toolRegistry.initializeTools(agentName)
+
     eventBus.setWebContents(context.webContents)
 
     const originalRequestAuth = context.requestAuthorization.bind(context)
@@ -460,8 +474,7 @@ export class AgentRunner {
             error: result.content.startsWith('Error:')
           })
 
-          // Aggregate subagent usage back into parent session
-          if (toolName === 'task' && result.metadata?.usage) {
+          if (result.metadata?.usage) {
             this.provider.mergeChildUsage(result.metadata.usage as SessionUsage)
           }
 
@@ -542,7 +555,10 @@ export class AgentRunner {
     return this.toolRegistry.getFilteredDefinitions(this.agentName)
   }
 
-  private async executeTool(toolCall: ChatCompletionMessageFunctionToolCall): Promise<ToolResult> {
+  private async executeTool(
+    toolCall: ChatCompletionMessageFunctionToolCall,
+    abortSignal?: AbortSignal
+  ): Promise<ToolResult> {
     const { name, arguments: argsJson } = toolCall.function
     const args = JSON.parse(argsJson)
 
@@ -560,11 +576,25 @@ export class AgentRunner {
 
     try {
       this.context.stepId = step.id
-      const result = await this.toolRegistry.execute(
-        name,
-        args,
-        this.context as import('./tools/tool-factory').Tool.Context
-      )
+
+      const toolContext: import('./tools/tool-factory').Tool.Context = {
+        ...this.context,
+        agent: this.agentName,
+        abort: abortSignal ?? new AbortController().signal,
+        messages: [],
+        ask: async (request) => {
+          const result = await this.context.requestAuthorization(
+            request.permission,
+            'medium',
+            `Permission required: ${request.permission} for pattern "${request.pattern}"`
+          )
+          if (!result.approved) {
+            throw new Error(`Permission denied for ${request.permission}: ${request.pattern}`)
+          }
+        }
+      }
+
+      const result = await this.toolRegistry.execute(name, args, toolContext)
 
       const resultString = result.output
       taskStepDB.updateStep(step.id, { status: 'completed', rawOutput: resultString })

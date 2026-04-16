@@ -1,11 +1,19 @@
 import { z } from 'zod'
-import type { ToolDefinition } from './types'
 import type { Message } from '../../shared/types'
-
-// ─── Tool namespace ─────────────────────────────────────────────
+import { truncateOutput as truncateToDisk } from './truncation'
 
 export namespace Tool {
-  /** Context available to all tool executions */
+  export interface InitContext {
+    agent?: string
+  }
+
+  export interface PermissionRequest {
+    permission: string
+    pattern: string
+    always?: boolean
+    metadata?: Record<string, unknown>
+  }
+
   export interface Context {
     topicId: string
     taskId: string
@@ -20,6 +28,10 @@ export namespace Tool {
     ) => Promise<{ approved: boolean; alwaysAllow: boolean }>
     notifyStep: (message: Message) => void
     metadata: (input: { title?: string; metadata?: Record<string, unknown> }) => void
+    ask: (request: PermissionRequest) => Promise<void>
+    abort: AbortSignal
+    messages: Array<{ role: string; content: string }>
+    agent: string
   }
 
   export interface Metadata {
@@ -32,25 +44,25 @@ export namespace Tool {
     metadata?: M
   }
 
-  export interface Init<P extends z.ZodType = z.ZodType, M extends Metadata = Metadata> {
-    description: string
-    parameters: P
-    execute(args: z.infer<P>, ctx: Context): Promise<ExecuteResult<M>>
-    formatValidationError?: (error: z.ZodError) => string
-  }
-
-  export interface Info<P extends z.ZodType = z.ZodType, M extends Metadata = Metadata> {
+  export interface Info<Parameters extends z.ZodType = z.ZodType, M extends Metadata = Metadata> {
     id: string
-    description: string
-    parameters: P
-    definition: ToolDefinition
-    execute(args: Record<string, unknown>, ctx: Context): Promise<ExecuteResult<M>>
+    init: (ctx?: InitContext) => Promise<{
+      description: string
+      parameters: Parameters
+      execute(
+        args: z.infer<Parameters>,
+        ctx: Context
+      ): Promise<{
+        title?: string
+        metadata?: M
+        output: string
+      }>
+      formatValidationError?: (error: z.ZodError) => string
+    }>
   }
 }
 
-// ─── zodToJsonSchema ────────────────────────────────────────────
-
-function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
+export function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
   const def = schema._def as { type?: string; [key: string]: unknown }
 
   switch (def.type) {
@@ -61,7 +73,6 @@ function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
 
       for (const [key, value] of Object.entries(shape)) {
         properties[key] = zodToJsonSchema(value)
-        // A field is required unless it's wrapped in optional or has a default
         if (!isOptionalish(value)) {
           required.push(key)
         }
@@ -74,7 +85,6 @@ function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
       if (required.length > 0) {
         result.required = required
       }
-      // Preserve description if the object itself was described
       if ((schema as { description?: string }).description) {
         result.description = (schema as { description: string }).description
       }
@@ -116,19 +126,44 @@ function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
       return zodToJsonSchema(innerType)
     }
 
+    case 'union': {
+      const options = def.options as z.ZodType[]
+      const anyOf = options.map((opt) => zodToJsonSchema(opt))
+      return withStringDescription(schema, { anyOf })
+    }
+
+    case 'record': {
+      const valueType = def.valueType as z.ZodType | undefined
+      if (valueType) {
+        return withStringDescription(schema, {
+          type: 'object',
+          additionalProperties: zodToJsonSchema(valueType)
+        })
+      }
+      return { type: 'object', additionalProperties: true }
+    }
+
+    case 'tuple': {
+      const items = def.items as z.ZodType[]
+      const prefixItems = items.map((item) => zodToJsonSchema(item))
+      return withStringDescription(schema, {
+        type: 'array',
+        prefixItems,
+        minItems: items.length,
+        maxItems: items.length
+      })
+    }
+
     default:
-      // Fallback: return a generic object schema
       return { type: 'object' }
   }
 }
 
-/** Check whether a Zod schema is optional or has a default (i.e. not required). */
 function isOptionalish(schema: z.ZodType): boolean {
   const def = schema._def as { type?: string; innerType?: z.ZodType }
   return def.type === 'optional' || def.type === 'default'
 }
 
-/** Attach `.description` from a described Zod schema to the JSON Schema output. */
 function withStringDescription(
   schema: z.ZodType,
   jsonSchema: Record<string, unknown>
@@ -140,60 +175,57 @@ function withStringDescription(
   return jsonSchema
 }
 
-// ─── Default validation error formatter ─────────────────────────
-
-function defaultFormatValidationError(error: z.ZodError): string {
-  const lines = error.issues.map((issue) => {
-    const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
-    return `  - ${path}: ${issue.message}`
-  })
-  return (
-    `Parameter validation failed:\n${lines.join('\n')}\n\n` +
-    'Please correct the parameters and try again. Ensure all required fields are provided with the correct types.'
-  )
-}
-
 // ─── define() ───────────────────────────────────────────────────
 
-export function define<P extends z.ZodType, M extends Tool.Metadata>(
+export function define<Parameters extends z.ZodType, Result extends Tool.Metadata>(
   id: string,
-  init: Tool.Init<P, M>
-): Tool.Info<P, M> {
-  const parametersSchema = zodToJsonSchema(init.parameters)
-
-  const definition: ToolDefinition = {
-    type: 'function',
-    function: {
-      name: id,
-      description: init.description,
-      parameters: parametersSchema
-    }
-  }
-
-  const formatError = init.formatValidationError ?? defaultFormatValidationError
-
-  async function execute(
-    args: Record<string, unknown>,
-    ctx: Tool.Context
-  ): Promise<Tool.ExecuteResult<M>> {
-    const result = init.parameters.safeParse(args)
-
-    if (!result.success) {
-      const errorMessage = formatError(result.error)
-      return {
-        output: errorMessage,
-        metadata: { validationError: true } as unknown as M
-      }
-    }
-
-    return init.execute(result.data, ctx)
-  }
-
+  init:
+    | Tool.Info<Parameters, Result>['init']
+    | Awaited<ReturnType<Tool.Info<Parameters, Result>['init']>>
+): Tool.Info<Parameters, Result> {
   return {
     id,
-    description: init.description,
-    parameters: init.parameters,
-    definition,
-    execute
+    init: async (initCtx) => {
+      const toolInfo = init instanceof Function ? await init(initCtx) : init
+      const execute = toolInfo.execute
+
+      toolInfo.execute = async (rawArgs, ctx) => {
+        let parsedArgs: z.infer<Parameters>
+        try {
+          parsedArgs = toolInfo.parameters.parse(rawArgs)
+        } catch (error) {
+          if (error instanceof z.ZodError && toolInfo.formatValidationError) {
+            throw new Error(toolInfo.formatValidationError(error), { cause: error })
+          }
+          throw new Error(
+            `The ${id} tool was called with invalid arguments: ${error}.\nPlease rewrite the input so it satisfies the expected schema.`,
+            { cause: error }
+          )
+        }
+
+        const result = await execute(parsedArgs, ctx)
+
+        if (result.metadata?.truncated !== undefined) {
+          return result as { title?: string; metadata?: Result; output: string }
+        }
+
+        const truncated = truncateToDisk(result.output, ctx.topicId, ctx.stepId)
+        return {
+          title: result.title,
+          output: truncated.content,
+          metadata: {
+            ...(result.metadata || {}),
+            truncated: truncated.truncated,
+            ...(truncated.truncated && {
+              originalLines: truncated.originalLines,
+              originalBytes: truncated.originalBytes,
+              outputPath: truncated.outputPath
+            })
+          } as unknown as Result
+        }
+      }
+
+      return toolInfo
+    }
   }
 }

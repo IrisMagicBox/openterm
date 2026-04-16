@@ -115,7 +115,7 @@ export function createLocalSession(
         '本地终端',
         ptyProcess,
         webContents,
-        false
+        true
       )
 
       sessions.set(sessionId, localSession)

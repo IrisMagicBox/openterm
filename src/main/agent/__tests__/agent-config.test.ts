@@ -91,7 +91,7 @@ function makeMockTool(id: string) {
 describe('ToolRegistry.getFilteredDefinitions', () => {
   let registry: ToolRegistry
 
-  beforeEach(() => {
+  beforeEach(async () => {
     registry = new ToolRegistry()
     registry.register(makeMockTool('execute_command'))
     registry.register(makeMockTool('read_file'))
@@ -102,6 +102,7 @@ describe('ToolRegistry.getFilteredDefinitions', () => {
     registry.register(makeMockTool('manage_host'))
     registry.register(makeMockTool('search_memory'))
     registry.register(makeMockTool('search_topics'))
+    await registry.initializeTools()
   })
 
   it('returns all tools for build agent (empty allowedTools)', () => {
@@ -110,7 +111,7 @@ describe('ToolRegistry.getFilteredDefinitions', () => {
     expect(filteredDefinitions).toHaveLength(allDefinitions.length)
   })
 
-  it('returns only allowed tools for explore agent', () => {
+  it('returns only allowed tools for explore agent', async () => {
     const config = getAgentConfig('explore')
     const filteredDefinitions = registry.getFilteredDefinitions('explore')
     const toolNames = filteredDefinitions.map((d) => d.function.name)
@@ -120,7 +121,7 @@ describe('ToolRegistry.getFilteredDefinitions', () => {
     expect(toolNames).toHaveLength(config.allowedTools.length)
   })
 
-  it('returns only allowed tools for verify agent', () => {
+  it('returns only allowed tools for verify agent', async () => {
     const config = getAgentConfig('verify')
     const filteredDefinitions = registry.getFilteredDefinitions('verify')
     const toolNames = filteredDefinitions.map((d) => d.function.name)

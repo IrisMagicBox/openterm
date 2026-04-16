@@ -36,6 +36,23 @@ export default define('task', {
       return { output: `Error: Cannot spawn "${agentName}" as a subagent — it is a primary agent.` }
     }
 
+    const parentAgentConfig = getAgentConfig(ctx.agent)
+    const canSpawnSubagent = parentAgentConfig.permissions.some(
+      (p) => (p.tool === '*' || p.tool === 'task') && p.allowed
+    )
+
+    if (!canSpawnSubagent) {
+      return {
+        output: `Error: Agent "${ctx.agent}" does not have permission to spawn subagents.`
+      }
+    }
+
+    await ctx.ask({
+      permission: 'task',
+      pattern: agentName,
+      metadata: { prompt: prompt.slice(0, 100) }
+    })
+
     const subagentSessionId = `sub_${agentName}_${uuidv4().slice(0, 8)}`
 
     logger.info('TaskTool', `Spawning subagent "${agentName}" in isolated session`, {
@@ -44,14 +61,27 @@ export default define('task', {
     })
 
     try {
+      const isolatedTopicId = `${ctx.topicId}_sub_${agentName}_${uuidv4().slice(0, 8)}`
       const childContext: AgentContext = {
-        topicId: ctx.topicId,
+        topicId: isolatedTopicId,
         taskId: subagentSessionId,
         stepId: undefined,
         webContents: ctx.webContents as WebContents,
         agentService: ctx.agentService as IAgentService,
         ensureSession: ctx.ensureSession,
-        requestAuthorization: ctx.requestAuthorization,
+        requestAuthorization: (cmd, risk, reason) => {
+          const subagentConfig = getAgentConfig(agentName)
+          const maxRisk = subagentConfig.permissions.find(
+            (p) => p.tool === 'execute_command'
+          )?.maxAutoApproveRisk
+          if (maxRisk) {
+            const riskLevels = { low: 0, medium: 1, high: 2, critical: 3 }
+            if (riskLevels[risk] <= riskLevels[maxRisk]) {
+              return Promise.resolve({ approved: true, alwaysAllow: false })
+            }
+          }
+          return ctx.requestAuthorization(cmd, risk, `[Subagent ${agentName}] ${reason}`)
+        },
         notifyStep: ctx.notifyStep,
         metadata: ctx.metadata,
         agentName
@@ -62,7 +92,7 @@ export default define('task', {
       const messages = [
         {
           id: `subagent_${subagentSessionId}`,
-          topicId: ctx.topicId,
+          topicId: isolatedTopicId,
           role: 'user' as const,
           content: scopedPrompt,
           timestamp: Date.now()

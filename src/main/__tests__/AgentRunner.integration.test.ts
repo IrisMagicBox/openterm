@@ -46,7 +46,8 @@ vi.mock('../tools', () => {
         '{"content":"output","exitCode":0,"durationMs":100,"isTruncated":false,"sessionId":"s1"}'
     })),
     register: vi.fn(),
-    getDefinitions: vi.fn(() => [])
+    getDefinitions: vi.fn(() => []),
+    initializeTools: vi.fn(async () => {})
   }
   return {
     createDefaultRegistry: vi.fn(() => registry),

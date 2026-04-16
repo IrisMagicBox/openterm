@@ -13,6 +13,10 @@ import readNotesTool from './read-notes'
 import writeNotesTool from './write-notes'
 import searchTerminalHistoryTool from './search-terminal-history'
 import getDeletedTerminalsTool from './get-deleted-terminals'
+import grepTool from './grep'
+import globTool from './glob'
+import editTool from './edit'
+import lsTool from './ls'
 import taskTool from '../agent/task-tool'
 
 export { ToolRegistry } from './tool-registry'
@@ -37,6 +41,10 @@ export function createDefaultRegistry(): ToolRegistry {
   registry.register(writeNotesTool)
   registry.register(searchTerminalHistoryTool)
   registry.register(getDeletedTerminalsTool)
+  registry.register(grepTool)
+  registry.register(globTool)
+  registry.register(editTool)
+  registry.register(lsTool)
   registry.register(taskTool)
   return registry
 }
