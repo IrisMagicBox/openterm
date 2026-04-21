@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: openterm
+appId: com.eddic.openterm
+productName: OpenTerm
 directories:
   buildResources: build
 files:
@@ -19,6 +19,7 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  icon: build/icon.icns
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.

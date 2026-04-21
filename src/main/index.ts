@@ -14,6 +14,26 @@ import { handleSessionRecovery } from './session-recovery'
 import { logger } from './logger'
 import { registerAllIPC } from './ipc'
 
+const APP_ID = 'com.eddic.openterm'
+const APP_NAME = 'OpenTerm'
+
+app.setName(APP_NAME)
+
+function setMacDockIcon(): void {
+  if (process.platform !== 'darwin') return
+
+  const dockIcon = nativeImage.createFromPath(icon)
+  if (dockIcon.isEmpty()) return
+
+  try {
+    app.dock?.setIcon(dockIcon)
+  } catch {
+    app.whenReady().then(() => app.dock?.setIcon(dockIcon))
+  }
+}
+
+setMacDockIcon()
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: WINDOW_DEFAULT_WIDTH,
@@ -43,17 +63,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  if (process.platform === 'darwin') {
-    const icnsPath = is.dev
-      ? join(process.cwd(), 'build/icon.icns')
-      : join(process.resourcesPath, 'icon.icns')
-    const dockIcon = nativeImage.createFromPath(icnsPath)
-    if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon)
-    else {
-      const pngIcon = nativeImage.createFromPath(icon)
-      if (!pngIcon.isEmpty()) app.dock?.setIcon(pngIcon)
-    }
-  }
+  setMacDockIcon()
 
   initializeDB()
   registerAllIPC()
@@ -66,7 +76,7 @@ app.whenReady().then(() => {
   setAgentService(agentService)
   setCreateAgentSession(createAgentSession)
 
-  electronApp.setAppUserModelId('com.openterm')
+  electronApp.setAppUserModelId(APP_ID)
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
 
   createWindow()
