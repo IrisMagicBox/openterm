@@ -90,3 +90,4 @@ export const terminalSessionDB = db.terminalSessions
 export const terminalIODB = db.terminalIO
 
 export { db }
+export * from './conversation-diagnostics'
