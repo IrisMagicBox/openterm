@@ -103,8 +103,8 @@ export function createLocalSession(
         if (topicId && topicId !== '') {
           terminalSessionDB.closeSession(sessionId)
         }
-        if (webContents) {
-          webContents.send(`ssh:closed:${sessionId}`)
+        if (localSession.webContents) {
+          localSession.webContents.send(`ssh:closed:${sessionId}`)
         }
       })
 
@@ -214,9 +214,9 @@ export function attachLocalSession(sessionId: string, webContents: WebContents):
 
 export function registerLocalTerminalIPC(): void {
   ipcMain.removeHandler('local:connect')
-  ipcMain.handle('local:connect', async (_, topicId: string) => {
+  ipcMain.handle('local:connect', async (event, topicId: string) => {
     const sessionId = uuidv4()
-    return await createLocalSession(sessionId, topicId)
+    return await createLocalSession(sessionId, topicId, event.sender)
   })
 
   ipcMain.on('local:input', (event, sessionId: string, data: string) => {

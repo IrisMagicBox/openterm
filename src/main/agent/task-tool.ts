@@ -37,6 +37,12 @@ export default define('task', {
     }
 
     const parentAgentConfig = getAgentConfig(ctx.agent)
+    if (parentAgentConfig.mode !== 'primary') {
+      return {
+        output: `Error: Agent "${ctx.agent}" cannot spawn nested subagents.`
+      }
+    }
+
     const canSpawnSubagent = parentAgentConfig.permissions.some(
       (p) => (p.tool === '*' || p.tool === 'task') && p.allowed
     )
@@ -61,10 +67,12 @@ export default define('task', {
     })
 
     try {
-      const isolatedTopicId = `${ctx.topicId}_sub_${agentName}_${uuidv4().slice(0, 8)}`
       const childContext: AgentContext = {
-        topicId: isolatedTopicId,
-        taskId: subagentSessionId,
+        topicId: ctx.topicId,
+        taskId: ctx.taskId,
+        runId: subagentSessionId,
+        parentRunId: ctx.runId,
+        parentPartId: ctx.partId,
         stepId: undefined,
         webContents: ctx.webContents as WebContents,
         agentService: ctx.agentService as IAgentService,
@@ -84,7 +92,8 @@ export default define('task', {
         },
         notifyStep: ctx.notifyStep,
         metadata: ctx.metadata,
-        agentName
+        agentName,
+        abort: ctx.abort
       }
 
       const scopedPrompt = hostId ? `Focus on host ${hostId}. ${prompt}` : prompt
@@ -92,15 +101,23 @@ export default define('task', {
       const messages = [
         {
           id: `subagent_${subagentSessionId}`,
-          topicId: isolatedTopicId,
+          topicId: ctx.topicId,
           role: 'user' as const,
           content: scopedPrompt,
           timestamp: Date.now()
         }
       ]
 
-      const runner = new AgentRunner(childContext, agentName)
+      const runner = new AgentRunner(childContext, agentName, {
+        runId: subagentSessionId,
+        parentRunId: ctx.runId,
+        parentPartId: ctx.partId,
+        persistFinalMessage: false,
+        updateTaskStatus: false,
+        goal: prompt
+      })
       const result = await runner.run(messages)
+      ctx.updatePartMetadata?.({ childRunId: childContext.runId, childAgent: agentName })
 
       const childUsage = runner.getSessionUsage()
       if (childUsage.totalTokens > 0) {
@@ -125,12 +142,15 @@ export default define('task', {
       }
 
       return {
-        output: result.content || 'Subagent completed with no output',
+        output: JSON.stringify({
+          task_id: childContext.runId ?? subagentSessionId,
+          content: result.content || 'Subagent completed with no output'
+        }),
         title: `${agentName} agent result`,
         metadata: {
           subagent: agentName,
           hostId,
-          sessionId: subagentSessionId,
+          sessionId: childContext.runId ?? subagentSessionId,
           usage: childUsage
         }
       }

@@ -5,6 +5,8 @@ import type {
   Host,
   Task,
   TaskStep,
+  AgentRun,
+  AgentPart,
   Approval,
   Artifact,
   Message,
@@ -106,6 +108,12 @@ const api = {
   sendMessage: (topicId: string, content: string) =>
     ipcRenderer.invoke('agent:message', topicId, content),
   getAgentSessions: (topicId: string) => ipcRenderer.invoke('agent:get-sessions', topicId),
+  getAgentRun: (runId: string) => ipcRenderer.invoke('agent:get-run', runId),
+  getAgentRunsByTask: (taskId: string) => ipcRenderer.invoke('agent:get-runs-by-task', taskId),
+  getAgentRunParts: (runId: string) => ipcRenderer.invoke('agent:get-run-parts', runId),
+  getAgentTaskParts: (taskId: string) => ipcRenderer.invoke('agent:get-task-parts', taskId),
+  cancelAgentRun: (runId: string) => ipcRenderer.invoke('agent:cancel-run', runId),
+  resumeAgentRun: (runId: string) => ipcRenderer.invoke('agent:resume-run', runId),
 
   // Agent Authorization (HITL)
   onAgentAuthRequest: (
@@ -137,6 +145,26 @@ const api = {
     const listener = (_event: IpcRendererEvent, step: Message) => callback(step)
     ipcRenderer.on('agent:step', listener)
     return () => ipcRenderer.removeListener('agent:step', listener)
+  },
+  onAgentRunCreated: (callback: (run: AgentRun) => void) => {
+    const listener = (_event: IpcRendererEvent, run: AgentRun) => callback(run)
+    ipcRenderer.on('agent:run-created', listener)
+    return () => ipcRenderer.removeListener('agent:run-created', listener)
+  },
+  onAgentRunUpdated: (callback: (run: AgentRun) => void) => {
+    const listener = (_event: IpcRendererEvent, run: AgentRun) => callback(run)
+    ipcRenderer.on('agent:run-updated', listener)
+    return () => ipcRenderer.removeListener('agent:run-updated', listener)
+  },
+  onAgentPartCreated: (callback: (part: AgentPart) => void) => {
+    const listener = (_event: IpcRendererEvent, part: AgentPart) => callback(part)
+    ipcRenderer.on('agent:part-created', listener)
+    return () => ipcRenderer.removeListener('agent:part-created', listener)
+  },
+  onAgentPartUpdated: (callback: (part: AgentPart) => void) => {
+    const listener = (_event: IpcRendererEvent, part: AgentPart) => callback(part)
+    ipcRenderer.on('agent:part-updated', listener)
+    return () => ipcRenderer.removeListener('agent:part-updated', listener)
   },
   onAgentToolCall: (
     callback: (data: {

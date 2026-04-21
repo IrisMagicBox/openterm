@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { Message, Host } from '../../../../shared/types'
 import logo from '../../assets/logo.png'
-import { TaskStepTimeline } from '../TaskStepTimeline'
+import { AgentRunTimeline } from '../AgentRunTimeline'
 import { MarkdownRenderer } from '../MarkdownRenderer'
 
 interface MessageBubbleProps {
@@ -50,7 +50,7 @@ export function MessageBubble({ message, expandedThoughts, onToggleThought }: Me
             </div>
           )}
 
-          {msg.metadata?.taskId && <TaskStepTimeline taskId={msg.metadata.taskId} />}
+          {msg.metadata?.taskId && <AgentRunTimeline taskId={msg.metadata.taskId} />}
 
           {msg.toolCalls && msg.toolCalls.length > 0 && (
             <div className="space-y-1.5">

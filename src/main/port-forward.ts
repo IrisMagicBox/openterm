@@ -1,14 +1,19 @@
 import { Client } from 'ssh2'
 import { ipcMain } from 'electron'
+import * as net from 'net'
 import { hostDB } from './db'
 import { logger } from './logger'
 import { v4 as uuidv4 } from 'uuid'
 import { buildSSHConfig } from './utils/ssh-config'
+import type { SSHConnectionConfig } from './utils/ssh-config'
+import type { Host } from '../shared/types'
 
 interface ForwardTunnel {
   id: string
   hostId: string
   client: Client
+  server?: net.Server
+  sockets: Set<net.Socket>
   localPort: number
   remoteHost: string
   remotePort: number
@@ -18,7 +23,22 @@ interface ForwardTunnel {
 
 const tunnels = new Map<string, ForwardTunnel>()
 
-function getHostConfig(hostId: string) {
+function closeTunnelResources(tunnel: ForwardTunnel): void {
+  if (tunnel.status === 'closed') return
+
+  tunnel.status = 'closed'
+  for (const socket of tunnel.sockets) {
+    socket.destroy()
+  }
+  tunnel.sockets.clear()
+  if (tunnel.server?.listening) {
+    tunnel.server.close()
+  }
+  tunnel.client.end()
+  tunnels.delete(tunnel.id)
+}
+
+function getHostConfig(hostId: string): { host: Host; config: SSHConnectionConfig } {
   const host = hostDB.getHostById(hostId)
   if (!host) throw new Error('Host not found')
 
@@ -37,45 +57,95 @@ export async function createForwardTunnel(
 
   return new Promise((resolve, reject) => {
     const client = new Client()
+    let settled = false
+    const tunnel: ForwardTunnel = {
+      id: uuidv4(),
+      hostId,
+      client,
+      sockets: new Set(),
+      localPort,
+      remoteHost,
+      remotePort,
+      status: 'active',
+      createdAt: Date.now()
+    }
 
     client
       .on('ready', () => {
-        client.forwardOut('127.0.0.1', localPort, remoteHost, remotePort, (err, stream) => {
-          if (err) {
-            client.end()
-            reject(new Error(`Port forward failed: ${err.message}`))
-            return
-          }
+        const server = net.createServer((socket) => {
+          tunnel.sockets.add(socket)
 
-          const tunnel: ForwardTunnel = {
-            id: uuidv4(),
-            hostId,
-            client,
-            localPort,
+          client.forwardOut(
+            socket.remoteAddress || '127.0.0.1',
+            socket.remotePort || 0,
             remoteHost,
             remotePort,
-            status: 'active',
-            createdAt: Date.now()
-          }
+            (err, stream) => {
+              if (err) {
+                logger.error('PortForward', `forwardOut error: ${err.message}`)
+                socket.destroy(err)
+                return
+              }
 
-          stream
-            .on('close', () => {
-              tunnel.status = 'closed'
-              tunnels.delete(tunnel.id)
-              client.end()
-            })
-            .on('error', (err: Error) => {
-              logger.error('PortForward', `Stream error: ${err.message}`)
-              tunnel.status = 'closed'
-              tunnels.delete(tunnel.id)
-              client.end()
-            })
+              socket.pipe(stream).pipe(socket)
 
-          tunnels.set(tunnel.id, tunnel)
-          resolve(tunnel)
+              const cleanup = (): void => {
+                tunnel.sockets.delete(socket)
+                socket.destroy()
+                stream.destroy()
+              }
+
+              socket.on('close', cleanup).on('error', cleanup)
+              stream.on('close', cleanup).on('error', (streamErr: Error) => {
+                logger.error('PortForward', `Stream error: ${streamErr.message}`)
+                cleanup()
+              })
+            }
+          )
         })
+
+        tunnel.server = server
+
+        server
+          .on('error', (err: Error) => {
+            if (!settled) {
+              settled = true
+              client.end()
+              reject(new Error(`Local port listen failed: ${err.message}`))
+              return
+            }
+            logger.error('PortForward', `Server error: ${err.message}`)
+            closeTunnelResources(tunnel)
+          })
+          .on('close', () => {
+            if (tunnel.status !== 'closed') {
+              closeTunnelResources(tunnel)
+            }
+          })
+          .listen(localPort, '127.0.0.1', () => {
+            settled = true
+            tunnels.set(tunnel.id, tunnel)
+            logger.info(
+              'PortForward',
+              `Listening on 127.0.0.1:${localPort} -> ${remoteHost}:${remotePort}`
+            )
+            resolve(tunnel)
+          })
       })
-      .on('error', reject)
+      .on('error', (err) => {
+        if (!settled) {
+          settled = true
+          reject(err)
+          return
+        }
+        logger.error('PortForward', `SSH client error: ${err.message}`)
+        closeTunnelResources(tunnel)
+      })
+      .on('close', () => {
+        if (tunnel.status !== 'closed') {
+          closeTunnelResources(tunnel)
+        }
+      })
       .connect(config)
   })
 }
@@ -93,7 +163,7 @@ export function createLocalForward(
 
     client
       .on('ready', () => {
-        client.forwardIn(remoteHost, remotePort, (err, _port) => {
+        client.forwardIn(remoteHost, remotePort, (err) => {
           if (err) {
             client.end()
             reject(new Error(`Local forward failed: ${err.message}`))
@@ -104,6 +174,7 @@ export function createLocalForward(
             id: uuidv4(),
             hostId,
             client,
+            sockets: new Set(),
             localPort,
             remoteHost,
             remotePort,
@@ -124,9 +195,7 @@ export function closeTunnel(tunnelId: string): boolean {
   const tunnel = tunnels.get(tunnelId)
   if (!tunnel) return false
 
-  tunnel.status = 'closed'
-  tunnel.client.end()
-  tunnels.delete(tunnelId)
+  closeTunnelResources(tunnel)
   return true
 }
 

@@ -37,12 +37,14 @@ export interface TopicRow {
 export interface MessageRow {
   id: string
   topicId: string
+  runId: string | null
   role: string
   content: string
   thought: string | null
   toolCalls: string | null // JSON-encoded ToolCall[]
   toolCallId: string | null
   name: string | null
+  metadata: string | null // JSON-encoded Message metadata
   timestamp: number
 }
 
@@ -71,6 +73,50 @@ export interface TaskStepRow {
   content: string
   rawOutput: string | null
   metadata: string | null // JSON-encoded Record<string, unknown>
+  startedAt: number | null
+  endedAt: number | null
+  createdAt: number
+  updatedAt: number
+}
+
+// agent_runs table
+export interface AgentRunRow {
+  id: string
+  topicId: string
+  taskId: string
+  parentRunId: string | null
+  parentPartId: string | null
+  agentName: string
+  mode: string
+  status: string
+  goal: string
+  providerId: string | null
+  modelId: string | null
+  usage: string | null // JSON-encoded Record<string, unknown>
+  error: string | null
+  createdAt: number
+  updatedAt: number
+  completedAt: number | null
+}
+
+// agent_parts table
+export interface AgentPartRow {
+  id: string
+  runId: string
+  messageId: string | null
+  parentPartId: string | null
+  type: string
+  status: string
+  role: string | null
+  toolName: string | null
+  toolCallId: string | null
+  hostId: string | null
+  sessionId: string | null
+  input: string | null
+  output: string | null
+  error: string | null
+  metadata: string | null // JSON-encoded Record<string, unknown>
+  orderIndex: number
   startedAt: number | null
   endedAt: number | null
   createdAt: number

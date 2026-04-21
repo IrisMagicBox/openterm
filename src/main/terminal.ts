@@ -41,6 +41,33 @@ interface SessionState {
 const OSC_START = '\x1b]6973;OPENTERM_CMD_START\x07'
 const OSC_END_PREFIX = '\x1b]6973;OPENTERM_CMD_END;'
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function makeOscStartRegex(): RegExp {
+  return new RegExp(escapeRegExp(OSC_START), 'g')
+}
+
+function makeOscEndRegex(): RegExp {
+  return new RegExp(`${escapeRegExp(OSC_END_PREFIX)}(-?\\d+);([^\\x07]*)\\x07`, 'g')
+}
+
+function stripAnsi(text: string): string {
+  let result = ''
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 27 && text[i + 1] === '[') {
+      i += 2
+      while (i < text.length && !/[a-zA-Z]/.test(text[i])) {
+        i++
+      }
+      continue
+    }
+    result += text[i]
+  }
+  return result
+}
+
 class CommandExecutor {
   private sessions = new Map<string, SessionState>()
   private streamingTimers = new Map<string, NodeJS.Timeout>()
@@ -331,34 +358,9 @@ class CommandExecutor {
     const textDataRaw = data.toString()
     if (!state) return { cleanData: textDataRaw, isCommandEnd: false }
 
-    let textData = data.toString()
+    const rawChunk = data.toString()
 
-    // Strip shell integration noise regardless of injection state
-    if (textData.includes('__openterm_end') || textData.includes('OPENTERM_CMD')) {
-      // Mark as injected if not yet done
-      if (!state.shellIntegrationInjected) {
-        state.shellIntegrationInjected = true
-      }
-      // Filter out lines containing our injection artifacts
-      textData = textData
-        .replace(/\x1b\][^\x07]*\x07/g, '')
-        .split('\n')
-        .filter((line) => {
-          const s = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
-          return (
-            s.length > 0 &&
-            !s.includes('__openterm_end') &&
-            !s.includes('OPENTERM_CMD') &&
-            !s.includes('stty')
-          )
-        })
-        .join('\n')
-      if (!textData.trim()) {
-        return { cleanData: '', isCommandEnd: false }
-      }
-    }
-
-    state.rawBuffer += textData
+    state.rawBuffer += rawChunk
     let isCommandEnd = false
     let exitCode: number | undefined
     let cwd: string | undefined
@@ -368,16 +370,18 @@ class CommandExecutor {
       if (state.session.topicId) {
         terminalSessionDB.updateSessionShellIntegration(sessionId, true)
       }
-      state.rawBuffer = state.rawBuffer.replace(new RegExp(OSC_START, 'g'), '')
+      state.rawBuffer = state.rawBuffer.replace(makeOscStartRegex(), '')
     }
 
-    const endRegex = new RegExp(`${OSC_END_PREFIX}(-?\\d+);(.*?)\\x07`)
-    const endMatch = state.rawBuffer.match(endRegex)
-    if (endMatch) {
+    const endRegex = makeOscEndRegex()
+    let endMatch: RegExpExecArray | null
+    while ((endMatch = endRegex.exec(state.rawBuffer)) !== null) {
       exitCode = parseInt(endMatch[1], 10)
       cwd = endMatch[2]
       isCommandEnd = true
-      state.rawBuffer = state.rawBuffer.replace(endRegex, '')
+    }
+    if (isCommandEnd) {
+      state.rawBuffer = state.rawBuffer.replace(makeOscEndRegex(), '')
     }
 
     // Keep only a reasonable amount of raw buffer if it becomes too large
@@ -385,9 +389,28 @@ class CommandExecutor {
       state.rawBuffer = state.rawBuffer.slice(-RAW_BUFFER_TRIM)
     }
 
-    const cleanData = textData
-      .replace(new RegExp(OSC_START, 'g'), '')
-      .replace(new RegExp(`${OSC_END_PREFIX}(-?\\d+)\\x07`, 'g'), '')
+    let cleanData = rawChunk.replace(makeOscStartRegex(), '').replace(makeOscEndRegex(), '')
+
+    // Strip shell integration noise from the renderer, after preserving it for parsing.
+    if (cleanData.includes('__openterm_end') || cleanData.includes('OPENTERM_CMD')) {
+      // Mark as injected if not yet done
+      if (!state.shellIntegrationInjected) {
+        state.shellIntegrationInjected = true
+      }
+      // Filter out lines containing our injection artifacts
+      cleanData = cleanData
+        .split('\n')
+        .filter((line) => {
+          const s = stripAnsi(line).trim()
+          return (
+            s.length > 0 &&
+            !s.includes('__openterm_end') &&
+            !s.includes('OPENTERM_CMD') &&
+            !s.includes('stty')
+          )
+        })
+        .join('\n')
+    }
 
     let displayData = cleanData
 
@@ -414,7 +437,7 @@ class CommandExecutor {
 
     if (state.currentCommand) {
       // Strip ANSI for the Agent's internal buffer (clean text)
-      state.currentCommand.outputBuffer += cleanData.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+      state.currentCommand.outputBuffer += stripAnsi(cleanData)
 
       if (isCommandEnd) {
         this.completeCommand(sessionId, exitCode, cwd)

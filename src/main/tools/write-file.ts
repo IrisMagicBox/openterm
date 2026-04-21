@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { define, Tool } from './tool-factory'
 import { normalizeHostId } from '../utils/host-resolver'
 import { commandExecutor } from '../terminal'
+import { shellQuote } from './shell-quote'
 
 const parameters = z.object({
   hostId: z.string().describe('主机ID'),
@@ -20,7 +21,7 @@ export default define('write_file', {
     const sessionId = await ctx.ensureSession(normalizedHostId, normalizedHostId)
 
     const b64 = Buffer.from(content).toString('base64')
-    const command = `printf "%s" '${b64}' | base64 -d > "${path}"`
+    const command = `printf %s ${shellQuote(b64)} | base64 -d > ${shellQuote(path)}`
 
     const result = await commandExecutor.execute(sessionId, command, ctx.topicId, ctx.taskId)
 

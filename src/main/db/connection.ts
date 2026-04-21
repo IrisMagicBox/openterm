@@ -38,8 +38,14 @@ export function initializeSchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
       topicId TEXT NOT NULL,
+      runId TEXT,
       role TEXT NOT NULL,
       content TEXT NOT NULL,
+      thought TEXT,
+      toolCalls TEXT,
+      toolCallId TEXT,
+      name TEXT,
+      metadata TEXT,
       timestamp INTEGER NOT NULL,
       FOREIGN KEY (topicId) REFERENCES topics(id) ON DELETE CASCADE
     );
@@ -117,6 +123,62 @@ export function initializeSchema(db: Database.Database): void {
       FOREIGN KEY (hostId) REFERENCES hosts(id) ON DELETE SET NULL
     );
 
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      id TEXT PRIMARY KEY,
+      topicId TEXT NOT NULL,
+      taskId TEXT NOT NULL,
+      parentRunId TEXT,
+      parentPartId TEXT,
+      agentName TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      status TEXT NOT NULL,
+      goal TEXT NOT NULL,
+      providerId TEXT,
+      modelId TEXT,
+      usage TEXT,
+      error TEXT,
+      createdAt INTEGER NOT NULL,
+      updatedAt INTEGER NOT NULL,
+      completedAt INTEGER,
+      FOREIGN KEY (topicId) REFERENCES topics(id) ON DELETE CASCADE,
+      FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (parentRunId) REFERENCES agent_runs(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_parts (
+      id TEXT PRIMARY KEY,
+      runId TEXT NOT NULL,
+      messageId TEXT,
+      parentPartId TEXT,
+      type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      role TEXT,
+      toolName TEXT,
+      toolCallId TEXT,
+      hostId TEXT,
+      sessionId TEXT,
+      input TEXT,
+      output TEXT,
+      error TEXT,
+      metadata TEXT,
+      orderIndex INTEGER NOT NULL,
+      startedAt INTEGER,
+      endedAt INTEGER,
+      createdAt INTEGER NOT NULL,
+      updatedAt INTEGER NOT NULL,
+      FOREIGN KEY (runId) REFERENCES agent_runs(id) ON DELETE CASCADE,
+      FOREIGN KEY (messageId) REFERENCES messages(id) ON DELETE SET NULL,
+      FOREIGN KEY (parentPartId) REFERENCES agent_parts(id) ON DELETE CASCADE,
+      FOREIGN KEY (hostId) REFERENCES hosts(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_topic ON agent_runs(topicId, createdAt);
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_task ON agent_runs(taskId, createdAt);
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_parent ON agent_runs(parentRunId);
+    CREATE INDEX IF NOT EXISTS idx_agent_parts_run ON agent_parts(runId, orderIndex);
+    CREATE INDEX IF NOT EXISTS idx_agent_parts_parent ON agent_parts(parentPartId);
+    CREATE INDEX IF NOT EXISTS idx_agent_parts_tool_call ON agent_parts(toolCallId);
+
     CREATE TABLE IF NOT EXISTS approvals (
       id TEXT PRIMARY KEY,
       taskId TEXT NOT NULL,
@@ -154,7 +216,7 @@ export function initializeSchema(db: Database.Database): void {
       createdAt INTEGER NOT NULL,
       closedAt INTEGER,
       FOREIGN KEY (topicId) REFERENCES topics(id) ON DELETE CASCADE,
-      FOREIGN KEY (hostId) REFERENCES hosts(id) ON DELETE SET NULL
+      FOREIGN KEY (hostId) REFERENCES hosts(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS terminal_io (
@@ -177,7 +239,7 @@ export function initializeSchema(db: Database.Database): void {
       timestamp INTEGER NOT NULL,
       FOREIGN KEY (sessionId) REFERENCES terminal_sessions(id) ON DELETE CASCADE,
       FOREIGN KEY (topicId) REFERENCES topics(id) ON DELETE CASCADE,
-      FOREIGN KEY (hostId) REFERENCES hosts(id) ON DELETE SET NULL,
+      FOREIGN KEY (hostId) REFERENCES hosts(id) ON DELETE CASCADE,
       FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE SET NULL,
       FOREIGN KEY (stepId) REFERENCES task_steps(id) ON DELETE SET NULL
     );
@@ -212,6 +274,9 @@ export function initializeSchema(db: Database.Database): void {
   if (!columns.includes('thought')) {
     db.exec('ALTER TABLE messages ADD COLUMN thought TEXT')
   }
+  if (!columns.includes('runId')) {
+    db.exec('ALTER TABLE messages ADD COLUMN runId TEXT')
+  }
   if (!columns.includes('toolCalls')) {
     db.exec('ALTER TABLE messages ADD COLUMN toolCalls TEXT')
   }
@@ -221,6 +286,31 @@ export function initializeSchema(db: Database.Database): void {
   if (!columns.includes('name')) {
     db.exec('ALTER TABLE messages ADD COLUMN name TEXT')
   }
+  if (!columns.includes('metadata')) {
+    db.exec('ALTER TABLE messages ADD COLUMN metadata TEXT')
+  }
+
+  db.prepare(
+    `
+    UPDATE agent_runs
+    SET status = 'cancelled',
+        error = COALESCE(error, 'Run was interrupted before shutdown completed.'),
+        completedAt = COALESCE(completedAt, ?),
+        updatedAt = ?
+    WHERE status IN ('idle', 'running', 'waiting_approval', 'retrying', 'compacting')
+  `
+  ).run(Date.now(), Date.now())
+
+  db.prepare(
+    `
+    UPDATE agent_parts
+    SET status = 'cancelled',
+        error = COALESCE(error, 'Part was interrupted before shutdown completed.'),
+        endedAt = COALESCE(endedAt, ?),
+        updatedAt = ?
+    WHERE status IN ('pending', 'running', 'blocked')
+  `
+  ).run(Date.now(), Date.now())
 
   const sessionInfo = db.prepare('PRAGMA table_info(terminal_sessions)').all() as any[]
   const sessionColumns = sessionInfo.map((c) => c.name)

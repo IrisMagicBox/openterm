@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { define, Tool } from './tool-factory'
 import { resolveHostId } from '../utils/host-resolver'
 import { commandExecutor } from '../terminal'
+import { shellQuote } from './shell-quote'
 
 const parameters = z.object({
   hostId: z.string().describe('主机ID'),
@@ -27,7 +28,7 @@ export default define('edit', {
     // First read the file to verify it exists and check match count
     const readResult = await commandExecutor.execute(
       sessionId,
-      `cat "${path}"`,
+      `cat < ${shellQuote(path)}`,
       ctx.topicId,
       ctx.taskId
     )
@@ -48,14 +49,18 @@ export default define('edit', {
       }
     }
 
-    // Use sed for replacement
-    const escapeForSed = (str: string) => str.replace(/[\\/&]/g, '\\$&').replace(/\n/g, '\\n')
+    const escapeSedPattern = (str: string): string =>
+      str.replace(/[.[*^$\\/]/g, '\\$&').replace(/\n/g, '\\n')
+    const escapeSedReplacement = (str: string): string =>
+      str.replace(/[\\/&]/g, '\\$&').replace(/\n/g, '\\n')
 
     let sedCmd: string
     if (occurrences === 'first') {
-      sedCmd = `sed -i '0,/${escapeForSed(oldString)}/s//${escapeForSed(newString)}/' "${path}"`
+      const script = `0,/${escapeSedPattern(oldString)}/s//${escapeSedReplacement(newString)}/`
+      sedCmd = `sed -i ${shellQuote(script)} ${shellQuote(path)}`
     } else {
-      sedCmd = `sed -i 's/${escapeForSed(oldString)}/${escapeForSed(newString)}/g' "${path}"`
+      const script = `s/${escapeSedPattern(oldString)}/${escapeSedReplacement(newString)}/g`
+      sedCmd = `sed -i ${shellQuote(script)} ${shellQuote(path)}`
     }
 
     const result = await commandExecutor.execute(sessionId, sedCmd, ctx.topicId, ctx.taskId)

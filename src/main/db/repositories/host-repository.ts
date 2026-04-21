@@ -5,6 +5,16 @@ import { HostRow } from '../row-types'
 import { mapHostRow } from '../mappers'
 import { BaseRepository } from '../base-repository'
 
+function parseHostIds(value: string | null): string[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 export class HostRepository extends BaseRepository<HostRow> {
   constructor(db: Database.Database) {
     super(db)
@@ -41,7 +51,34 @@ export class HostRepository extends BaseRepository<HostRow> {
   }
 
   deleteHost(id: string): void {
-    this.stmt('DELETE FROM hosts WHERE id = ?').run(id)
+    if (id === 'local') {
+      throw new Error('Cannot delete the built-in local host')
+    }
+
+    const deleteHostTx = this.db.transaction((hostId: string) => {
+      const topicRows = this.stmt('SELECT id, hostIds FROM topics').all() as Array<{
+        id: string
+        hostIds: string | null
+      }>
+      const updateTopicHosts = this.stmt('UPDATE topics SET hostIds = ? WHERE id = ?')
+
+      for (const row of topicRows) {
+        const hostIds = parseHostIds(row.hostIds)
+        if (!hostIds.includes(hostId)) continue
+        updateTopicHosts.run(
+          JSON.stringify(hostIds.filter((topicHostId) => topicHostId !== hostId)),
+          row.id
+        )
+      }
+
+      this.stmt('DELETE FROM terminal_io WHERE hostId = ?').run(hostId)
+      this.stmt('DELETE FROM terminal_sessions WHERE hostId = ?').run(hostId)
+      this.stmt('UPDATE memories SET hostId = NULL WHERE hostId = ?').run(hostId)
+      this.stmt('DELETE FROM command_patterns WHERE hostId = ?').run(hostId)
+      this.stmt('DELETE FROM hosts WHERE id = ?').run(hostId)
+    })
+
+    deleteHostTx(id)
   }
 
   getHostById(id: string): Host | undefined {

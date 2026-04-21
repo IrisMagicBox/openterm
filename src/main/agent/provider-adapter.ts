@@ -64,18 +64,22 @@ export class ProviderAdapter {
     temperature?: number
     maxTokens?: number
     model?: string
+    abortSignal?: AbortSignal
   }): Promise<ChatResult> {
     const client = getAIClient()
     const model = params.model ?? getCurrentModel()
 
-    const response = await client.chat.completions.create({
-      model,
-      messages: params.messages,
-      tools: params.tools,
-      tool_choice: params.toolChoice,
-      temperature: params.temperature,
-      max_tokens: params.maxTokens
-    })
+    const response = await client.chat.completions.create(
+      {
+        model,
+        messages: params.messages,
+        tools: params.tools,
+        tool_choice: params.toolChoice,
+        temperature: params.temperature,
+        max_tokens: params.maxTokens
+      },
+      { signal: params.abortSignal }
+    )
 
     const choice = response.choices[0]
     const usage = this.extractUsage(response.usage)
@@ -101,19 +105,23 @@ export class ProviderAdapter {
     toolChoice?: 'auto' | 'none'
     temperature?: number
     model?: string
+    abortSignal?: AbortSignal
   }): AsyncGenerator<StreamChunk> {
     const client = getAIClient()
     const model = params.model ?? getCurrentModel()
 
-    const stream = await client.chat.completions.create({
-      model,
-      messages: params.messages,
-      tools: params.tools,
-      tool_choice: params.toolChoice,
-      temperature: params.temperature,
-      stream: true,
-      stream_options: { include_usage: true }
-    })
+    const stream = await client.chat.completions.create(
+      {
+        model,
+        messages: params.messages,
+        tools: params.tools,
+        tool_choice: params.toolChoice,
+        temperature: params.temperature,
+        stream: true,
+        stream_options: { include_usage: true }
+      },
+      { signal: params.abortSignal }
+    )
 
     for await (const chunk of stream) {
       const choice = chunk.choices[0]

@@ -40,6 +40,35 @@ export type TaskStepStatus =
   | 'blocked'
   | 'cancelled'
 
+export type AgentRunStatus =
+  | 'idle'
+  | 'running'
+  | 'waiting_approval'
+  | 'retrying'
+  | 'compacting'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export type AgentPartType =
+  | 'text'
+  | 'reasoning'
+  | 'tool'
+  | 'permission'
+  | 'compaction'
+  | 'subagent'
+  | 'usage'
+  | 'error'
+  | 'step'
+
+export type AgentPartStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'error'
+  | 'cancelled'
+  | 'blocked'
+
 export type ApprovalRiskLevel = 'low' | 'medium' | 'high' | 'critical'
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired'
@@ -75,6 +104,48 @@ export interface TaskStep {
   updatedAt: number
 }
 
+export interface AgentRun {
+  id: string
+  topicId: string
+  taskId: string
+  parentRunId?: string
+  parentPartId?: string
+  agentName: string
+  mode: 'primary' | 'subagent' | 'hidden'
+  status: AgentRunStatus
+  goal: string
+  providerId?: string
+  modelId?: string
+  usage?: Record<string, unknown>
+  error?: string
+  createdAt: number
+  updatedAt: number
+  completedAt?: number
+}
+
+export interface AgentPart {
+  id: string
+  runId: string
+  messageId?: string
+  parentPartId?: string
+  type: AgentPartType
+  status: AgentPartStatus
+  role?: 'user' | 'assistant' | 'system' | 'tool'
+  toolName?: string
+  toolCallId?: string
+  hostId?: string
+  sessionId?: string
+  input?: string
+  output?: string
+  error?: string
+  metadata?: Record<string, unknown>
+  orderIndex: number
+  startedAt?: number
+  endedAt?: number
+  createdAt: number
+  updatedAt: number
+}
+
 export interface Approval {
   id: string
   taskId: string
@@ -101,6 +172,7 @@ export interface Artifact {
 export interface Message {
   id: string
   topicId: string
+  runId?: string
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   timestamp: number

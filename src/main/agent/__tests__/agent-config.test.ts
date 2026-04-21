@@ -45,9 +45,8 @@ describe('agent-config', () => {
   })
 
   describe('BUILT_IN_AGENTS', () => {
-    it('contains exactly 3 agents', () => {
-      expect(Object.keys(BUILT_IN_AGENTS)).toHaveLength(3)
-      expect(Object.keys(BUILT_IN_AGENTS)).toEqual(['build', 'explore', 'verify'])
+    it('contains primary, subagent, and hidden agents', () => {
+      expect(Object.keys(BUILT_IN_AGENTS)).toEqual(['build', 'explore', 'verify', 'compaction'])
     })
 
     it('explore does not allow write_file or manage_terminal', () => {
@@ -62,6 +61,11 @@ describe('agent-config', () => {
 
     it('build has empty allowedTools (all tools)', () => {
       expect(BUILT_IN_AGENTS.build.allowedTools).toEqual([])
+    })
+
+    it('compaction is hidden and denies tools', () => {
+      expect(BUILT_IN_AGENTS.compaction.mode).toBe('hidden')
+      expect(BUILT_IN_AGENTS.compaction.permissions).toEqual([{ tool: '*', allowed: false }])
     })
 
     it('explore has permission rules with maxAutoApproveRisk', () => {

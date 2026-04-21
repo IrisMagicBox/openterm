@@ -4,6 +4,8 @@ import type {
   Message,
   Task,
   TaskStep,
+  AgentRun,
+  AgentPart,
   Approval,
   ApprovalStatus,
   Artifact,
@@ -213,6 +215,12 @@ export interface IpcInvokeChannels {
 
   'agent:message': { payload: [topicId: string, content: string]; result: Message }
   'agent:get-sessions': { payload: [topicId: string]; result: TerminalSession[] }
+  'agent:get-run': { payload: [runId: string]; result: AgentRun | undefined }
+  'agent:get-runs-by-task': { payload: [taskId: string]; result: AgentRun[] }
+  'agent:get-run-parts': { payload: [runId: string]; result: AgentPart[] }
+  'agent:get-task-parts': { payload: [taskId: string]; result: AgentPart[] }
+  'agent:cancel-run': { payload: [runId: string]; result: AgentRun | undefined }
+  'agent:resume-run': { payload: [runId: string]; result: Message }
   'agent:auth-response': {
     payload: [requestId: string, approved: boolean, alwaysAllow?: boolean]
     result: void
@@ -304,6 +312,10 @@ type IpcPushChannelsDynamic = {
 interface IpcPushChannelsStatic {
   'agent:auth-request': { payload: AgentAuthRequestPayload }
   'agent:thinking': { payload: AgentThinkingPayload }
+  'agent:run-created': { payload: AgentRun }
+  'agent:run-updated': { payload: AgentRun }
+  'agent:part-created': { payload: AgentPart }
+  'agent:part-updated': { payload: AgentPart }
   'agent:step': { payload: Message }
   'agent:message': { payload: Message }
   'agent:tool-call': {

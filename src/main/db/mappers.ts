@@ -13,6 +13,8 @@ import {
   Model,
   Task,
   TaskStep,
+  AgentRun,
+  AgentPart,
   Approval,
   Artifact,
   TerminalSession,
@@ -29,6 +31,8 @@ import {
   ModelRow,
   TaskRow,
   TaskStepRow,
+  AgentRunRow,
+  AgentPartRow,
   ApprovalRow,
   ArtifactRow,
   TerminalSessionRow,
@@ -84,13 +88,15 @@ export const mapTopicRow = (row: TopicRow): Topic => ({
 export const mapMessageRow = (row: MessageRow): Message => ({
   id: row.id,
   topicId: row.topicId,
+  runId: row.runId ?? undefined,
   role: row.role as Message['role'],
   content: row.content,
   timestamp: row.timestamp,
   thought: row.thought ?? undefined,
   toolCalls: parseJSON(row.toolCalls, undefined),
   toolCallId: row.toolCallId ?? undefined,
-  name: row.name ?? undefined
+  name: row.name ?? undefined,
+  metadata: parseJSON<Message['metadata'] | undefined>(row.metadata, undefined)
 })
 
 /**
@@ -122,6 +128,54 @@ export const mapTaskStepRow = (row: TaskStepRow): TaskStep => ({
   content: row.content,
   rawOutput: row.rawOutput ?? undefined,
   metadata: parseJSON<Record<string, unknown> | undefined>(row.metadata, undefined),
+  startedAt: row.startedAt ?? undefined,
+  endedAt: row.endedAt ?? undefined,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt
+})
+
+/**
+ * Map AgentRunRow to AgentRun
+ */
+export const mapAgentRunRow = (row: AgentRunRow): AgentRun => ({
+  id: row.id,
+  topicId: row.topicId,
+  taskId: row.taskId,
+  parentRunId: row.parentRunId ?? undefined,
+  parentPartId: row.parentPartId ?? undefined,
+  agentName: row.agentName,
+  mode: row.mode as AgentRun['mode'],
+  status: row.status as AgentRun['status'],
+  goal: row.goal,
+  providerId: row.providerId ?? undefined,
+  modelId: row.modelId ?? undefined,
+  usage: parseJSON<Record<string, unknown> | undefined>(row.usage, undefined),
+  error: row.error ?? undefined,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+  completedAt: row.completedAt ?? undefined
+})
+
+/**
+ * Map AgentPartRow to AgentPart
+ */
+export const mapAgentPartRow = (row: AgentPartRow): AgentPart => ({
+  id: row.id,
+  runId: row.runId,
+  messageId: row.messageId ?? undefined,
+  parentPartId: row.parentPartId ?? undefined,
+  type: row.type as AgentPart['type'],
+  status: row.status as AgentPart['status'],
+  role: (row.role as AgentPart['role']) ?? undefined,
+  toolName: row.toolName ?? undefined,
+  toolCallId: row.toolCallId ?? undefined,
+  hostId: row.hostId ?? undefined,
+  sessionId: row.sessionId ?? undefined,
+  input: row.input ?? undefined,
+  output: row.output ?? undefined,
+  error: row.error ?? undefined,
+  metadata: parseJSON<Record<string, unknown> | undefined>(row.metadata, undefined),
+  orderIndex: row.orderIndex,
   startedAt: row.startedAt ?? undefined,
   endedAt: row.endedAt ?? undefined,
   createdAt: row.createdAt,

@@ -9,6 +9,8 @@ import {
   PermissionSettings,
   Task,
   TaskStep,
+  AgentRun,
+  AgentPart,
   Approval,
   Artifact,
   TerminalSession
@@ -81,6 +83,12 @@ declare global {
 
       sendMessage: (topicId: string, content: string) => Promise<Message>
       getAgentSessions: (topicId: string) => Promise<TerminalSession[]>
+      getAgentRun: (runId: string) => Promise<AgentRun | undefined>
+      getAgentRunsByTask: (taskId: string) => Promise<AgentRun[]>
+      getAgentRunParts: (runId: string) => Promise<AgentPart[]>
+      getAgentTaskParts: (taskId: string) => Promise<AgentPart[]>
+      cancelAgentRun: (runId: string) => Promise<AgentRun | undefined>
+      resumeAgentRun: (runId: string) => Promise<Message>
 
       onAgentAuthRequest: (
         callback: (requestId: string, command: string, riskLevel?: string, reason?: string) => void
@@ -92,6 +100,10 @@ declare global {
       ) => Promise<void>
       onTopicUpdated: (callback: (data: { topicId: string; title: string }) => void) => () => void
       onAgentStep: (callback: (step: Message) => void) => () => void
+      onAgentRunCreated: (callback: (run: AgentRun) => void) => () => void
+      onAgentRunUpdated: (callback: (run: AgentRun) => void) => () => void
+      onAgentPartCreated: (callback: (part: AgentPart) => void) => () => void
+      onAgentPartUpdated: (callback: (part: AgentPart) => void) => () => void
       onAgentThinking: (
         callback: (data: { topicId: string; thinking: boolean }) => void
       ) => () => void

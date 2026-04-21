@@ -1,12 +1,13 @@
 import { WebContents, ipcMain } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
-import { topicDB, messageDB, hostDB, taskDB, memoryDB } from './db'
+import { topicDB, messageDB, hostDB, taskDB, memoryDB, agentRunDB } from './db'
 import { getErrorMessage } from '../shared/errors'
 import { Message, TerminalSession, Task } from '../shared/types'
 import { AgentRunner, AgentContext, AuthResponse } from './AgentRunner'
 import { commandExecutor } from './terminal'
 import { logger } from './logger'
 import { createLocalSession } from './local-terminal'
+import { agentRunStore } from './agent/agent-run-store'
 
 type CreateAgentSessionFn = (
   hostId: string,
@@ -28,6 +29,7 @@ export class AgentService {
   private webContents?: WebContents
   private topicSessions: Map<string, Map<string, AgentSession[]>> = new Map()
   private pendingRequests: Map<string, (response: AuthResponse) => void> = new Map()
+  private activeRunControllers: Map<string, AbortController> = new Map()
 
   setWebContents(webContents: WebContents) {
     this.webContents = webContents
@@ -293,10 +295,15 @@ export class AgentService {
     }
     taskDB.createTask(task)
 
+    const runId = uuidv4()
+    const abortController = new AbortController()
+    this.activeRunControllers.set(runId, abortController)
+
     // 2. Create user message
     const userMsg: Message = {
       id: uuidv4(),
       topicId,
+      runId,
       role: 'user',
       content,
       timestamp: Date.now()
@@ -339,10 +346,12 @@ export class AgentService {
             this.webContents.send('agent:step', msg)
           }
         },
-        metadata: (_input) => {}
+        metadata: (_input) => {},
+        runId,
+        abort: abortController.signal
       }
 
-      const runner = new AgentRunner(context)
+      const runner = new AgentRunner(context, 'build', { runId, goal: content })
       const messages = await messageDB.getMessages(topicId)
       const result = await runner.run(messages)
 
@@ -364,9 +373,68 @@ export class AgentService {
       }
       return errorMsg
     } finally {
+      this.activeRunControllers.delete(runId)
       if (this.webContents) {
         this.webContents.send('agent:thinking', { topicId, thinking: false })
       }
+    }
+  }
+
+  async cancelRun(runId: string) {
+    const controller = this.activeRunControllers.get(runId)
+    controller?.abort()
+    agentRunStore.cancelRunTree(runId, 'User cancelled run')
+    return agentRunDB.getRun(runId)
+  }
+
+  async resumeRun(runId: string) {
+    const run = agentRunDB.getRun(runId)
+    if (!run) throw new Error('Agent run not found')
+    if (!this.webContents) throw new Error('WebContents not initialized')
+
+    const abortController = new AbortController()
+    this.activeRunControllers.set(runId, abortController)
+    agentRunStore.updateRun(runId, { status: 'running', error: undefined, completedAt: undefined })
+
+    try {
+      const context: AgentContext = {
+        topicId: run.topicId,
+        taskId: run.taskId,
+        runId,
+        parentRunId: run.parentRunId,
+        parentPartId: run.parentPartId,
+        webContents: this.webContents,
+        agentService: this,
+        ensureSession: async (hostId, hostAlias, name) => {
+          const session = await this.ensureSession(run.topicId, hostId, hostAlias, name, true)
+          return session.id
+        },
+        requestAuthorization: async (command, riskLevel, reason) => {
+          const requestId = uuidv4()
+          this.webContents?.send('agent:auth-request', { requestId, command, riskLevel, reason })
+          return new Promise((resolve) => {
+            this.pendingRequests.set(requestId, resolve)
+          })
+        },
+        notifyStep: (msg) => {
+          this.webContents?.send('agent:step', msg)
+        },
+        metadata: (_input) => {},
+        abort: abortController.signal
+      }
+
+      const runner = new AgentRunner(context, run.agentName, {
+        runId,
+        parentRunId: run.parentRunId,
+        parentPartId: run.parentPartId,
+        persistFinalMessage: !run.parentRunId,
+        updateTaskStatus: !run.parentRunId,
+        goal: run.goal
+      })
+      const messages = await messageDB.getMessages(run.topicId)
+      return await runner.run(messages)
+    } finally {
+      this.activeRunControllers.delete(runId)
     }
   }
 

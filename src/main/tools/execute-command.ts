@@ -8,7 +8,7 @@ import { approvalDB, permissionDB, commandPatternDB, taskStepDB } from '../db'
 import { TRUST_APPROVAL_THRESHOLD } from '../constants'
 import { truncateOutput } from './truncation'
 
-function recordPatternApproval(hostId: string, commandPattern: string, alwaysAllow: boolean) {
+function recordPatternApproval(hostId: string, commandPattern: string, alwaysAllow: boolean): void {
   const existing = commandPatternDB.getPatternByHostAndPattern(hostId, commandPattern)
   if (existing) {
     if (alwaysAllow) {
@@ -30,7 +30,7 @@ function recordPatternApproval(hostId: string, commandPattern: string, alwaysAll
   }
 }
 
-function recordPatternRejection(hostId: string, commandPattern: string) {
+function recordPatternRejection(hostId: string, commandPattern: string): void {
   const existing = commandPatternDB.getPatternByHostAndPattern(hostId, commandPattern)
   if (existing) {
     commandPatternDB.incrementRejectionCount(existing.id)
@@ -81,6 +81,24 @@ export default define('execute_command', {
       const authResult = await ctx.requestAuthorization(command, policyResult.riskLevel, reason)
       if (!authResult.approved) {
         recordPatternRejection(host.id, commandPattern)
+        if (!ctx.runId) {
+          approvalDB.createApproval({
+            id: uuidv4(),
+            taskId: ctx.taskId,
+            stepId: ctx.stepId!,
+            command,
+            riskLevel: policyResult.riskLevel,
+            reason,
+            status: 'rejected',
+            createdAt: Date.now()
+          })
+        }
+        return { output: 'Error: User rejected command authorization' }
+      }
+
+      recordPatternApproval(host.id, commandPattern, authResult.alwaysAllow)
+
+      if (!ctx.runId) {
         approvalDB.createApproval({
           id: uuidv4(),
           taskId: ctx.taskId,
@@ -88,30 +106,18 @@ export default define('execute_command', {
           command,
           riskLevel: policyResult.riskLevel,
           reason,
-          status: 'rejected',
+          status: 'approved',
           createdAt: Date.now()
         })
-        return { output: 'Error: User rejected command authorization' }
       }
-
-      recordPatternApproval(host.id, commandPattern, authResult.alwaysAllow)
-
-      approvalDB.createApproval({
-        id: uuidv4(),
-        taskId: ctx.taskId,
-        stepId: ctx.stepId!,
-        command,
-        riskLevel: policyResult.riskLevel,
-        reason,
-        status: 'approved',
-        createdAt: Date.now()
-      })
     }
 
     // Update the step with actual hostId for trace and memory reflection
     taskStepDB.updateStep(ctx.stepId!, { hostId: host.id })
+    ctx.updatePartMetadata?.({ hostId: host.id, hostAlias: host.alias, command })
 
     const sessionId = await ctx.ensureSession(host.id, host.alias, terminalName)
+    ctx.updatePartMetadata?.({ sessionId })
     const result = await commandExecutor.execute(
       sessionId,
       command,
@@ -119,6 +125,12 @@ export default define('execute_command', {
       ctx.taskId,
       ctx.stepId!
     )
+    ctx.updatePartMetadata?.({
+      exitCode: result.exitCode,
+      durationMs: result.durationMs,
+      cwd: result.cwd,
+      isTruncated: result.isTruncated
+    })
 
     // Truncate large outputs to protect the context window budget
     const rawOutput = JSON.stringify(result)
@@ -131,7 +143,8 @@ export default define('execute_command', {
           truncated: true,
           originalLines: truncated.originalLines,
           originalBytes: truncated.originalBytes,
-          diskPath: truncated.outputPath
+          diskPath: truncated.outputPath,
+          outputPath: truncated.outputPath
         }
       }
     }

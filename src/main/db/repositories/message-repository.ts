@@ -18,20 +18,23 @@ export class MessageRepository extends BaseRepository<MessageRow> {
 
   createMessage(message: Message): void {
     const toolCallsStr = message.toolCalls ? JSON.stringify(message.toolCalls) : null
+    const metadataStr = message.metadata ? JSON.stringify(message.metadata) : null
     this.stmt(
       `
-      INSERT INTO messages (id, topicId, role, content, thought, toolCalls, toolCallId, name, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, topicId, runId, role, content, thought, toolCalls, toolCallId, name, metadata, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
     ).run(
       message.id,
       message.topicId,
+      message.runId || null,
       message.role,
       message.content || '',
       message.thought || null,
       toolCallsStr,
       message.toolCallId || null,
       message.name || null,
+      metadataStr,
       message.timestamp
     )
 

@@ -150,7 +150,10 @@ describe('define()', () => {
     })
 
     const initialized = await tool.init()
-    const result = await initialized.execute({ name: 'World' }, makeCtx())
+    const result = await initialized.execute(
+      { name: 'World' } as Parameters<typeof initialized.execute>[0],
+      makeCtx()
+    )
     expect(result.output).toBe('hello World')
   })
 
@@ -192,7 +195,7 @@ describe('define()', () => {
     const tool = define('record_tool', {
       description: 'Has record',
       parameters: z.object({
-        data: z.record(z.string())
+        data: z.record(z.string(), z.string())
       }),
       execute: async (args) => ({
         output: JSON.stringify(args.data),

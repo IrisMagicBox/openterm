@@ -10,6 +10,7 @@ import { registerSettingsIPC } from './settings'
 import { registerSearchIPC } from './search'
 import { registerSessionIPC } from './session'
 import { registerMessageIPC } from './messages'
+import { registerAgentRunIPC } from './agent-runs'
 
 export function registerAllIPC(): void {
   registerHostIPC()
@@ -24,4 +25,5 @@ export function registerAllIPC(): void {
   registerSearchIPC()
   registerSessionIPC()
   registerMessageIPC()
+  registerAgentRunIPC()
 }

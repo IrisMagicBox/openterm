@@ -18,6 +18,10 @@ export namespace Tool {
     topicId: string
     taskId: string
     stepId?: string
+    runId?: string
+    partId?: string
+    parentRunId?: string
+    parentPartId?: string
     webContents: import('electron').WebContents
     agentService: import('../AgentRunner').IAgentService
     ensureSession: (hostId: string, hostAlias: string, name?: string) => Promise<string>
@@ -32,6 +36,22 @@ export namespace Tool {
     abort: AbortSignal
     messages: Array<{ role: string; content: string }>
     agent: string
+    updatePartMetadata?: (metadata: Record<string, unknown>) => void
+    createChildPart?: (input: {
+      type: import('../../shared/types').AgentPartType
+      status: import('../../shared/types').AgentPartStatus
+      role?: 'user' | 'assistant' | 'system' | 'tool'
+      toolName?: string
+      toolCallId?: string
+      hostId?: string
+      sessionId?: string
+      input?: string
+      output?: string
+      error?: string
+      metadata?: Record<string, unknown>
+      startedAt?: number
+      endedAt?: number
+    }) => import('../../shared/types').AgentPart
   }
 
   export interface Metadata {

@@ -13,6 +13,128 @@ import type { WebContents } from 'electron'
 // ─── Event definitions ──────────────────────────────────────────
 
 export const AgentEvents = {
+  RunCreated: z.object({
+    id: z.string(),
+    topicId: z.string(),
+    taskId: z.string(),
+    parentRunId: z.string().optional(),
+    parentPartId: z.string().optional(),
+    agentName: z.string(),
+    mode: z.enum(['primary', 'subagent', 'hidden']),
+    status: z.enum([
+      'idle',
+      'running',
+      'waiting_approval',
+      'retrying',
+      'compacting',
+      'completed',
+      'failed',
+      'cancelled'
+    ]),
+    goal: z.string(),
+    providerId: z.string().optional(),
+    modelId: z.string().optional(),
+    usage: z.record(z.string(), z.unknown()).optional(),
+    error: z.string().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    completedAt: z.number().optional()
+  }),
+
+  RunUpdated: z.object({
+    id: z.string(),
+    topicId: z.string(),
+    taskId: z.string(),
+    parentRunId: z.string().optional(),
+    parentPartId: z.string().optional(),
+    agentName: z.string(),
+    mode: z.enum(['primary', 'subagent', 'hidden']),
+    status: z.enum([
+      'idle',
+      'running',
+      'waiting_approval',
+      'retrying',
+      'compacting',
+      'completed',
+      'failed',
+      'cancelled'
+    ]),
+    goal: z.string(),
+    providerId: z.string().optional(),
+    modelId: z.string().optional(),
+    usage: z.record(z.string(), z.unknown()).optional(),
+    error: z.string().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    completedAt: z.number().optional()
+  }),
+
+  PartCreated: z.object({
+    id: z.string(),
+    runId: z.string(),
+    messageId: z.string().optional(),
+    parentPartId: z.string().optional(),
+    type: z.enum([
+      'text',
+      'reasoning',
+      'tool',
+      'permission',
+      'compaction',
+      'subagent',
+      'usage',
+      'error',
+      'step'
+    ]),
+    status: z.enum(['pending', 'running', 'completed', 'error', 'cancelled', 'blocked']),
+    role: z.enum(['user', 'assistant', 'system', 'tool']).optional(),
+    toolName: z.string().optional(),
+    toolCallId: z.string().optional(),
+    hostId: z.string().optional(),
+    sessionId: z.string().optional(),
+    input: z.string().optional(),
+    output: z.string().optional(),
+    error: z.string().optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+    orderIndex: z.number(),
+    startedAt: z.number().optional(),
+    endedAt: z.number().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number()
+  }),
+
+  PartUpdated: z.object({
+    id: z.string(),
+    runId: z.string(),
+    messageId: z.string().optional(),
+    parentPartId: z.string().optional(),
+    type: z.enum([
+      'text',
+      'reasoning',
+      'tool',
+      'permission',
+      'compaction',
+      'subagent',
+      'usage',
+      'error',
+      'step'
+    ]),
+    status: z.enum(['pending', 'running', 'completed', 'error', 'cancelled', 'blocked']),
+    role: z.enum(['user', 'assistant', 'system', 'tool']).optional(),
+    toolName: z.string().optional(),
+    toolCallId: z.string().optional(),
+    hostId: z.string().optional(),
+    sessionId: z.string().optional(),
+    input: z.string().optional(),
+    output: z.string().optional(),
+    error: z.string().optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+    orderIndex: z.number(),
+    startedAt: z.number().optional(),
+    endedAt: z.number().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number()
+  }),
+
   Step: z.object({
     topicId: z.string(),
     taskId: z.string(),
@@ -137,6 +259,10 @@ export const PermissionEvents = {
 // ─── Event map ──────────────────────────────────────────────────
 
 export type EventMap = {
+  'agent:run-created': z.infer<typeof AgentEvents.RunCreated>
+  'agent:run-updated': z.infer<typeof AgentEvents.RunUpdated>
+  'agent:part-created': z.infer<typeof AgentEvents.PartCreated>
+  'agent:part-updated': z.infer<typeof AgentEvents.PartUpdated>
   'agent:step': z.infer<typeof AgentEvents.Step>
   'agent:thinking': z.infer<typeof AgentEvents.Thinking>
   'agent:tool-call': z.infer<typeof AgentEvents.ToolCall>
@@ -160,6 +286,10 @@ export type EventName = keyof EventMap
 // ─── Schema lookup ──────────────────────────────────────────────
 
 const eventSchemas: Record<EventName, z.ZodType> = {
+  'agent:run-created': AgentEvents.RunCreated,
+  'agent:run-updated': AgentEvents.RunUpdated,
+  'agent:part-created': AgentEvents.PartCreated,
+  'agent:part-updated': AgentEvents.PartUpdated,
   'agent:step': AgentEvents.Step,
   'agent:thinking': AgentEvents.Thinking,
   'agent:tool-call': AgentEvents.ToolCall,

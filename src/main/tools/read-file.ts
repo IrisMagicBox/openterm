@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { define, Tool } from './tool-factory'
 import { resolveHostId } from '../utils/host-resolver'
 import { commandExecutor } from '../terminal'
+import { shellQuote } from './shell-quote'
 
 const parameters = z.object({
   hostId: z.string().describe('主机ID'),
@@ -22,7 +23,7 @@ export default define('read_file', {
     const sessionId = await ctx.ensureSession(host.id, host.alias, undefined)
     const result = await commandExecutor.execute(
       sessionId,
-      `cat "${path}"`,
+      `cat < ${shellQuote(path)}`,
       ctx.topicId,
       ctx.taskId
     )

@@ -114,6 +114,15 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
     ],
     maxSteps: 3,
     temperature: 0
+  },
+  compaction: {
+    name: 'compaction',
+    description: 'Hidden agent for summarizing old context during compaction',
+    mode: 'hidden',
+    allowedTools: [],
+    permissions: [{ tool: '*', allowed: false }],
+    maxSteps: 1,
+    temperature: 0
   }
 }
 
