@@ -1,16 +1,13 @@
-import { useState, useEffect } from 'react'
-import { SettingsPage } from './components/settings'
-import { ChatPanel } from './components/chat/ChatPanel'
-import { AddHostModal } from './components/hosts/AddHostModal'
+import { type JSX, useState, useEffect } from 'react'
+import { SettingsPage } from './features/settings'
+import { ChatPanel, ChatEmptyState } from './features/chat'
+import { AddHostModal, HostsView } from './features/hosts'
 import { ManageHostsModal } from './components/topics/ManageHostsModal'
 import { AuthModal } from './components/AuthModal'
 import { AppSidebar } from './components/AppSidebar'
-import { HostsView } from './components/views/HostsView'
-import { TerminalLayout } from './components/views/TerminalLayout'
-import { FilesView } from './components/views/FilesView'
-import { ChatEmptyState } from './components/views/ChatEmptyState'
+import { TerminalLayout, CommandHistorySearch } from './features/terminal'
+import { FilesView } from './features/files'
 import { DebugPanel } from './components/DebugPanel'
-import { CommandHistorySearch } from './components/terminal/CommandHistorySearch'
 import { usePermissions } from './hooks/usePermissions'
 import { useDebug } from './hooks/useDebug'
 import { useHosts } from './hooks/useHosts'
@@ -18,8 +15,9 @@ import { useTopics } from './hooks/useTopics'
 import { useAgentSessions } from './hooks/useAgentSessions'
 import { useTerminalManager } from './hooks/useTerminalManager'
 import { View } from './types'
+import type { Topic } from '../../shared/types'
 
-export default function App() {
+export default function App(): JSX.Element {
   const [activeView, setActiveView] = useState<View>('hosts')
 
   const { debugLogs, showDebug, setShowDebug, clearDebugLogs } = useDebug()
@@ -99,9 +97,9 @@ export default function App() {
   useEffect(() => {
     loadHosts()
     loadTopics()
-  }, [])
+  }, [loadHosts, loadTopics])
 
-  const handleCreateLocalAgentTopic = async () => {
+  const handleCreateLocalAgentTopic = async (): Promise<Topic> => {
     try {
       const topic = await createTopic(undefined, ['local'])
       setActiveView('chat')
@@ -113,7 +111,7 @@ export default function App() {
     }
   }
 
-  const handleCreateTopic = async (initialText?: string) => {
+  const handleCreateTopic = async (initialText?: string): Promise<void> => {
     await createTopic(initialText)
     setActiveView('chat')
   }
@@ -190,10 +188,6 @@ export default function App() {
             activeView === 'files' && fileBrowserHostId ? 'flex-1 flex flex-col' : 'hidden'
           }
         >
-          {(() => {
-            console.log('[App] Mounting FilesView for host:', fileBrowserHostId)
-            return null
-          })()}
           <FilesView
             fileBrowserHostId={fileBrowserHostId || ''}
             fileBrowserHostAlias={fileBrowserHostAlias}

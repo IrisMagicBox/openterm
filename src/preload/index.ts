@@ -1,6 +1,8 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type, @typescript-eslint/no-explicit-any */
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import { createTypedIpc } from './typed-ipc'
 import type {
   Host,
   Task,
@@ -25,8 +27,10 @@ import type {
   SessionRecoveredPayload
 } from '../shared/ipc/channels'
 
+const typedIpc = createTypedIpc(ipcRenderer)
+
 // Custom APIs for renderer
-const api = {
+const api: Record<string, unknown> = {
   getHosts: () => ipcRenderer.invoke('get-hosts'),
   createHost: (host: Omit<Host, 'id' | 'createdAt'>) => ipcRenderer.invoke('create-host', host),
   deleteHost: (id: string) => ipcRenderer.invoke('delete-host', id),
@@ -390,6 +394,104 @@ const api = {
     ipcRenderer.on('session:recovered', listener)
     return () => ipcRenderer.removeListener('session:recovered', listener)
   }
+}
+
+const flatApi = api as Record<string, any>
+
+flatApi.hosts = {
+  list: () => typedIpc.invoke('get-hosts'),
+  create: (host: Omit<Host, 'id' | 'createdAt'>) => typedIpc.invoke('create-host', host),
+  delete: (id: string) => typedIpc.invoke('delete-host', id),
+  getTopicHosts: (topicId: string) => typedIpc.invoke('agent:get-topic-hosts', topicId),
+  addToTopic: (topicId: string, hostId: string) =>
+    typedIpc.invoke('agent:add-host', topicId, hostId),
+  removeFromTopic: (topicId: string, hostId: string) =>
+    typedIpc.invoke('agent:remove-host', topicId, hostId)
+}
+
+flatApi.agent = {
+  sendMessage: (topicId: string, content: string) =>
+    typedIpc.invoke('agent:message', topicId, content),
+  getSessions: (topicId: string) => typedIpc.invoke('agent:get-sessions', topicId),
+  getRun: (runId: string) => typedIpc.invoke('agent:get-run', runId),
+  getRunsByTask: (taskId: string) => typedIpc.invoke('agent:get-runs-by-task', taskId),
+  getRunParts: (runId: string) => typedIpc.invoke('agent:get-run-parts', runId),
+  getTaskParts: (taskId: string) => typedIpc.invoke('agent:get-task-parts', taskId),
+  cancelRun: (runId: string) => typedIpc.invoke('agent:cancel-run', runId),
+  resumeRun: (runId: string) => typedIpc.invoke('agent:resume-run', runId),
+  sendAuthResponse: (requestId: string, approved: boolean, alwaysAllow?: boolean) =>
+    typedIpc.invoke('agent:auth-response', requestId, approved, alwaysAllow),
+  onRunCreated: flatApi.onAgentRunCreated,
+  onRunUpdated: flatApi.onAgentRunUpdated,
+  onPartCreated: flatApi.onAgentPartCreated,
+  onPartUpdated: flatApi.onAgentPartUpdated,
+  onStep: flatApi.onAgentStep,
+  onThinking: flatApi.onAgentThinking,
+  onAuthRequest: flatApi.onAgentAuthRequest,
+  onTaskComplete: flatApi.onAgentTaskComplete
+}
+
+flatApi.terminal = {
+  connectSSH: (hostId: string, topicId?: string) => typedIpc.invoke('ssh:connect', hostId, topicId),
+  sendSSHInput: (id: string, data: string, topicId?: string) =>
+    typedIpc.send('ssh:input', id, data, topicId),
+  resizeSSH: (id: string, cols: number, rows: number) =>
+    typedIpc.send('ssh:resize', id, cols, rows),
+  getSSHBuffer: (id: string) => typedIpc.invoke('ssh:get-buffer', id),
+  attachSSH: (id: string) => typedIpc.send('ssh:attach', id),
+  connectLocal: (topicId: string) => typedIpc.invoke('local:connect', topicId),
+  sendLocalInput: (id: string, data: string) => typedIpc.send('local:input', id, data),
+  resizeLocal: (id: string, cols: number, rows: number) =>
+    typedIpc.send('local:resize', id, cols, rows),
+  getLocalBuffer: (id: string) => typedIpc.invoke('local:get-buffer', id),
+  attachLocal: (id: string) => typedIpc.send('local:attach', id),
+  closeLocal: (id: string) => typedIpc.invoke('local:close', id),
+  createAgentTerminal: flatApi.createAgentTerminal,
+  closeAgentTerminal: flatApi.closeAgentTerminal,
+  renameAgentTerminal: flatApi.renameAgentTerminal,
+  toggleTerminalPin: flatApi.toggleTerminalPin,
+  onCommandStart: flatApi.onTerminalCommandStart,
+  onCommandEnd: flatApi.onTerminalCommandEnd,
+  onSSHData: flatApi.onSSHData,
+  onSSHClosed: flatApi.onSSHClosed
+}
+
+flatApi.settings = {
+  getModelSettings: () => typedIpc.invoke('get-model-settings'),
+  saveModelSettings: (settings: Partial<ModelSettings>) =>
+    typedIpc.invoke('save-model-settings', settings),
+  getProviders: () => typedIpc.invoke('get-providers'),
+  getProvider: (id: string) => typedIpc.invoke('get-provider', id),
+  saveProvider: (provider: Provider) => typedIpc.invoke('save-provider', provider),
+  deleteProvider: (id: string) => typedIpc.invoke('delete-provider', id),
+  testProviderConnection: (provider: Provider, modelId?: string) =>
+    typedIpc.invoke('test-provider-connection', provider, modelId),
+  getModels: (providerId?: string) => typedIpc.invoke('get-models', providerId),
+  saveModel: (model: Model) => typedIpc.invoke('save-model', model),
+  deleteModel: (id: string) => typedIpc.invoke('delete-model', id),
+  getPermissions: () => typedIpc.invoke('get-permissions'),
+  savePermissions: (permissions: Partial<PermissionSettings>) =>
+    typedIpc.invoke('save-permissions', permissions)
+}
+
+flatApi.files = {
+  sftpConnect: flatApi.sftpConnect,
+  sftpList: flatApi.sftpList,
+  sftpUpload: flatApi.sftpUpload,
+  sftpDownload: flatApi.sftpDownload,
+  sftpMkdir: flatApi.sftpMkdir,
+  sftpDelete: flatApi.sftpDelete,
+  sftpClose: flatApi.sftpClose,
+  localFsConnect: flatApi.localFsConnect,
+  localFsList: flatApi.localFsList,
+  localFsUpload: flatApi.localFsUpload,
+  localFsDownload: flatApi.localFsDownload,
+  localFsMkdir: flatApi.localFsMkdir,
+  localFsDelete: flatApi.localFsDelete,
+  localFsClose: flatApi.localFsClose,
+  startNativeDrag: flatApi.startNativeDrag,
+  transferBetweenHosts: flatApi.sftpTransferBetweenHosts,
+  onTransferProgress: flatApi.onSftpTransferProgress
 }
 
 if (process.contextIsolated) {

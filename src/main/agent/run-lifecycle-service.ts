@@ -1,0 +1,93 @@
+import { v4 as uuidv4 } from 'uuid'
+import type { AgentRun, Message } from '../../shared/types'
+import { messageDB, taskDB } from '../db'
+import { logger } from '../logger'
+import { MemoryManager } from '../MemoryManager'
+import { TASK_SUMMARY_MAX_LENGTH } from '../constants'
+import type { AgentProcessorOptions } from './agent-processor-types'
+import { agentRunStore } from './agent-run-store'
+import { LegacyAgentEventAdapter } from './legacy-agent-event-adapter'
+
+export class RunLifecycleService {
+  private readonly legacyEvents: LegacyAgentEventAdapter
+
+  constructor(private readonly options: AgentProcessorOptions) {
+    this.legacyEvents = new LegacyAgentEventAdapter(options.run, options.context)
+  }
+
+  failMaxTurns(maxTurns: number): Message {
+    const { run } = this.options
+    const failedSummary = `任务达到多轮推理上限 (${maxTurns}步)，未能完全解决。`
+    agentRunStore.completeRun(run.id, {
+      error: failedSummary,
+      usage: { ...this.options.provider.getSessionUsage() }
+    })
+    if (this.options.updateTaskStatus) {
+      taskDB.updateTask(run.taskId, { status: 'failed', summary: failedSummary })
+    }
+
+    const timeoutMsg: Message = {
+      id: uuidv4(),
+      topicId: run.topicId,
+      runId: run.id,
+      role: 'assistant',
+      content: `对不起，我已达到多轮推理上限 (${maxTurns}步)，未能完全解决任务。请根据当前进度给出进一步指令。`,
+      timestamp: Date.now(),
+      metadata: { taskId: run.taskId, agentStatus: 'thinking' }
+    }
+    if (this.options.persistFinalMessage) messageDB.createMessage(timeoutMsg)
+    agentRunStore.createAssistantMessagePart(run, timeoutMsg)
+    this.options.context.notifyStep(timeoutMsg)
+    this.legacyEvents.taskComplete('failed', failedSummary)
+    return timeoutMsg
+  }
+
+  finish(run: AgentRun, content: string, memoryRecalled: boolean, isVerifying: boolean): Message {
+    const finalContent = content || ''
+    const msg: Message = {
+      id: uuidv4(),
+      topicId: run.topicId,
+      runId: run.id,
+      role: 'assistant',
+      content: finalContent,
+      timestamp: Date.now(),
+      metadata: {
+        taskId: run.taskId,
+        agentStatus: 'thinking',
+        memoryRecalled,
+        isVerifying
+      }
+    }
+
+    if (this.options.updateTaskStatus) {
+      taskDB.updateTask(run.taskId, {
+        status: 'completed',
+        summary: finalContent.slice(0, TASK_SUMMARY_MAX_LENGTH)
+      })
+      MemoryManager.reflectOnTask(run.taskId).catch((err) => {
+        logger.error('RunLifecycleService', 'Failed to trigger reflection:', err)
+      })
+    }
+
+    if (this.options.persistFinalMessage) messageDB.createMessage(msg)
+    agentRunStore.createAssistantMessagePart(run, msg)
+    agentRunStore.completeRun(run.id, { usage: { ...this.options.provider.getSessionUsage() } })
+    this.options.context.notifyStep(msg)
+    this.legacyEvents.taskComplete('completed', finalContent.slice(0, TASK_SUMMARY_MAX_LENGTH))
+    return msg
+  }
+
+  createUserPart(run: AgentRun, userMessage?: Message): void {
+    if (!userMessage) return
+    agentRunStore.createPart({
+      runId: run.id,
+      messageId: userMessage.id,
+      type: 'text',
+      status: 'completed',
+      role: 'user',
+      output: userMessage.content,
+      startedAt: userMessage.timestamp,
+      endedAt: userMessage.timestamp
+    })
+  }
+}

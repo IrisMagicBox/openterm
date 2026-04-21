@@ -192,7 +192,7 @@ export interface IpcInvokeChannels {
   'agent:add-host': { payload: [topicId: string, hostId: string]; result: boolean }
   'agent:remove-host': { payload: [topicId: string, hostId: string]; result: boolean }
 
-  'ssh:connect': { payload: [hostId: string]; result: string }
+  'ssh:connect': { payload: [hostId: string, topicId?: string]; result: string }
   'ssh:get-buffer': { payload: [sessionId: string]; result: string }
   'ssh:agent:create': { payload: [hostId: string, topicId?: string]; result: string }
   'ssh:agent:execute': {

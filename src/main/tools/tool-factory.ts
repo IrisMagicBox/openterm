@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-namespace */
 import { z } from 'zod'
 import type { Message } from '../../shared/types'
 import { truncateOutput as truncateToDisk } from './truncation'
@@ -52,6 +53,24 @@ export namespace Tool {
       startedAt?: number
       endedAt?: number
     }) => import('../../shared/types').AgentPart
+    terminal?: {
+      ensureSession: Context['ensureSession']
+    }
+    permission?: {
+      ask: (request: import('../agent/agent-permission-engine').AgentPermissionRequest) => Promise<{
+        approved: boolean
+        alwaysAllow: boolean
+      }>
+    }
+    parts?: {
+      updateMetadata: (
+        metadata: Record<string, unknown>
+      ) => import('../../shared/types').AgentPart | undefined
+      createChild: NonNullable<Context['createChildPart']>
+    }
+    events?: {
+      notifyStep: Context['notifyStep']
+    }
   }
 
   export interface Metadata {

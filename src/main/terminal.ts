@@ -2,7 +2,11 @@ import { WebContents } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
 import { logger } from './logger'
 import { TerminalSession, TerminalIO, CommandResult, TerminalStream } from '../shared/types'
-import { terminalSessionDB, terminalIODB, topicDB, hostDB } from './db'
+import { topicDB, hostDB } from './db'
+import { ShellIntegrationParser, stripAnsi } from './terminal/shell-integration-parser'
+import { TerminalCommandQueue } from './terminal/terminal-command-queue'
+import { TerminalHistoryRecorder } from './terminal/terminal-history-recorder'
+import { TerminalStateStore } from './terminal/terminal-state-store'
 import {
   MAX_OUTPUT_SIZE,
   STREAMING_CHUNK_SIZE,
@@ -30,7 +34,7 @@ interface SessionState {
   stream: TerminalStream
   webContents?: WebContents
   currentCommand?: ActiveCommand
-  commandQueue: Promise<void>
+  commandQueue: TerminalCommandQueue
   outputBuffer: string
   rawBuffer: string
   isLocked: boolean
@@ -38,38 +42,10 @@ interface SessionState {
   shellIntegrationInjected: boolean
 }
 
-const OSC_START = '\x1b]6973;OPENTERM_CMD_START\x07'
-const OSC_END_PREFIX = '\x1b]6973;OPENTERM_CMD_END;'
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function makeOscStartRegex(): RegExp {
-  return new RegExp(escapeRegExp(OSC_START), 'g')
-}
-
-function makeOscEndRegex(): RegExp {
-  return new RegExp(`${escapeRegExp(OSC_END_PREFIX)}(-?\\d+);([^\\x07]*)\\x07`, 'g')
-}
-
-function stripAnsi(text: string): string {
-  let result = ''
-  for (let i = 0; i < text.length; i++) {
-    if (text.charCodeAt(i) === 27 && text[i + 1] === '[') {
-      i += 2
-      while (i < text.length && !/[a-zA-Z]/.test(text[i])) {
-        i++
-      }
-      continue
-    }
-    result += text[i]
-  }
-  return result
-}
-
 class CommandExecutor {
-  private sessions = new Map<string, SessionState>()
+  private sessions = new TerminalStateStore<SessionState>()
+  private readonly shellParser = new ShellIntegrationParser()
+  private readonly history = new TerminalHistoryRecorder()
   private streamingTimers = new Map<string, NodeJS.Timeout>()
 
   async createSession(
@@ -91,15 +67,13 @@ class CommandExecutor {
       createdAt: Date.now()
     }
 
-    if (topicId) {
-      terminalSessionDB.createSession(session)
-    }
+    this.history.createSession(session)
 
     this.sessions.set(sessionId, {
       session,
       stream,
       webContents,
-      commandQueue: Promise.resolve(),
+      commandQueue: new TerminalCommandQueue(),
       outputBuffer: '',
       rawBuffer: '',
       isLocked: false,
@@ -136,18 +110,9 @@ class CommandExecutor {
       throw new Error('Session not found')
     }
 
-    // Capture the promise for this specific command and chain it to the session queue
-    const commandPromise = state.commandQueue.then(async () => {
-      return this._doExecuteAgentCommand(sessionId, command, topicId, taskId, stepId)
-    })
-
-    // Update the queue to wait for this command (don't let errors break the queue)
-    state.commandQueue = commandPromise.then(
-      () => {},
-      () => {}
+    return state.commandQueue.enqueue(() =>
+      this._doExecuteAgentCommand(sessionId, command, topicId, taskId, stepId)
     )
-
-    return commandPromise
   }
 
   private async _doExecuteAgentCommand(
@@ -181,7 +146,7 @@ class CommandExecutor {
       timestamp: Date.now()
     }
 
-    terminalIODB.createIO(input)
+    this.history.createIO(input)
 
     if (state.webContents) {
       state.webContents.send(`terminal:command-start:${sessionId}`, {
@@ -291,7 +256,7 @@ class CommandExecutor {
       timestamp: Date.now()
     }
 
-    terminalIODB.createIO(output)
+    this.history.createIO(output)
   }
 
   handleUserInput(sessionId: string, data: string, topicId: string): void {
@@ -320,7 +285,7 @@ class CommandExecutor {
           content: command,
           timestamp: Date.now()
         }
-        terminalIODB.createIO(input)
+        this.history.createIO(input)
 
         if (state.webContents) {
           state.webContents.send(`terminal:command-start:${sessionId}`, {
@@ -359,29 +324,14 @@ class CommandExecutor {
     if (!state) return { cleanData: textDataRaw, isCommandEnd: false }
 
     const rawChunk = data.toString()
+    const parsed = this.shellParser.parse(state.rawBuffer, rawChunk)
+    state.rawBuffer = parsed.rawBuffer
 
-    state.rawBuffer += rawChunk
-    let isCommandEnd = false
-    let exitCode: number | undefined
-    let cwd: string | undefined
-
-    if (state.rawBuffer.includes(OSC_START)) {
+    if (parsed.shellIntegrationReady) {
       state.session.shellIntegrationReady = true
       if (state.session.topicId) {
-        terminalSessionDB.updateSessionShellIntegration(sessionId, true)
+        this.history.updateShellIntegration(sessionId, true)
       }
-      state.rawBuffer = state.rawBuffer.replace(makeOscStartRegex(), '')
-    }
-
-    const endRegex = makeOscEndRegex()
-    let endMatch: RegExpExecArray | null
-    while ((endMatch = endRegex.exec(state.rawBuffer)) !== null) {
-      exitCode = parseInt(endMatch[1], 10)
-      cwd = endMatch[2]
-      isCommandEnd = true
-    }
-    if (isCommandEnd) {
-      state.rawBuffer = state.rawBuffer.replace(makeOscEndRegex(), '')
     }
 
     // Keep only a reasonable amount of raw buffer if it becomes too large
@@ -389,7 +339,7 @@ class CommandExecutor {
       state.rawBuffer = state.rawBuffer.slice(-RAW_BUFFER_TRIM)
     }
 
-    let cleanData = rawChunk.replace(makeOscStartRegex(), '').replace(makeOscEndRegex(), '')
+    let cleanData = parsed.cleanData
 
     // Strip shell integration noise from the renderer, after preserving it for parsing.
     if (cleanData.includes('__openterm_end') || cleanData.includes('OPENTERM_CMD')) {
@@ -439,14 +389,14 @@ class CommandExecutor {
       // Strip ANSI for the Agent's internal buffer (clean text)
       state.currentCommand.outputBuffer += stripAnsi(cleanData)
 
-      if (isCommandEnd) {
-        this.completeCommand(sessionId, exitCode, cwd)
+      if (parsed.isCommandEnd) {
+        this.completeCommand(sessionId, parsed.exitCode, parsed.cwd)
       } else if (state.currentCommand.outputBuffer.length > MAX_OUTPUT_SIZE) {
         this.completeCommand(sessionId, undefined, undefined, true)
       }
     }
 
-    return { cleanData: displayData, isCommandEnd }
+    return { cleanData: displayData, isCommandEnd: parsed.isCommandEnd }
   }
 
   private completeCommand(
@@ -493,7 +443,7 @@ class CommandExecutor {
       timestamp: Date.now()
     }
 
-    terminalIODB.createIO(output)
+    this.history.createIO(output)
 
     if (state.webContents) {
       state.webContents.send(`terminal:command-end:${sessionId}`, {
@@ -527,7 +477,7 @@ class CommandExecutor {
   buildTerminalContext(topicId: string): string {
     const topic = topicDB.getTopicById(topicId)
     const topicHosts = hostDB.getHosts().filter((h) => topic?.hostIds.includes(h.id))
-    const sessions = terminalSessionDB.getSessionsByTopic(topicId)
+    const sessions = this.history.getSessionsByTopic(topicId)
 
     let context = `\n[Topic Context]\n`
     context += `Available Hosts in this Topic:\n`
@@ -572,13 +522,13 @@ class CommandExecutor {
     context += `Active Terminals:\n`
     const parts = sessions.map((session) => {
       const state = this.sessions.get(session.id)
-      const recentIO = terminalIODB.getIOBySession(session.id, 20)
+      const recentIO = this.history.getRecentIO(session.id, 20)
       const recentCommands = recentIO
         .filter((io) => io.type === 'input')
         .slice(-5)
         .map((io) => {
           const output =
-            io.type === 'input' ? terminalIODB.getOutputByRelatedInput(io.id) : undefined
+            io.type === 'input' ? this.history.getOutputByRelatedInput(io.id) : undefined
           return `  [${io.source}] ${io.content.slice(0, 50)}${io.content.length > 50 ? '...' : ''}${output ? ` → exit ${output.exitCode ?? '?'}` : ''}`
         })
         .join('\n')
@@ -638,9 +588,7 @@ class CommandExecutor {
 
   closeSessionsByTopic(topicId: string): void {
     logger.info('Terminal', `Closing all sessions for topic: ${topicId}`)
-    const sessionsToClose = Array.from(this.sessions.values()).filter(
-      (s) => s.session.topicId === topicId
-    )
+    const sessionsToClose = this.sessions.values().filter((s) => s.session.topicId === topicId)
 
     for (const state of sessionsToClose) {
       this.closeSession(state.session.id)
@@ -661,8 +609,7 @@ class CommandExecutor {
       }
 
       if (state.session.topicId) {
-        terminalSessionDB.closeSession(sessionId)
-        terminalIODB.markIOAsDeletedBySession(sessionId, Date.now(), 'agent')
+        this.history.closeSession(sessionId)
       }
       this.sessions.delete(sessionId)
 

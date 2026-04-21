@@ -25,6 +25,124 @@ declare global {
   interface Window {
     electron: ElectronAPI
     api: {
+      hosts: {
+        list: () => Promise<Host[]>
+        create: (host: Omit<Host, 'id' | 'createdAt'>) => Promise<Host>
+        delete: (id: string) => Promise<void>
+        getTopicHosts: (topicId: string) => Promise<Host[]>
+        addToTopic: (topicId: string, hostId: string) => Promise<boolean>
+        removeFromTopic: (topicId: string, hostId: string) => Promise<boolean>
+      }
+      agent: {
+        sendMessage: (topicId: string, content: string) => Promise<Message>
+        getSessions: (topicId: string) => Promise<TerminalSession[]>
+        getRun: (runId: string) => Promise<AgentRun | undefined>
+        getRunsByTask: (taskId: string) => Promise<AgentRun[]>
+        getRunParts: (runId: string) => Promise<AgentPart[]>
+        getTaskParts: (taskId: string) => Promise<AgentPart[]>
+        cancelRun: (runId: string) => Promise<AgentRun | undefined>
+        resumeRun: (runId: string) => Promise<Message>
+        sendAuthResponse: (
+          requestId: string,
+          approved: boolean,
+          alwaysAllow?: boolean
+        ) => Promise<void>
+        onRunCreated: (callback: (run: AgentRun) => void) => () => void
+        onRunUpdated: (callback: (run: AgentRun) => void) => () => void
+        onPartCreated: (callback: (part: AgentPart) => void) => () => void
+        onPartUpdated: (callback: (part: AgentPart) => void) => () => void
+        onStep: (callback: (step: Message) => void) => () => void
+        onThinking: (callback: (data: { topicId: string; thinking: boolean }) => void) => () => void
+        onAuthRequest: (
+          callback: (
+            requestId: string,
+            command: string,
+            riskLevel?: string,
+            reason?: string
+          ) => void
+        ) => () => void
+        onTaskComplete: (
+          callback: (data: {
+            topicId: string
+            taskId: string
+            status: 'completed' | 'failed'
+            summary: string
+          }) => void
+        ) => () => void
+      }
+      terminal: {
+        connectSSH: (hostId: string, topicId?: string) => Promise<string>
+        sendSSHInput: (id: string, data: string, topicId?: string) => void
+        resizeSSH: (id: string, cols: number, rows: number) => void
+        getSSHBuffer: (id: string) => Promise<string>
+        attachSSH: (id: string) => void
+        connectLocal: (topicId: string) => Promise<TerminalSession>
+        sendLocalInput: (id: string, data: string) => void
+        resizeLocal: (id: string, cols: number, rows: number) => void
+        getLocalBuffer: (id: string) => Promise<string>
+        attachLocal: (id: string) => void
+        closeLocal: (id: string) => Promise<boolean>
+        createAgentTerminal: (
+          topicId: string,
+          hostId: string,
+          name?: string
+        ) => Promise<TerminalSession>
+        closeAgentTerminal: (id: string) => Promise<void>
+        renameAgentTerminal: (id: string, name: string) => Promise<void>
+        toggleTerminalPin: (id: string, isPinned: boolean) => Promise<void>
+        onCommandStart: (
+          id: string,
+          callback: (data: { inputId: string; command: string; source: string }) => void
+        ) => () => void
+        onCommandEnd: (
+          id: string,
+          callback: (data: {
+            inputId: string
+            outputId: string
+            exitCode: number
+            durationMs: number
+            isTruncated: boolean
+          }) => void
+        ) => () => void
+        onSSHData: (id: string, callback: (data: string) => void) => () => void
+        onSSHClosed: (id: string, callback: () => void) => () => void
+      }
+      settings: {
+        getModelSettings: () => Promise<ModelSettings>
+        saveModelSettings: (settings: Partial<ModelSettings>) => Promise<void>
+        getProviders: () => Promise<Provider[]>
+        getProvider: (id: string) => Promise<Provider | undefined>
+        saveProvider: (provider: Provider) => Promise<void>
+        deleteProvider: (id: string) => Promise<void>
+        testProviderConnection: (
+          provider: Provider,
+          modelId?: string
+        ) => Promise<{ ok: boolean; message: string }>
+        getModels: (providerId?: string) => Promise<Model[]>
+        saveModel: (model: Model) => Promise<void>
+        deleteModel: (id: string) => Promise<void>
+        getPermissions: () => Promise<PermissionSettings>
+        savePermissions: (permissions: Partial<PermissionSettings>) => Promise<void>
+      }
+      files: {
+        sftpConnect: (hostId: string) => Promise<{ sessionId: string; hostId: string }>
+        sftpList: Window['api']['sftpList']
+        sftpUpload: Window['api']['sftpUpload']
+        sftpDownload: Window['api']['sftpDownload']
+        sftpMkdir: Window['api']['sftpMkdir']
+        sftpDelete: Window['api']['sftpDelete']
+        sftpClose: Window['api']['sftpClose']
+        localFsConnect: Window['api']['localFsConnect']
+        localFsList: Window['api']['localFsList']
+        localFsUpload: Window['api']['localFsUpload']
+        localFsDownload: Window['api']['localFsDownload']
+        localFsMkdir: Window['api']['localFsMkdir']
+        localFsDelete: Window['api']['localFsDelete']
+        localFsClose: Window['api']['localFsClose']
+        startNativeDrag: Window['api']['startNativeDrag']
+        transferBetweenHosts: Window['api']['sftpTransferBetweenHosts']
+        onTransferProgress: Window['api']['onSftpTransferProgress']
+      }
       getHosts: () => Promise<Host[]>
       createHost: (host: Omit<Host, 'id' | 'createdAt'>) => Promise<Host>
       deleteHost: (id: string) => Promise<void>
