@@ -88,7 +88,8 @@ export class AgentLoop {
           run,
           streamResult.content,
           extraContext.length > 0,
-          turnCount > 1
+          turnCount > 1,
+          streamResult.assistantPartId
         )
       }
 

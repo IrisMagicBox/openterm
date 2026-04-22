@@ -19,7 +19,7 @@ export const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        'z-[220] min-w-40 overflow-hidden rounded-lg border border-border bg-surface p-1 text-foreground shadow-lg animate-in fade-in',
+        'glass-menu z-[220] min-w-40 overflow-hidden rounded-lg p-1 text-foreground animate-in fade-in',
         className
       )}
       {...props}
@@ -35,7 +35,7 @@ export const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors focus:bg-surface-muted data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+      'relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent-soft/60 focus:text-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
       inset && 'pl-8',
       className
     )}
@@ -51,7 +51,7 @@ export const DropdownMenuSubTrigger = React.forwardRef<
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
     className={cn(
-      'flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none focus:bg-surface-muted',
+      'flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none focus:bg-accent-soft/60 focus:text-accent',
       inset && 'pl-8',
       className
     )}
@@ -70,7 +70,7 @@ export const DropdownMenuSubContent = React.forwardRef<
   <DropdownMenuPrimitive.SubContent
     ref={ref}
     className={cn(
-      'z-[230] min-w-40 overflow-hidden rounded-lg border border-border bg-surface p-1 text-foreground shadow-lg',
+      'glass-menu z-[230] min-w-40 overflow-hidden rounded-lg p-1 text-foreground',
       className
     )}
     {...props}
@@ -97,7 +97,7 @@ export const DropdownMenuCheckboxItem = React.forwardRef<
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
     className={cn(
-      'relative flex cursor-default select-none items-center rounded-md py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-surface-muted',
+      'relative flex cursor-default select-none items-center rounded-md py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-accent-soft/60 focus:text-accent',
       className
     )}
     checked={checked}

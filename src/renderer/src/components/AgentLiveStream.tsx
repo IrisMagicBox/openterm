@@ -96,7 +96,7 @@ export function AgentLiveStream({ parts }: AgentLiveStreamProps): React.ReactEle
 
   return (
     <div className="flex justify-start">
-      <div className="max-w-[82%] rounded-lg rounded-bl-sm border border-border bg-surface-muted px-4 py-3 text-sm shadow-sm">
+      <div className="glass-panel max-w-[82%] rounded-lg rounded-bl-sm px-4 py-3 text-sm">
         <div ref={scrollRef} className="max-h-[460px] overflow-y-auto pr-1">
           {textContent ? (
             <div className="prose-stream">
@@ -122,8 +122,8 @@ export function AgentLiveStream({ parts }: AgentLiveStreamProps): React.ReactEle
                       part.status === 'error'
                         ? 'border-danger/20 bg-danger-soft'
                         : isLive
-                          ? 'border-accent/20 bg-accent-soft/50'
-                          : 'border-border bg-surface'
+                          ? 'border-accent/20 bg-accent-soft/60'
+                          : 'border-white/60 bg-white/60'
                     }`}
                   >
                     <div className="flex items-center gap-2">

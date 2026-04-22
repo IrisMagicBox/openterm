@@ -8,7 +8,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     <input
       ref={ref}
       className={cn(
-        'flex h-8 w-full rounded-md border border-border bg-surface px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-50 no-drag',
+        'blue-ring glass-control flex h-8 w-full rounded-md px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground/65 transition-all disabled:cursor-not-allowed disabled:opacity-50 no-drag',
         className
       )}
       {...props}
@@ -24,7 +24,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     <textarea
       ref={ref}
       className={cn(
-        'flex min-h-20 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-50 no-drag',
+        'blue-ring glass-control flex min-h-20 w-full rounded-md px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/65 transition-all disabled:cursor-not-allowed disabled:opacity-50 no-drag',
         className
       )}
       {...props}

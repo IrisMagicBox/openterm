@@ -142,7 +142,7 @@ export function ChatPanel({
   const handleFocusSession = (id: string): void => setFocusedSessionId(id)
 
   return (
-    <div className="flex h-full flex-col bg-surface">
+    <div className="flex h-full flex-col bg-transparent">
       <PageHeader
         title={topic.title}
         dense
@@ -194,7 +194,7 @@ export function ChatPanel({
                   <div
                     key={h.id}
                     title={h.alias}
-                    className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-surface bg-accent-soft text-[11px] font-semibold text-accent ring-1 ring-accent/20"
+                    className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white/80 bg-white/70 text-[11px] font-semibold text-accent shadow-sm ring-1 ring-accent/15 backdrop-blur-xl"
                   >
                     {h.alias.slice(0, 2).toUpperCase()}
                   </div>
@@ -205,8 +205,8 @@ export function ChatPanel({
         }
       />
 
-      <div className="flex-1 overflow-hidden flex">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+      <div className="flex flex-1 overflow-hidden">
+        <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
           {messages.length === 0 && (
             <EmptyState
               topicHosts={topicHosts}

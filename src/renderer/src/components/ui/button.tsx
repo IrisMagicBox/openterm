@@ -5,15 +5,17 @@ import { Slot } from 'radix-ui'
 import { cn } from '../../lib/utils'
 
 export const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35 disabled:pointer-events-none disabled:opacity-50 no-drag',
+  'blue-ring inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-all disabled:pointer-events-none disabled:opacity-50 no-drag',
   {
     variants: {
       variant: {
-        primary: 'bg-accent text-white hover:bg-accent-strong',
-        secondary: 'border border-border bg-surface text-foreground hover:bg-surface-muted',
-        ghost: 'text-muted-foreground hover:bg-surface-muted hover:text-foreground',
-        subtle: 'bg-surface-muted text-foreground hover:bg-border/70',
-        destructive: 'bg-danger text-white hover:bg-danger-strong'
+        primary: 'bg-accent text-white shadow-sm shadow-accent/20 hover:bg-accent-strong',
+        secondary:
+          'glass-control text-foreground hover:border-accent/25 hover:bg-white/80 hover:text-accent',
+        ghost:
+          'text-muted-foreground hover:border-white/60 hover:bg-white/50 hover:text-foreground hover:shadow-sm',
+        subtle: 'border border-white/60 bg-white/50 text-foreground hover:bg-white/75',
+        destructive: 'bg-danger text-white shadow-sm shadow-danger/20 hover:bg-danger-strong'
       },
       size: {
         sm: 'h-7 px-2.5 text-xs',

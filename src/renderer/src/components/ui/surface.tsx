@@ -7,8 +7,8 @@ export const surfaceVariants = cva('rounded-lg border', {
   variants: {
     variant: {
       plain: 'border-transparent bg-transparent',
-      subtle: 'border-border bg-surface-muted',
-      raised: 'border-border bg-surface shadow-sm',
+      subtle: 'border-white/60 bg-white/50 backdrop-blur-xl',
+      raised: 'glass-panel',
       workspace: 'border-workspace-border bg-workspace text-workspace-foreground'
     },
     padding: {

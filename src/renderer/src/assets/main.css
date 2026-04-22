@@ -4,16 +4,16 @@
 
 @layer base {
   :root {
-    --app: 248 250 252;
+    --app: 246 249 253;
     --surface: 255 255 255;
-    --surface-muted: 241 245 249;
-    --border: 226 232 240;
-    --foreground: 15 23 42;
+    --surface-muted: 248 250 252;
+    --border: 218 228 240;
+    --foreground: 17 24 39;
     --muted-foreground: 100 116 139;
 
     --accent: 37 99 235;
-    --accent-strong: 29 78 216;
-    --accent-soft: 219 234 254;
+    --accent-strong: 30 64 175;
+    --accent-soft: 226 239 255;
 
     --success: 5 150 105;
     --success-soft: 209 250 229;
@@ -36,6 +36,8 @@
 
   body {
     @apply h-screen overflow-hidden bg-app text-foreground;
+    background:
+      linear-gradient(180deg, rgb(250 253 255) 0%, rgb(246 249 253) 58%, rgb(239 246 255) 100%);
     font-family:
       'Inter',
       -apple-system,
@@ -58,6 +60,24 @@
   textarea,
   select {
     font: inherit;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply border border-white/70 bg-white/70 shadow-[0_18px_55px_rgba(37,99,235,0.08)] backdrop-blur-xl backdrop-saturate-150;
+  }
+
+  .glass-control {
+    @apply border border-white/70 bg-white/60 shadow-[0_8px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl backdrop-saturate-150;
+  }
+
+  .glass-menu {
+    @apply border border-white/75 bg-white/80 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl backdrop-saturate-150;
+  }
+
+  .blue-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-0;
   }
 }
 
@@ -112,6 +132,16 @@ textarea,
     transform: scale(1);
   }
 }
+@keyframes dialogPopIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
 .animate-in {
   animation: fadeIn 0.15s ease;
 }
@@ -120,6 +150,10 @@ textarea,
 }
 .zoom-in-95 {
   animation: zoomIn 0.15s ease;
+}
+.dialog-pop-in {
+  animation: dialogPopIn 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: center;
 }
 
 .scrollbar-hide::-webkit-scrollbar,

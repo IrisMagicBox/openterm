@@ -25,6 +25,7 @@ export interface StreamResult {
   toolCalls: ChatCompletionMessageFunctionToolCall[]
   usage: TokenUsage
   finishReason: string | null
+  assistantPartId?: string
 }
 
 export type ToolChoice = 'auto' | 'none'

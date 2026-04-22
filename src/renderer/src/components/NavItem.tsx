@@ -22,17 +22,19 @@ export function NavItem({
   const item = (
     <Button
       onClick={onClick}
-      variant={active ? 'primary' : 'ghost'}
+      variant="ghost"
       className={cn(
-        'relative h-9 w-full justify-start gap-3 px-3 group',
-        active ? 'text-white' : 'text-muted-foreground hover:bg-surface hover:text-foreground',
+        'group relative h-9 w-full justify-start gap-3 border px-3',
+        active
+          ? 'border-white/75 bg-white/70 text-accent shadow-sm shadow-accent/10'
+          : 'border-transparent text-muted-foreground hover:border-white/60 hover:bg-white/50 hover:text-foreground',
         !label && 'justify-center px-0'
       )}
     >
       <span
         className={cn(
           'transition-colors',
-          active ? 'text-white' : 'text-muted-foreground group-hover:text-accent'
+          active ? 'text-accent' : 'text-muted-foreground group-hover:text-accent'
         )}
       >
         {icon}
@@ -41,7 +43,7 @@ export function NavItem({
       {count !== undefined && label && (
         <Badge
           variant={active ? 'accent' : 'neutral'}
-          className={active ? 'border-white/20 bg-white/15 text-white' : ''}
+          className={active ? 'border-accent/15 bg-accent-soft/70 text-accent' : ''}
         >
           {count}
         </Badge>

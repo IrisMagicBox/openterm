@@ -20,6 +20,43 @@ interface StreamedToolCall {
   partId: string
 }
 
+function nonEmptyString(value: string | null | undefined): string | undefined {
+  const trimmed = value?.trim()
+  return trimmed && trimmed.length > 0 ? trimmed : undefined
+}
+
+export function inferToolNameFromArguments(args: string): string | undefined {
+  try {
+    const parsed = JSON.parse(args) as Record<string, unknown>
+    if (
+      typeof parsed.hostId === 'string' &&
+      typeof parsed.command === 'string' &&
+      typeof parsed.reason === 'string'
+    ) {
+      return 'execute_command'
+    }
+  } catch {
+    return undefined
+  }
+
+  return undefined
+}
+
+export function resolveStreamedToolName(
+  deltaName: string | null | undefined,
+  existingName: string | undefined,
+  args: string
+): string {
+  const explicitName = nonEmptyString(deltaName)
+  if (explicitName) return explicitName
+
+  const inferredName = inferToolNameFromArguments(args)
+  if (inferredName) return inferredName
+
+  const previousName = nonEmptyString(existingName)
+  return previousName && previousName !== 'unknown' ? previousName : 'unknown'
+}
+
 export class ProviderStreamCollector {
   constructor(private readonly options: AgentProcessorOptions) {}
 
@@ -136,9 +173,9 @@ export class ProviderStreamCollector {
       if (chunk.toolCalls) {
         for (const delta of chunk.toolCalls) {
           const existing = toolBuilders.get(delta.index)
-          const id = delta.id ?? existing?.id ?? `call_${uuidv4()}`
-          const name = delta.function?.name ?? existing?.name ?? 'unknown'
+          const id = nonEmptyString(delta.id) ?? existing?.id ?? `call_${uuidv4()}`
           const args = (existing?.arguments ?? '') + (delta.function?.arguments ?? '')
+          const name = resolveStreamedToolName(delta.function?.name, existing?.name, args)
           let partId = existing?.partId
           if (!partId) {
             const part = agentRunStore.createPart({
@@ -180,10 +217,14 @@ export class ProviderStreamCollector {
       toolCalls: Array.from(toolBuilders.values()).map((builder) => ({
         id: builder.id,
         type: 'function' as const,
-        function: { name: builder.name, arguments: builder.arguments }
+        function: {
+          name: resolveStreamedToolName(undefined, builder.name, builder.arguments),
+          arguments: builder.arguments
+        }
       })),
       usage,
-      finishReason
+      finishReason,
+      assistantPartId: textPart?.id
     }
   }
 }

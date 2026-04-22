@@ -8,6 +8,32 @@ import type { AgentProcessorOptions } from './agent-processor-types'
 import { agentRunStore } from './agent-run-store'
 import { LegacyAgentEventAdapter } from './legacy-agent-event-adapter'
 
+function extractProviderErrorContent(content: string): string | undefined {
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>
+    if (
+      typeof parsed.status !== 'number' ||
+      parsed.status < 400 ||
+      typeof parsed.message !== 'string' ||
+      !('result' in parsed)
+    ) {
+      return undefined
+    }
+
+    try {
+      const nested = JSON.parse(parsed.message) as Record<string, unknown>
+      const nestedError = nested.error as Record<string, unknown> | undefined
+      if (typeof nestedError?.message === 'string') return nestedError.message
+    } catch {
+      // Fall through to the top-level provider message.
+    }
+
+    return parsed.message
+  } catch {
+    return undefined
+  }
+}
+
 export class RunLifecycleService {
   private readonly legacyEvents: LegacyAgentEventAdapter
 
@@ -42,8 +68,15 @@ export class RunLifecycleService {
     return timeoutMsg
   }
 
-  finish(run: AgentRun, content: string, memoryRecalled: boolean, isVerifying: boolean): Message {
-    const finalContent = content || ''
+  finish(
+    run: AgentRun,
+    content: string,
+    memoryRecalled: boolean,
+    isVerifying: boolean,
+    assistantPartId?: string
+  ): Message {
+    const providerError = extractProviderErrorContent(content || '')
+    const finalContent = providerError ? `模型服务返回错误：${providerError}` : content || ''
     const msg: Message = {
       id: uuidv4(),
       topicId: run.topicId,
@@ -61,19 +94,38 @@ export class RunLifecycleService {
 
     if (this.options.updateTaskStatus) {
       taskDB.updateTask(run.taskId, {
-        status: 'completed',
+        status: providerError ? 'failed' : 'completed',
         summary: finalContent.slice(0, TASK_SUMMARY_MAX_LENGTH)
       })
-      MemoryManager.reflectOnTask(run.taskId).catch((err) => {
-        logger.error('RunLifecycleService', 'Failed to trigger reflection:', err)
-      })
+      if (!providerError) {
+        MemoryManager.reflectOnTask(run.taskId).catch((err) => {
+          logger.error('RunLifecycleService', 'Failed to trigger reflection:', err)
+        })
+      }
     }
 
     if (this.options.persistFinalMessage) messageDB.createMessage(msg)
-    agentRunStore.createAssistantMessagePart(run, msg)
-    agentRunStore.completeRun(run.id, { usage: { ...this.options.provider.getSessionUsage() } })
+    if (assistantPartId) {
+      agentRunStore.updatePart(assistantPartId, {
+        messageId: msg.id,
+        status: 'completed',
+        role: 'assistant',
+        output: msg.content,
+        metadata: { taskId: run.taskId },
+        endedAt: Date.now()
+      })
+    } else {
+      agentRunStore.createAssistantMessagePart(run, msg)
+    }
+    agentRunStore.completeRun(run.id, {
+      usage: { ...this.options.provider.getSessionUsage() },
+      error: providerError
+    })
     this.options.context.notifyStep(msg)
-    this.legacyEvents.taskComplete('completed', finalContent.slice(0, TASK_SUMMARY_MAX_LENGTH))
+    this.legacyEvents.taskComplete(
+      providerError ? 'failed' : 'completed',
+      finalContent.slice(0, TASK_SUMMARY_MAX_LENGTH)
+    )
     return msg
   }
 

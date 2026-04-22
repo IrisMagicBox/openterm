@@ -81,7 +81,7 @@ export function ModelSelector({
       </Button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-lg border border-border bg-surface shadow-lg animate-in fade-in">
+        <div className="glass-menu absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-lg animate-in fade-in">
           <div className="max-h-96 overflow-y-auto py-2">
             {enabledProviders.map((provider) => {
               const providerModels = getProviderModels(provider.id)
@@ -100,16 +100,16 @@ export function ModelSelector({
                           key={`${provider.id}-${model.id}`}
                           onClick={() => handleSelect(provider.id, model.id)}
                           className={cn(
-                            'flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                            'flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-all',
                             selectedProviderId === provider.id && selectedModelId === model.id
-                              ? 'border-accent bg-accent text-white'
-                              : 'border-transparent text-muted-foreground hover:border-border hover:bg-surface-muted hover:text-foreground'
+                              ? 'border-accent/25 bg-accent-soft/75 text-accent shadow-sm'
+                              : 'border-transparent text-muted-foreground hover:border-white/60 hover:bg-white/60 hover:text-foreground'
                           )}
                         >
                           <div
                             className={`w-2 h-2 rounded-full ${
                               selectedProviderId === provider.id && selectedModelId === model.id
-                                ? 'bg-white'
+                                ? 'bg-accent'
                                 : 'bg-border'
                             }`}
                           />
@@ -119,7 +119,7 @@ export function ModelSelector({
                               className={`text-xs font-semibold px-1.5 py-0.5 rounded-md ${
                                 selectedProviderId === provider.id && selectedModelId === model.id
                                   ? 'bg-white/20 text-white'
-                                  : 'bg-surface-muted text-muted-foreground'
+                                  : 'bg-white/60 text-muted-foreground'
                               }`}
                             >
                               {model.group}
@@ -131,16 +131,16 @@ export function ModelSelector({
                       <button
                         onClick={() => handleSelect(provider.id, 'default')}
                         className={cn(
-                          'flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                          'flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-all',
                           selectedProviderId === provider.id && selectedModelId === null
-                            ? 'border-accent bg-accent text-white'
-                            : 'border-transparent text-muted-foreground hover:border-border hover:bg-surface-muted hover:text-foreground'
+                            ? 'border-accent/25 bg-accent-soft/75 text-accent shadow-sm'
+                            : 'border-transparent text-muted-foreground hover:border-white/60 hover:bg-white/60 hover:text-foreground'
                         )}
                       >
                         <div
                           className={`w-2 h-2 rounded-full ${
                             selectedProviderId === provider.id && selectedModelId === null
-                              ? 'bg-white'
+                              ? 'bg-accent'
                               : 'bg-transparent'
                           }`}
                         />

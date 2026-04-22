@@ -28,19 +28,19 @@ export function ChatInput({
   onInsertMention
 }: ChatInputProps): React.ReactElement {
   return (
-    <div className="relative border-t border-border bg-surface px-6 py-4">
+    <div className="relative border-t border-white/60 bg-white/50 px-6 py-4 shadow-[0_-10px_35px_rgba(37,99,235,0.04)] backdrop-blur-xl backdrop-saturate-150">
       {showMentions && filteredHosts.length > 0 && (
-        <div className="absolute bottom-full left-6 z-10 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
-          <div className="flex items-center gap-1.5 border-b border-border bg-surface-muted px-3 py-2 text-xs font-semibold text-muted-foreground">
+        <div className="glass-menu absolute bottom-full left-6 z-10 mb-2 w-72 overflow-hidden rounded-lg">
+          <div className="flex items-center gap-1.5 border-b border-white/60 bg-white/50 px-3 py-2 text-xs font-semibold text-muted-foreground">
             <Hash size={10} /> 提及主机
           </div>
           {filteredHosts.map((host) => (
             <button
               key={host.id}
-              className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-accent-soft"
+              className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-accent-soft/60"
               onClick={() => onInsertMention(host)}
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-surface-muted text-muted-foreground">
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white/60 text-muted-foreground">
                 <Server size={15} />
               </div>
               <div>
@@ -89,7 +89,7 @@ export function ChatInput({
         </Surface>
       )}
 
-      <div className="flex items-end gap-3 rounded-lg border border-border bg-app p-2 transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/15">
+      <div className="glass-control flex items-end gap-3 rounded-lg p-2 transition-all focus-within:border-accent/30 focus-within:bg-white/80 focus-within:ring-2 focus-within:ring-accent/10">
         <Textarea
           value={inputValue}
           onChange={onInputChange}

@@ -23,7 +23,7 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        'flex shrink-0 items-center justify-between gap-4 border-b border-border bg-app/90 backdrop-blur',
+        'flex shrink-0 items-center justify-between gap-4 border-b border-white/60 bg-white/50 shadow-[0_8px_30px_rgba(37,99,235,0.05)] backdrop-blur-xl backdrop-saturate-150',
         dense ? 'px-5 py-3' : 'px-6 py-4',
         drag && 'drag',
         className

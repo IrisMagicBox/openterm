@@ -32,7 +32,7 @@ export function MessageBubble({
         className={`max-w-[82%] flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end gap-2.5`}
       >
         <div
-          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md ${msg.role === 'user' ? 'bg-accent text-white' : 'bg-surface-muted text-muted-foreground'}`}
+          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md shadow-sm backdrop-blur-xl ${msg.role === 'user' ? 'bg-accent text-white shadow-accent/20' : 'border border-white/70 bg-white/60 text-muted-foreground'}`}
         >
           {msg.role === 'user' ? <User size={14} /> : <Bot size={14} />}
         </div>
@@ -83,10 +83,10 @@ export function MessageBubble({
           <div
             className={`cursor-auto select-text rounded-lg px-4 py-3 text-sm leading-relaxed no-drag ${
               msg.role === 'user'
-                ? 'rounded-br-sm bg-accent text-white'
+                ? 'rounded-br-sm bg-accent text-white shadow-sm shadow-accent/15'
                 : msg.role === 'tool'
                   ? 'max-w-full overflow-x-auto rounded-bl-sm border border-workspace-border bg-workspace'
-                  : 'rounded-bl-sm border border-border bg-surface-muted text-foreground'
+                  : 'glass-panel rounded-bl-sm text-foreground'
             } ${msg.metadata?.isVerifying ? 'ring-2 ring-success/20' : ''}`}
           >
             {msg.role === 'user' ? (
@@ -148,10 +148,10 @@ export function ThinkingIndicator({ animationKey }: { animationKey: number }): R
   return (
     <div key={`thinking-${animationKey}`} className="flex justify-start">
       <div className="flex items-end gap-2.5">
-        <div className="flex h-8 w-8 animate-pulse items-center justify-center rounded-md bg-accent-soft text-accent">
+        <div className="flex h-8 w-8 animate-pulse items-center justify-center rounded-md border border-white/70 bg-white/70 text-accent shadow-sm backdrop-blur-xl">
           <Bot size={14} />
         </div>
-        <div className="flex items-center gap-2 rounded-lg rounded-bl-sm border border-border bg-surface-muted px-4 py-3">
+        <div className="glass-panel flex items-center gap-2 rounded-lg rounded-bl-sm px-4 py-3">
           <div className="flex gap-1">
             <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce [animation-delay:0ms]" />
             <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:150ms]" />
@@ -189,7 +189,7 @@ export function EmptyState({
             <button
               key={h.id}
               onClick={() => onMentionHost(h.alias)}
-              className="rounded-md border border-accent/20 bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/15"
+              className="glass-control rounded-md px-3 py-1.5 text-xs font-semibold text-accent transition hover:border-accent/25 hover:bg-accent-soft/60"
             >
               @{h.alias}
             </button>

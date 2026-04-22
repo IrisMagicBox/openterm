@@ -64,7 +64,7 @@ export function AppSidebar({
   return (
     <aside
       className={cn(
-        'relative flex flex-col border-r border-border bg-app/95 no-drag transition-[width] duration-200',
+        'glass-panel relative flex flex-col border-y-0 border-l-0 no-drag transition-[width] duration-200',
         sidebarCollapsed ? 'w-16' : 'w-72'
       )}
     >
@@ -73,7 +73,7 @@ export function AppSidebar({
           aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
           className={cn(
-            'absolute -right-3 top-12 z-10 h-6 w-6 rounded-full border border-border bg-surface text-muted-foreground shadow-sm',
+            'absolute -right-3 top-12 z-10 h-6 w-6 rounded-full border-white/70 bg-white/75 text-muted-foreground shadow-sm backdrop-blur-xl',
             sidebarCollapsed && 'rotate-180'
           )}
         >
@@ -85,11 +85,13 @@ export function AppSidebar({
         <div
           className={cn('flex items-center gap-3 no-drag', sidebarCollapsed && 'justify-center')}
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-surface p-1">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/70 bg-white/70 p-1 shadow-sm shadow-accent/10 backdrop-blur-xl">
             <img src={logo} alt="OpenTerm" className="h-full w-full object-contain" />
           </div>
           {!sidebarCollapsed && (
-            <h1 className="truncate text-lg font-bold leading-none text-foreground">OpenTerm</h1>
+            <h1 className="truncate text-lg font-semibold leading-none tracking-normal text-foreground">
+              OpenTerm
+            </h1>
           )}
         </div>
       </div>
@@ -172,10 +174,10 @@ export function AppSidebar({
                     }
                   }}
                   className={cn(
-                    'group flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-sm font-medium transition-colors',
+                    'group flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-sm font-medium transition-all',
                     active
-                      ? 'border-accent/20 bg-surface text-accent'
-                      : 'border-transparent text-muted-foreground hover:border-border hover:bg-surface hover:text-foreground',
+                      ? 'border-white/75 bg-white/70 text-accent shadow-sm shadow-accent/10 backdrop-blur-xl'
+                      : 'border-transparent text-muted-foreground hover:border-white/60 hover:bg-white/50 hover:text-foreground',
                     sidebarCollapsed && 'justify-center px-0'
                   )}
                 >
@@ -262,7 +264,7 @@ export function AppSidebar({
       <div className={cn('mt-auto p-3', sidebarCollapsed && 'px-2')}>
         {sidebarCollapsed ? (
           <Tooltip content={`${statusText}：${statusDescription}`} side="right">
-            <div className="flex h-9 items-center justify-center rounded-md border border-border bg-surface">
+            <div className="glass-control flex h-9 items-center justify-center rounded-md">
               <ShieldAlert
                 size={16}
                 className={requireConfirmation ? 'text-success' : 'text-warning'}
