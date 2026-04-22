@@ -2,10 +2,10 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { Folder, X, Plus, LayoutGrid, Columns, Rows, Monitor } from 'lucide-react'
 import { FileBrowser } from '../terminal/FileBrowser'
 import { Host } from '../../../../shared/types'
-import { View } from '../../types'
+import { View, WorkspaceWindowItem } from '../../types'
 import { SplitPane } from '../SplitPane'
 import { PaneLeaf } from '../../types/pane'
-import { useFilePaneManager } from '../../hooks/useFilePaneManager'
+import { FileTab, useFilePaneManager } from '../../hooks/useFilePaneManager'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useFileTransfer } from '../../hooks/useFileTransfer'
 import { FileTransferToast } from '../FileTransferToast'
@@ -17,6 +17,19 @@ interface FilesViewProps {
   setFileBrowserHostAlias: (alias: string) => void
   setActiveView: (v: View) => void
   hosts: Host[]
+  focusFileRequest?: { tabId: string; requestId: number } | null
+  closeFileRequest?: { tabId: string; requestId: number } | null
+  renameFileRequest?: { tabId: string; title: string; requestId: number } | null
+  onFileWindowsChange?: (items: WorkspaceWindowItem[]) => void
+  onActiveFileWindowChange?: (id: string | null) => void
+}
+
+function toFileWindowItem(tab: FileTab): WorkspaceWindowItem {
+  return {
+    id: tab.tabId,
+    title: tab.title || tab.hostAlias,
+    subtitle: tab.hostId === 'local' ? '本机' : tab.hostId
+  }
 }
 
 export function FilesView({
@@ -25,7 +38,12 @@ export function FilesView({
   setFileBrowserHostId,
   setFileBrowserHostAlias,
   setActiveView,
-  hosts
+  hosts,
+  focusFileRequest,
+  closeFileRequest,
+  renameFileRequest,
+  onFileWindowsChange,
+  onActiveFileWindowChange
 }: FilesViewProps): React.ReactElement {
   const paneManager = useFilePaneManager()
   const { confirm, ConfirmDialogComponent } = useConfirm()
@@ -37,30 +55,82 @@ export function FilesView({
 
   const openedHostIdsRef = useRef<Set<string>>(new Set())
   const openFileTabRef = useRef(paneManager.openFileTab)
-  const focusTabRef = useRef(paneManager.focusTab)
+  const focusFileTabRef = useRef<(tabId: string) => void>(() => {})
   const getAllTabsRef = useRef(paneManager.getAllTabs)
+  const emitFileWindowsChangeRef = useRef<() => void>(() => {})
+  const lastFocusRequestId = useRef<number | null>(null)
+  const lastCloseRequestId = useRef<number | null>(null)
+  const lastRenameRequestId = useRef<number | null>(null)
+
+  const emitFileWindowsChange = useCallback(() => {
+    onFileWindowsChange?.(paneManager.getAllTabs().map(toFileWindowItem))
+  }, [onFileWindowsChange, paneManager])
+
+  const syncFileSelection = useCallback(
+    (tabId: string) => {
+      const tab = paneManager.getTabData(tabId)
+      if (!tab) return
+
+      setFileBrowserHostId(tab.hostId)
+      setFileBrowserHostAlias(tab.hostAlias)
+      onActiveFileWindowChange?.(tabId)
+    },
+    [paneManager, setFileBrowserHostId, setFileBrowserHostAlias, onActiveFileWindowChange]
+  )
+
+  const focusFileTab = useCallback(
+    (tabId: string) => {
+      paneManager.focusTab(tabId)
+      syncFileSelection(tabId)
+    },
+    [paneManager, syncFileSelection]
+  )
 
   useEffect(() => {
     openFileTabRef.current = paneManager.openFileTab
-    focusTabRef.current = paneManager.focusTab
+    focusFileTabRef.current = focusFileTab
     getAllTabsRef.current = paneManager.getAllTabs
-  }, [paneManager.openFileTab, paneManager.focusTab, paneManager.getAllTabs])
+    emitFileWindowsChangeRef.current = emitFileWindowsChange
+  }, [paneManager.openFileTab, focusFileTab, paneManager.getAllTabs, emitFileWindowsChange])
 
   useEffect(() => {
     if (!fileBrowserHostId) return
     const allTabs = getAllTabsRef.current()
     const existingTab = allTabs.find((t) => t.hostId === fileBrowserHostId)
     if (existingTab) {
-      focusTabRef.current(existingTab.tabId)
+      focusFileTabRef.current(existingTab.tabId)
     } else {
-      openFileTabRef.current(fileBrowserHostId, fileBrowserHostAlias)
+      const tabId = openFileTabRef.current(fileBrowserHostId, fileBrowserHostAlias)
       openedHostIdsRef.current.add(fileBrowserHostId)
+      onActiveFileWindowChange?.(tabId)
+      emitFileWindowsChangeRef.current()
     }
-  }, [fileBrowserHostId, fileBrowserHostAlias])
+  }, [fileBrowserHostId, fileBrowserHostAlias, onActiveFileWindowChange])
 
-  const activeTab = paneManager
-    .getLeaves()
-    .flatMap((leaf) =>
+  useEffect(() => {
+    if (!focusFileRequest) return
+    if (lastFocusRequestId.current === focusFileRequest.requestId) return
+    lastFocusRequestId.current = focusFileRequest.requestId
+    focusFileTab(focusFileRequest.tabId)
+  }, [focusFileRequest, focusFileTab])
+
+  useEffect(() => {
+    if (!renameFileRequest) return
+    if (lastRenameRequestId.current === renameFileRequest.requestId) return
+    lastRenameRequestId.current = renameFileRequest.requestId
+
+    const tab = paneManager.getTabData(renameFileRequest.tabId)
+    if (!tab) return
+    paneManager.registerTab(renameFileRequest.tabId, { ...tab, title: renameFileRequest.title })
+    emitFileWindowsChange()
+  }, [renameFileRequest, paneManager, emitFileWindowsChange])
+
+  const leaves = paneManager.getLeaves()
+  const leafCount = leaves.length
+  const focusedLeaf = leaves.find((leaf) => leaf.id === paneManager.focusedLeafId)
+  const activeTab =
+    (focusedLeaf?.activeTabId ? paneManager.getTabData(focusedLeaf.activeTabId) : undefined) ??
+    leaves.flatMap((leaf) =>
       leaf.activeTabId ? [paneManager.getTabData(leaf.activeTabId)].filter(Boolean) : []
     )[0]
 
@@ -75,6 +145,38 @@ export function FilesView({
     [paneManager]
   )
 
+  const closeFileTabById = useCallback(
+    (tabId: string) => {
+      const tabData = paneManager.getTabData(tabId)
+      const closingActiveTab = activeTab?.tabId === tabId
+      paneManager.closeFileTab(tabId)
+      if (tabData) {
+        openedHostIdsRef.current.delete(tabData.hostId)
+      }
+      emitFileWindowsChange()
+
+      const remainingTabs = paneManager.getAllTabs()
+      if (remainingTabs.length === 0) {
+        setFileBrowserHostId(null)
+        setFileBrowserHostAlias('')
+        onActiveFileWindowChange?.(null)
+        setActiveView('hosts')
+      } else if (closingActiveTab) {
+        focusFileTab(remainingTabs[0].tabId)
+      }
+    },
+    [
+      paneManager,
+      activeTab,
+      emitFileWindowsChange,
+      setFileBrowserHostId,
+      setFileBrowserHostAlias,
+      onActiveFileWindowChange,
+      setActiveView,
+      focusFileTab
+    ]
+  )
+
   const handleCloseTab = useCallback(
     async (tabId: string) => {
       const ok = await confirm({
@@ -84,21 +186,17 @@ export function FilesView({
         variant: 'danger'
       })
       if (!ok) return
-
-      const tabData = paneManager.getTabData(tabId)
-      paneManager.closeFileTab(tabId)
-      if (tabData) {
-        openedHostIdsRef.current.delete(tabData.hostId)
-      }
-
-      if (paneManager.isEmpty) {
-        setFileBrowserHostId(null)
-        setFileBrowserHostAlias('')
-        setActiveView('hosts')
-      }
+      closeFileTabById(tabId)
     },
-    [confirm, paneManager, setFileBrowserHostId, setFileBrowserHostAlias, setActiveView]
+    [confirm, closeFileTabById]
   )
+
+  useEffect(() => {
+    if (!closeFileRequest) return
+    if (lastCloseRequestId.current === closeFileRequest.requestId) return
+    lastCloseRequestId.current = closeFileRequest.requestId
+    closeFileTabById(closeFileRequest.tabId)
+  }, [closeFileRequest, closeFileTabById])
 
   const handleDisconnectAll = useCallback(async () => {
     const ok = await confirm({
@@ -113,10 +211,20 @@ export function FilesView({
       paneManager.closeFileTab(tab.tabId)
     }
     openedHostIdsRef.current.clear()
+    emitFileWindowsChange()
     setFileBrowserHostId(null)
     setFileBrowserHostAlias('')
+    onActiveFileWindowChange?.(null)
     setActiveView('hosts')
-  }, [confirm, paneManager, setFileBrowserHostId, setFileBrowserHostAlias, setActiveView])
+  }, [
+    confirm,
+    paneManager,
+    emitFileWindowsChange,
+    setFileBrowserHostId,
+    setFileBrowserHostAlias,
+    onActiveFileWindowChange,
+    setActiveView
+  ])
 
   const handleTabDragStart = useCallback((e: React.DragEvent, tabId: string) => {
     e.dataTransfer.setData('text/plain', tabId)
@@ -158,17 +266,19 @@ export function FilesView({
       const edge = dragOverEdge
       if (edge) {
         const direction = edge === 'top' || edge === 'bottom' ? 'vertical' : 'horizontal'
-        paneManager.splitPaneWithTab(targetPaneId, direction, tabId)
+        const placement = edge === 'top' || edge === 'left' ? 'before' : 'after'
+        paneManager.splitPaneWithTab(targetPaneId, direction, tabId, placement)
       } else {
         const sourceLeaf = paneManager.findPaneForTab(tabId)
         if (sourceLeaf && sourceLeaf.id !== targetPaneId) {
           paneManager.moveTab(tabId, sourceLeaf.id, targetPaneId)
         }
       }
+      syncFileSelection(tabId)
       setDragOverPaneId(null)
       setDragOverEdge(null)
     },
-    [dragOverEdge, paneManager]
+    [dragOverEdge, paneManager, syncFileSelection]
   )
 
   const handleOpenHost = useCallback(
@@ -176,19 +286,31 @@ export function FilesView({
       const allTabs = paneManager.getAllTabs()
       const existingTab = allTabs.find((t) => t.hostId === host.id)
       if (existingTab) {
-        paneManager.focusTab(existingTab.tabId)
+        focusFileTab(existingTab.tabId)
       } else {
-        paneManager.openFileTab(host.id, host.alias)
+        const tabId = paneManager.openFileTab(host.id, host.alias)
         openedHostIdsRef.current.add(host.id)
+        setFileBrowserHostId(host.id)
+        setFileBrowserHostAlias(host.alias)
+        onActiveFileWindowChange?.(tabId)
+        emitFileWindowsChange()
       }
       setShowHostPicker(false)
     },
-    [paneManager]
+    [
+      paneManager,
+      focusFileTab,
+      setFileBrowserHostId,
+      setFileBrowserHostAlias,
+      onActiveFileWindowChange,
+      emitFileWindowsChange
+    ]
   )
 
   const renderLeaf = useCallback(
     (leaf: PaneLeaf) => {
       const tabs = paneManager.getLeafTabs(leaf)
+      const showPaneTitle = tabs.length > 0 && (tabs.length > 1 || leafCount > 1)
 
       return (
         <div
@@ -200,14 +322,14 @@ export function FilesView({
           onDragLeave={handlePaneDragLeave}
           onDrop={(e) => handlePaneDrop(e, leaf.id)}
         >
-          {tabs.length > 0 && (
+          {showPaneTitle && (
             <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted px-1 pt-0.5 no-scrollbar">
               {tabs.map((tab) => (
                 <div
                   key={tab.tabId}
                   draggable
                   onDragStart={(e) => handleTabDragStart(e, tab.tabId)}
-                  onClick={() => paneManager.focusTab(tab.tabId)}
+                  onClick={() => focusFileTab(tab.tabId)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold cursor-grab transition-colors border-b-2 whitespace-nowrap ${
                     leaf.activeTabId === tab.tabId
                       ? 'text-workspace-foreground border-accent bg-workspace'
@@ -215,7 +337,7 @@ export function FilesView({
                   }`}
                 >
                   <Folder size={10} />
-                  <span>{tab.hostAlias}</span>
+                  <span>{tab.title || tab.hostAlias}</span>
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
@@ -288,13 +410,15 @@ export function FilesView({
     [
       paneManager,
       handleCloseTab,
+      focusFileTab,
       handleTabDragStart,
       handlePaneDragOver,
       handlePaneDragLeave,
       handlePaneDrop,
       dragOverPaneId,
       dragOverEdge,
-      startTransfer
+      startTransfer,
+      leafCount
     ]
   )
 
@@ -313,7 +437,7 @@ export function FilesView({
             <div className="w-px h-4 bg-workspace-border" />
             <Folder size={13} className="text-accent" />
             <span className="text-xs font-semibold font-mono text-workspace-foreground">
-              {activeTab?.hostAlias || '文件管理'}
+              {activeTab?.title || activeTab?.hostAlias || '文件管理'}
             </span>
             <span className="text-xs text-workspace-muted-foreground font-mono">文件管理</span>
           </div>
@@ -411,7 +535,7 @@ export function FilesView({
                 <div
                   key={tab.tabId}
                   onClick={() => {
-                    paneManager.focusTab(tab.tabId)
+                    focusFileTab(tab.tabId)
                     setShowFileList(false)
                   }}
                   className="flex cursor-pointer items-center gap-3 rounded-xl border border-white/70 bg-white/60 p-3 transition hover:border-accent/25 hover:bg-accent-soft/45"
@@ -419,7 +543,7 @@ export function FilesView({
                   <Folder size={16} className="text-accent" />
                   <div className="flex-1 min-w-0">
                     <div className="truncate text-xs font-semibold text-workspace-foreground">
-                      {tab.hostAlias}
+                      {tab.title || tab.hostAlias}
                     </div>
                     <div className="font-mono text-xs text-workspace-muted-foreground">
                       {tab.hostId === 'local' ? '本机' : tab.hostId}

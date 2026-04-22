@@ -1,9 +1,32 @@
-import { useReducer, useCallback, useState } from 'react'
+import { useReducer, useCallback, useState, type Dispatch, type SetStateAction } from 'react'
 import { PaneNode, PaneLeaf, PaneSplit } from '../types/pane'
 
 let nextId = 1
-function genId() {
+function genId(): string {
   return `pane-${nextId++}`
+}
+
+type SplitDirection = 'horizontal' | 'vertical'
+type SplitPlacement = 'before' | 'after'
+
+interface PaneTreeController {
+  root: PaneNode
+  focusedLeafId: string | null
+  setFocusedLeafId: Dispatch<SetStateAction<string | null>>
+  addTab: (tabId: string, targetPaneId?: string) => void
+  removeTab: (tabId: string) => void
+  setActiveTab: (paneId: string, tabId: string) => void
+  splitPane: (
+    paneId: string,
+    direction: SplitDirection,
+    tabIdToMove: string,
+    placement?: SplitPlacement
+  ) => void
+  closePane: (paneId: string) => void
+  resizeSplit: (splitId: string, sizes: number[]) => void
+  moveTabToPane: (tabId: string, fromPaneId: string, toPaneId: string) => void
+  findPaneForTab: (tabId: string) => PaneLeaf | null
+  getLeaves: () => PaneLeaf[]
 }
 
 type PaneAction =
@@ -13,8 +36,11 @@ type PaneAction =
   | {
       type: 'SPLIT_PANE'
       paneId: string
-      direction: 'horizontal' | 'vertical'
-      tabIdToMove?: string
+      direction: SplitDirection
+      tabIdToMove: string
+      placement: SplitPlacement
+      newLeafId: string
+      newSplitId: string
     }
   | { type: 'CLOSE_PANE'; paneId: string }
   | { type: 'RESIZE_SPLIT'; splitId: string; sizes: number[] }
@@ -130,20 +156,25 @@ function paneReducer(state: PaneNode, action: PaneAction): PaneNode {
       const node = findNode(newRoot, action.paneId)
       if (!node || node.type !== 'leaf') return state
 
-      const newLeafId = genId()
-      const newSplitId = genId()
+      const sourceLeaf = findLeafForTab(newRoot, action.tabIdToMove)
+      if (!sourceLeaf) return state
+
+      const isSameLeaf = sourceLeaf.id === node.id
+      if (isSameLeaf && node.tabIds.length <= 1) return state
 
       let originalTabIds = [...node.tabIds]
       let originalActiveTabId = node.activeTabId
-      let newLeafTabIds: string[] = []
-      let newLeafActiveTabId: string | null = null
 
-      if (action.tabIdToMove && originalTabIds.includes(action.tabIdToMove)) {
+      if (isSameLeaf) {
         originalTabIds = originalTabIds.filter((id) => id !== action.tabIdToMove)
-        newLeafTabIds = [action.tabIdToMove]
-        newLeafActiveTabId = action.tabIdToMove
         if (originalActiveTabId === action.tabIdToMove) {
           originalActiveTabId = originalTabIds.length > 0 ? originalTabIds[0] : null
+        }
+      } else {
+        sourceLeaf.tabIds = sourceLeaf.tabIds.filter((id) => id !== action.tabIdToMove)
+        if (sourceLeaf.activeTabId === action.tabIdToMove) {
+          sourceLeaf.activeTabId =
+            sourceLeaf.tabIds.length > 0 ? sourceLeaf.tabIds[sourceLeaf.tabIds.length - 1] : null
         }
       }
 
@@ -156,25 +187,36 @@ function paneReducer(state: PaneNode, action: PaneAction): PaneNode {
 
       const newLeaf: PaneLeaf = {
         type: 'leaf',
-        id: newLeafId,
-        activeTabId: newLeafActiveTabId,
-        tabIds: newLeafTabIds
+        id: action.newLeafId,
+        activeTabId: action.tabIdToMove,
+        tabIds: [action.tabIdToMove]
       }
+
+      const children =
+        action.placement === 'before' ? [newLeaf, originalLeaf] : [originalLeaf, newLeaf]
 
       const split: PaneSplit = {
         type: 'split',
-        id: newSplitId,
+        id: action.newSplitId,
         direction: action.direction,
-        children: [originalLeaf, newLeaf],
+        children,
         sizes: [50, 50]
       }
 
       const parent = findParent(newRoot, action.paneId)
-      if (!parent) return split
+      let updatedRoot: PaneNode = newRoot
+      if (!parent) {
+        updatedRoot = split
+      } else {
+        const idx = parent.children.findIndex((c) => c.id === action.paneId)
+        parent.children[idx] = split
+      }
 
-      const idx = parent.children.findIndex((c) => c.id === action.paneId)
-      parent.children[idx] = split
-      return newRoot
+      if (!isSameLeaf && sourceLeaf.tabIds.length === 0) {
+        return removeNode(updatedRoot, sourceLeaf.id)
+      }
+
+      return updatedRoot
     }
 
     case 'CLOSE_PANE': {
@@ -212,7 +254,7 @@ function paneReducer(state: PaneNode, action: PaneAction): PaneNode {
   }
 }
 
-export function usePaneTree() {
+export function usePaneTree(): PaneTreeController {
   const [root, dispatch] = useReducer(paneReducer, {
     type: 'leaf' as const,
     id: genId(),
@@ -222,15 +264,18 @@ export function usePaneTree() {
 
   const [focusedLeafId, setFocusedLeafId] = useState<string | null>(null)
 
-  const addTab = useCallback((tabId: string, targetPaneId?: string) => {
-    dispatch({ type: 'ADD_TAB', tabId, targetPaneId })
-    if (targetPaneId) {
-      setFocusedLeafId(targetPaneId)
-    } else {
-      const leaves = getAllLeaves(root)
-      if (leaves.length > 0) setFocusedLeafId(leaves[0].id)
-    }
-  }, [root])
+  const addTab = useCallback(
+    (tabId: string, targetPaneId?: string) => {
+      dispatch({ type: 'ADD_TAB', tabId, targetPaneId })
+      if (targetPaneId) {
+        setFocusedLeafId(targetPaneId)
+      } else {
+        const leaves = getAllLeaves(root)
+        if (leaves.length > 0) setFocusedLeafId(leaves[0].id)
+      }
+    },
+    [root]
+  )
 
   const removeTab = useCallback((tabId: string) => {
     dispatch({ type: 'REMOVE_TAB', tabId })
@@ -242,10 +287,30 @@ export function usePaneTree() {
   }, [])
 
   const splitPane = useCallback(
-    (paneId: string, direction: 'horizontal' | 'vertical', tabIdToMove?: string) => {
-      dispatch({ type: 'SPLIT_PANE', paneId, direction, tabIdToMove })
+    (
+      paneId: string,
+      direction: SplitDirection,
+      tabIdToMove: string,
+      placement: SplitPlacement = 'after'
+    ) => {
+      const targetLeaf = findNode(root, paneId)
+      const sourceLeaf = findLeafForTab(root, tabIdToMove)
+      if (!targetLeaf || targetLeaf.type !== 'leaf' || !sourceLeaf) return
+      if (sourceLeaf.id === paneId && sourceLeaf.tabIds.length <= 1) return
+
+      const newLeafId = genId()
+      dispatch({
+        type: 'SPLIT_PANE',
+        paneId,
+        direction,
+        tabIdToMove,
+        placement,
+        newLeafId,
+        newSplitId: genId()
+      })
+      setFocusedLeafId(newLeafId)
     },
-    []
+    [root]
   )
 
   const closePane = useCallback((paneId: string) => {

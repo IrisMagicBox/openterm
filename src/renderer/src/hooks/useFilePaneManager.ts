@@ -1,19 +1,47 @@
-import { useCallback, useMemo, useRef } from 'react'
-import { PaneLeaf } from '../types/pane'
+import { useCallback, useMemo, useRef, type Dispatch, type SetStateAction } from 'react'
+import { PaneLeaf, PaneNode } from '../types/pane'
 import { usePaneTree } from './usePaneTree'
 
 export interface FileTab {
   hostId: string
   hostAlias: string
   tabId: string
+  title?: string
 }
 
 let nextFileTabId = 1
-function genFileTabId() {
+function genFileTabId(): string {
   return `ftab-${nextFileTabId++}`
 }
 
-export function useFilePaneManager() {
+interface FilePaneManager {
+  root: PaneNode
+  openFileTab: (hostId: string, hostAlias: string, targetPaneId?: string) => string
+  closeFileTab: (tabId: string) => void
+  focusTab: (tabId: string) => void
+  splitPaneWithTab: (
+    paneId: string,
+    direction: 'horizontal' | 'vertical',
+    tabIdToMove: string,
+    placement?: 'before' | 'after'
+  ) => void
+  moveTab: (tabId: string, fromPaneId: string, toPaneId: string) => void
+  closePaneById: (paneId: string) => void
+  resizeSplit: (splitId: string, sizes: number[]) => void
+  registerTab: (tabId: string, data: FileTab) => void
+  unregisterTab: (tabId: string) => void
+  getTabData: (tabId: string) => FileTab | undefined
+  getAllTabs: () => FileTab[]
+  getLeafTabs: (leaf: PaneLeaf) => FileTab[]
+  getActiveTab: (leaf: PaneLeaf) => FileTab | undefined
+  getLeaves: () => PaneLeaf[]
+  findPaneForTab: (tabId: string) => PaneLeaf | null
+  focusedLeafId: string | null
+  setFocusedLeafId: Dispatch<SetStateAction<string | null>>
+  isEmpty: boolean
+}
+
+export function useFilePaneManager(): FilePaneManager {
   const {
     root,
     addTab,
@@ -72,8 +100,13 @@ export function useFilePaneManager() {
   )
 
   const splitPaneWithTab = useCallback(
-    (paneId: string, direction: 'horizontal' | 'vertical', tabIdToMove?: string) => {
-      splitPane(paneId, direction, tabIdToMove)
+    (
+      paneId: string,
+      direction: 'horizontal' | 'vertical',
+      tabIdToMove: string,
+      placement: 'before' | 'after' = 'after'
+    ) => {
+      splitPane(paneId, direction, tabIdToMove, placement)
     },
     [splitPane]
   )
@@ -108,7 +141,7 @@ export function useFilePaneManager() {
   const isEmpty = useMemo(() => {
     const leaves = getLeaves()
     return leaves.length === 1 && leaves[0].tabIds.length === 0
-  }, [root, getLeaves])
+  }, [getLeaves])
 
   return {
     root,

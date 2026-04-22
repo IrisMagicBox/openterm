@@ -1,8 +1,29 @@
-import { useState, useEffect } from 'react'
-import { Host } from '../../../shared/types'
+import { useState, useEffect, type Dispatch, type SetStateAction } from 'react'
+import type { TerminalTab } from '../types'
 
-export function useTerminalManager() {
-  const [terminalTabs, setTerminalTabs] = useState<{ host: Host; sessionId: string }[]>([])
+interface TerminalManagerState {
+  terminalTabs: TerminalTab[]
+  setTerminalTabs: Dispatch<SetStateAction<TerminalTab[]>>
+  activeTerminalTabIndex: number
+  setActiveTerminalTabIndex: Dispatch<SetStateAction<number>>
+  terminalSessionId: string | null
+  setTerminalSessionId: Dispatch<SetStateAction<string | null>>
+  terminalFontSize: number
+  setTerminalFontSize: Dispatch<SetStateAction<number>>
+  terminalWidth: number
+  setTerminalWidth: Dispatch<SetStateAction<number>>
+  commandHistoryOpen: boolean
+  setCommandHistoryOpen: Dispatch<SetStateAction<boolean>>
+  sidebarCollapsed: boolean
+  setSidebarCollapsed: Dispatch<SetStateAction<boolean>>
+  fileBrowserHostId: string | null
+  setFileBrowserHostId: Dispatch<SetStateAction<string | null>>
+  fileBrowserHostAlias: string
+  setFileBrowserHostAlias: Dispatch<SetStateAction<string>>
+}
+
+export function useTerminalManager(): TerminalManagerState {
+  const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([])
   const [activeTerminalTabIndex, setActiveTerminalTabIndex] = useState(0)
   const [terminalSessionId, setTerminalSessionId] = useState<string | null>(null)
   const [terminalFontSize, setTerminalFontSize] = useState(13)
@@ -13,7 +34,7 @@ export function useTerminalManager() {
   const [fileBrowserHostAlias, setFileBrowserHostAlias] = useState('')
 
   useEffect(() => {
-    const handleZoomKey = (e: KeyboardEvent) => {
+    const handleZoomKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey) {
         if (e.key === '=' || e.key === '+' || e.code === 'Equal' || e.code === 'NumpadAdd') {
           e.preventDefault()
@@ -33,7 +54,7 @@ export function useTerminalManager() {
       }
     }
 
-    const handleCommandHistoryKey = (e: KeyboardEvent) => {
+    const handleCommandHistoryKey = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'r') {
         e.preventDefault()
         setCommandHistoryOpen(true)

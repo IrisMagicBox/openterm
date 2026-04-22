@@ -1,7 +1,7 @@
 import { Plus, Search, Server, Monitor } from 'lucide-react'
 import { HostCard } from '../hosts/HostCard'
 import { Host, Topic } from '../../../../shared/types'
-import { View } from '../../types'
+import { TerminalTab, View } from '../../types'
 import { LOCAL_HOST } from '../../constants'
 import { useConfirm } from '../../hooks/useConfirm'
 import { Button, IconButton, Input, PageHeader, Surface } from '../ui'
@@ -14,7 +14,7 @@ interface HostsViewProps {
   selectedTopic: { id: string } | null
   setSelectedHost: (h: Host | null) => void
   setTerminalSessionId: (id: string | null) => void
-  setTerminalTabs: React.Dispatch<React.SetStateAction<{ host: Host; sessionId: string }[]>>
+  setTerminalTabs: React.Dispatch<React.SetStateAction<TerminalTab[]>>
   setActiveTerminalTabIndex: (i: number) => void
   setActiveView: (v: View) => void
   topics: Topic[]

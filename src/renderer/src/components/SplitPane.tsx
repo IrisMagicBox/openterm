@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PaneNode, PaneLeaf, PaneSplit } from '../types/pane'
 
 interface SplitPaneProps {
@@ -8,9 +8,14 @@ interface SplitPaneProps {
   minSize?: number
 }
 
-export function SplitPane({ node, renderLeaf, onResizeSplit, minSize = 80 }: SplitPaneProps) {
+export function SplitPane({
+  node,
+  renderLeaf,
+  onResizeSplit,
+  minSize = 80
+}: SplitPaneProps): React.ReactElement {
   if (node.type === 'leaf') {
-    return <div className="flex-1 overflow-hidden">{renderLeaf(node)}</div>
+    return <div className="h-full w-full min-h-0 min-w-0 overflow-hidden">{renderLeaf(node)}</div>
   }
 
   return (
@@ -30,7 +35,12 @@ interface SplitContainerProps {
   minSize: number
 }
 
-function SplitContainer({ split, renderLeaf, onResizeSplit, minSize }: SplitContainerProps) {
+function SplitContainer({
+  split,
+  renderLeaf,
+  onResizeSplit,
+  minSize
+}: SplitContainerProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
 
@@ -38,6 +48,7 @@ function SplitContainer({ split, renderLeaf, onResizeSplit, minSize }: SplitCont
 
   const handleMouseDown = useCallback((index: number, e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     setDraggingIndex(index)
   }, [])
 
@@ -47,6 +58,8 @@ function SplitContainer({ split, renderLeaf, onResizeSplit, minSize }: SplitCont
 
       const rect = containerRef.current.getBoundingClientRect()
       const totalSize = isHorizontal ? rect.width : rect.height
+      if (totalSize <= 0) return
+
       const mousePos = isHorizontal ? e.clientX - rect.left : e.clientY - rect.top
 
       const sizes = [...split.sizes]
@@ -58,14 +71,19 @@ function SplitContainer({ split, renderLeaf, onResizeSplit, minSize }: SplitCont
         leftSize -= sizes[i]
       }
 
-      const clampedLeft = Math.max(minPercent, Math.min(100 - minPercent, leftSize))
+      const pairTotal = sizes[draggingIndex] + sizes[draggingIndex + 1]
+      const pairMinPercent = Math.min(minPercent, pairTotal / 2)
+      const clampedLeft = Math.max(pairMinPercent, Math.min(pairTotal - pairMinPercent, leftSize))
       const diff = clampedLeft - sizes[draggingIndex]
 
       const newSizes = [...sizes]
       newSizes[draggingIndex] += diff
       newSizes[draggingIndex + 1] -= diff
 
-      if (newSizes[draggingIndex] >= minPercent && newSizes[draggingIndex + 1] >= minPercent) {
+      if (
+        newSizes[draggingIndex] >= pairMinPercent &&
+        newSizes[draggingIndex + 1] >= pairMinPercent
+      ) {
         onResizeSplit(split.id, newSizes)
       }
     },
@@ -76,19 +94,35 @@ function SplitContainer({ split, renderLeaf, onResizeSplit, minSize }: SplitCont
     setDraggingIndex(null)
   }, [])
 
+  useEffect(() => {
+    if (draggingIndex === null) return
+
+    const previousCursor = document.body.style.cursor
+    const previousUserSelect = document.body.style.userSelect
+    document.body.style.cursor = isHorizontal ? 'col-resize' : 'row-resize'
+    document.body.style.userSelect = 'none'
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = previousCursor
+      document.body.style.userSelect = previousUserSelect
+    }
+  }, [draggingIndex, handleMouseMove, handleMouseUp, isHorizontal])
+
   return (
     <div
       ref={containerRef}
-      className={`flex ${isHorizontal ? 'flex-row' : 'flex-col'} flex-1 overflow-hidden`}
-      onMouseMove={draggingIndex !== null ? (e) => handleMouseMove(e.nativeEvent) : undefined}
-      onMouseUp={draggingIndex !== null ? () => handleMouseUp() : undefined}
-      onMouseLeave={draggingIndex !== null ? () => handleMouseUp() : undefined}
+      className={`flex ${isHorizontal ? 'flex-row' : 'flex-col'} h-full w-full min-h-0 min-w-0 flex-1 overflow-hidden`}
     >
       {split.children.map((child, index) => (
         <div key={child.id} className="contents">
           <div
             style={{
-              flex: `${split.sizes[index]} 0 0`,
+              flex: `${split.sizes[index]} 1 0`,
               overflow: 'hidden',
               minWidth: minSize,
               minHeight: minSize
@@ -108,6 +142,8 @@ function SplitContainer({ split, renderLeaf, onResizeSplit, minSize }: SplitCont
           {index < split.children.length - 1 && (
             <div
               onMouseDown={(e) => handleMouseDown(index, e)}
+              role="separator"
+              aria-orientation={isHorizontal ? 'vertical' : 'horizontal'}
               className={`${
                 isHorizontal
                   ? 'w-1.5 cursor-col-resize hover:bg-accent/35 active:bg-accent/50'
@@ -119,11 +155,9 @@ function SplitContainer({ split, renderLeaf, onResizeSplit, minSize }: SplitCont
       ))}
       {draggingIndex !== null && (
         <div
-          className="fixed inset-0 z-[90]"
-          onMouseMove={(e) => {
-            handleMouseMove(e.nativeEvent)
-          }}
-          onMouseUp={() => setDraggingIndex(null)}
+          className={`pointer-events-none fixed inset-0 z-[90] ${
+            isHorizontal ? 'cursor-col-resize' : 'cursor-row-resize'
+          }`}
         />
       )}
     </div>

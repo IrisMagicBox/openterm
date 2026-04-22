@@ -1,14 +1,42 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef, type Dispatch, type SetStateAction } from 'react'
 import { Host } from '../../../shared/types'
-import { PaneLeaf } from '../types/pane'
+import { PaneLeaf, PaneNode } from '../types/pane'
 import { usePaneTree } from './usePaneTree'
 
 export interface TerminalTab {
   host: Host
   sessionId: string
+  title?: string
 }
 
-export function useTerminalPaneManager() {
+interface TerminalPaneManager {
+  root: PaneNode
+  openTerminal: (host: Host, sessionId: string, targetPaneId?: string) => string
+  closeTerminalTab: (tabId: string) => void
+  focusTab: (tabId: string) => void
+  splitPaneWithTab: (
+    paneId: string,
+    direction: 'horizontal' | 'vertical',
+    tabIdToMove: string,
+    placement?: 'before' | 'after'
+  ) => void
+  moveTab: (tabId: string, fromPaneId: string, toPaneId: string) => void
+  closePaneById: (paneId: string) => void
+  resizeSplit: (splitId: string, sizes: number[]) => void
+  registerTab: (tabId: string, data: TerminalTab) => void
+  unregisterTab: (tabId: string) => void
+  getTabData: (tabId: string) => TerminalTab | undefined
+  getAllTabs: () => TerminalTab[]
+  getLeafTabs: (leaf: PaneLeaf) => TerminalTab[]
+  getActiveTab: (leaf: PaneLeaf) => TerminalTab | undefined
+  getLeaves: () => PaneLeaf[]
+  findPaneForTab: (tabId: string) => PaneLeaf | null
+  focusedLeafId: string | null
+  setFocusedLeafId: Dispatch<SetStateAction<string | null>>
+  isEmpty: boolean
+}
+
+export function useTerminalPaneManager(): TerminalPaneManager {
   const {
     root,
     addTab,
@@ -67,8 +95,13 @@ export function useTerminalPaneManager() {
   )
 
   const splitPaneWithTab = useCallback(
-    (paneId: string, direction: 'horizontal' | 'vertical', tabIdToMove?: string) => {
-      splitPane(paneId, direction, tabIdToMove)
+    (
+      paneId: string,
+      direction: 'horizontal' | 'vertical',
+      tabIdToMove: string,
+      placement: 'before' | 'after' = 'after'
+    ) => {
+      splitPane(paneId, direction, tabIdToMove, placement)
     },
     [splitPane]
   )
@@ -103,7 +136,7 @@ export function useTerminalPaneManager() {
   const isEmpty = useMemo(() => {
     const leaves = getLeaves()
     return leaves.length === 1 && leaves[0].tabIds.length === 0
-  }, [root, getLeaves])
+  }, [getLeaves])
 
   return {
     root,

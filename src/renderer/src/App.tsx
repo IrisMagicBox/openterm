@@ -1,4 +1,4 @@
-import { type JSX, useState, useEffect } from 'react'
+import { type JSX, useState, useEffect, useMemo } from 'react'
 import { SettingsPage } from './features/settings'
 import { ChatPanel, ChatEmptyState } from './features/chat'
 import { AddHostModal, HostsView } from './features/hosts'
@@ -15,11 +15,34 @@ import { useHosts } from './hooks/useHosts'
 import { useTopics } from './hooks/useTopics'
 import { useAgentSessions } from './hooks/useAgentSessions'
 import { useTerminalManager } from './hooks/useTerminalManager'
-import { View } from './types'
+import { View, WorkspaceWindowItem } from './types'
 import type { Topic } from '../../shared/types'
 
 export default function App(): JSX.Element {
   const [activeView, setActiveView] = useState<View>('hosts')
+  const [fileWindows, setFileWindows] = useState<WorkspaceWindowItem[]>([])
+  const [activeFileWindowId, setActiveFileWindowId] = useState<string | null>(null)
+  const [terminalFocusRequest, setTerminalFocusRequest] = useState<{
+    sessionId: string
+    requestId: number
+  } | null>(null)
+  const [terminalCloseRequest, setTerminalCloseRequest] = useState<{
+    sessionId: string
+    requestId: number
+  } | null>(null)
+  const [fileFocusRequest, setFileFocusRequest] = useState<{
+    tabId: string
+    requestId: number
+  } | null>(null)
+  const [fileCloseRequest, setFileCloseRequest] = useState<{
+    tabId: string
+    requestId: number
+  } | null>(null)
+  const [fileRenameRequest, setFileRenameRequest] = useState<{
+    tabId: string
+    title: string
+    requestId: number
+  } | null>(null)
 
   const { debugLogs, showDebug, setShowDebug, clearDebugLogs } = useDebug()
 
@@ -100,6 +123,19 @@ export default function App(): JSX.Element {
     loadTopics()
   }, [loadHosts, loadTopics])
 
+  const terminalWindows = useMemo<WorkspaceWindowItem[]>(
+    () =>
+      terminalTabs.map(({ host, sessionId, title }) => ({
+        id: sessionId,
+        title: title || host.alias,
+        subtitle:
+          host.id === 'local'
+            ? '本机'
+            : `${host.username}@${host.ip}${host.port && host.port !== 22 ? `:${host.port}` : ''}`
+      })),
+    [terminalTabs]
+  )
+
   const handleCreateLocalAgentTopic = async (): Promise<Topic> => {
     try {
       const topic = await createTopic(undefined, ['local'])
@@ -139,6 +175,34 @@ export default function App(): JSX.Element {
           onCommitRenameTopic={handleCommitRenameTopic}
           onDeleteTopic={handleDeleteTopic}
           setPrefilledText={setPrefilledText}
+          terminalWindows={terminalWindows}
+          fileWindows={fileWindows}
+          activeTerminalId={terminalSessionId}
+          activeFileWindowId={activeFileWindowId}
+          onSelectTerminalWindow={(id) => {
+            setActiveView('terminal')
+            setTerminalSessionId(id)
+            setTerminalFocusRequest({ sessionId: id, requestId: Date.now() })
+          }}
+          onSelectFileWindow={(id) => {
+            setActiveView('files')
+            setActiveFileWindowId(id)
+            setFileFocusRequest({ tabId: id, requestId: Date.now() })
+          }}
+          onRenameTerminalWindow={(id, title) => {
+            setTerminalTabs((prev) =>
+              prev.map((tab) => (tab.sessionId === id ? { ...tab, title } : tab))
+            )
+          }}
+          onRenameFileWindow={(id, title) => {
+            setFileRenameRequest({ tabId: id, title, requestId: Date.now() })
+          }}
+          onDeleteTerminalWindow={(id) => {
+            setTerminalCloseRequest({ sessionId: id, requestId: Date.now() })
+          }}
+          onDeleteFileWindow={(id) => {
+            setFileCloseRequest({ tabId: id, requestId: Date.now() })
+          }}
         />
 
         <main className="relative flex flex-1 flex-col overflow-hidden bg-surface">
@@ -182,14 +246,12 @@ export default function App(): JSX.Element {
               setFileBrowserHostId={setFileBrowserHostId}
               fileBrowserHostAlias={fileBrowserHostAlias}
               setFileBrowserHostAlias={setFileBrowserHostAlias}
+              focusTerminalRequest={terminalFocusRequest}
+              closeTerminalRequest={terminalCloseRequest}
             />
           </div>
 
-          <div
-            className={
-              activeView === 'files' && fileBrowserHostId ? 'flex-1 flex flex-col' : 'hidden'
-            }
-          >
+          <div className={activeView === 'files' ? 'flex-1 flex flex-col' : 'hidden'}>
             <FilesView
               fileBrowserHostId={fileBrowserHostId || ''}
               fileBrowserHostAlias={fileBrowserHostAlias}
@@ -197,6 +259,11 @@ export default function App(): JSX.Element {
               setFileBrowserHostAlias={setFileBrowserHostAlias}
               setActiveView={setActiveView}
               hosts={hosts}
+              focusFileRequest={fileFocusRequest}
+              closeFileRequest={fileCloseRequest}
+              renameFileRequest={fileRenameRequest}
+              onFileWindowsChange={setFileWindows}
+              onActiveFileWindowChange={setActiveFileWindowId}
             />
           </div>
 

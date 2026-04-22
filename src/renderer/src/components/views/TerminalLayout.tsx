@@ -27,20 +27,27 @@ interface TerminalLayoutProps {
   setFileBrowserHostId: (id: string | null) => void
   fileBrowserHostAlias: string
   setFileBrowserHostAlias: (alias: string) => void
+  focusTerminalRequest?: { sessionId: string; requestId: number } | null
+  closeTerminalRequest?: { sessionId: string; requestId: number } | null
 }
 
 export function TerminalLayout({
   terminalTabs: legacyTabs,
   setTerminalTabs: setLegacyTabs,
+  setActiveTerminalTabIndex,
   selectedHost,
   setSelectedHost,
+  terminalSessionId,
+  setTerminalSessionId,
   terminalFontSize,
   setTerminalFontSize,
   setActiveView,
   fileBrowserHostId,
   setFileBrowserHostId,
   fileBrowserHostAlias,
-  setFileBrowserHostAlias
+  setFileBrowserHostAlias,
+  focusTerminalRequest,
+  closeTerminalRequest
 }: TerminalLayoutProps): React.ReactElement {
   const paneManager = useTerminalPaneManager()
   const { confirm, ConfirmDialogComponent } = useConfirm()
@@ -51,25 +58,70 @@ export function TerminalLayout({
 
   const syncedSessionIds = useRef<Set<string>>(new Set())
   const openTerminalRef = useRef(paneManager.openTerminal)
+  const registerTerminalRef = useRef(paneManager.registerTab)
+  const lastFocusRequestId = useRef<number | null>(null)
+  const lastCloseRequestId = useRef<number | null>(null)
 
   useEffect(() => {
     openTerminalRef.current = paneManager.openTerminal
-  }, [paneManager.openTerminal])
+    registerTerminalRef.current = paneManager.registerTab
+  }, [paneManager.openTerminal, paneManager.registerTab])
 
   useEffect(() => {
     for (const tab of legacyTabs) {
       if (!syncedSessionIds.current.has(tab.sessionId)) {
         syncedSessionIds.current.add(tab.sessionId)
         openTerminalRef.current(tab.host, tab.sessionId)
+      } else {
+        registerTerminalRef.current(tab.sessionId, tab)
       }
     }
   }, [legacyTabs])
 
-  const activeTab = paneManager
-    .getLeaves()
-    .flatMap((leaf) =>
-      leaf.activeTabId ? [paneManager.getTabData(leaf.activeTabId)].filter(Boolean) : []
-    )[0]
+  const syncTerminalSelection = useCallback(
+    (sessionId: string) => {
+      const tab = paneManager.getTabData(sessionId)
+      if (!tab) return
+
+      setTerminalSessionId(sessionId)
+      setSelectedHost(tab.host)
+
+      const tabIndex = legacyTabs.findIndex((legacyTab) => legacyTab.sessionId === sessionId)
+      if (tabIndex >= 0) {
+        setActiveTerminalTabIndex(tabIndex)
+      }
+    },
+    [paneManager, setTerminalSessionId, setSelectedHost, legacyTabs, setActiveTerminalTabIndex]
+  )
+
+  const focusTerminalTab = useCallback(
+    (sessionId: string) => {
+      paneManager.focusTab(sessionId)
+      syncTerminalSelection(sessionId)
+    },
+    [paneManager, syncTerminalSelection]
+  )
+
+  useEffect(() => {
+    if (!focusTerminalRequest) return
+    if (lastFocusRequestId.current === focusTerminalRequest.requestId) return
+    lastFocusRequestId.current = focusTerminalRequest.requestId
+    focusTerminalTab(focusTerminalRequest.sessionId)
+  }, [focusTerminalRequest, focusTerminalTab])
+
+  const leaves = paneManager.getLeaves()
+  const leafCount = leaves.length
+  const focusedLeaf = leaves.find((leaf) => leaf.id === paneManager.focusedLeafId)
+  const activeTab = (() => {
+    const tab =
+      (focusedLeaf?.activeTabId ? paneManager.getTabData(focusedLeaf.activeTabId) : undefined) ??
+      leaves.flatMap((leaf) =>
+        leaf.activeTabId ? [paneManager.getTabData(leaf.activeTabId)].filter(Boolean) : []
+      )[0]
+
+    if (!tab) return undefined
+    return legacyTabs.find((legacyTab) => legacyTab.sessionId === tab.sessionId) ?? tab
+  })()
 
   const handleSplit = useCallback(
     (paneId: string, direction: 'horizontal' | 'vertical') => {
@@ -82,6 +134,33 @@ export function TerminalLayout({
     [paneManager]
   )
 
+  const closeTerminalTab = useCallback(
+    (tabId: string) => {
+      paneManager.closeTerminalTab(tabId)
+      syncedSessionIds.current.delete(tabId)
+      setLegacyTabs((prev) => prev.filter((tab) => tab.sessionId !== tabId))
+
+      const remainingTabs = paneManager.getAllTabs()
+      if (remainingTabs.length === 0) {
+        setLegacyTabs([])
+        setActiveView('hosts')
+        setSelectedHost(null)
+        setTerminalSessionId(null)
+      } else if (terminalSessionId === tabId) {
+        focusTerminalTab(remainingTabs[0].sessionId)
+      }
+    },
+    [
+      paneManager,
+      setLegacyTabs,
+      setActiveView,
+      setSelectedHost,
+      setTerminalSessionId,
+      terminalSessionId,
+      focusTerminalTab
+    ]
+  )
+
   const handleCloseTab = useCallback(
     async (tabId: string) => {
       const ok = await confirm({
@@ -91,15 +170,17 @@ export function TerminalLayout({
         variant: 'danger'
       })
       if (!ok) return
-      paneManager.closeTerminalTab(tabId)
-      if (paneManager.isEmpty) {
-        setLegacyTabs([])
-        setActiveView('hosts')
-        setSelectedHost(null)
-      }
+      closeTerminalTab(tabId)
     },
-    [confirm, paneManager, setLegacyTabs, setActiveView, setSelectedHost]
+    [confirm, closeTerminalTab]
   )
+
+  useEffect(() => {
+    if (!closeTerminalRequest) return
+    if (lastCloseRequestId.current === closeTerminalRequest.requestId) return
+    lastCloseRequestId.current = closeTerminalRequest.requestId
+    closeTerminalTab(closeTerminalRequest.sessionId)
+  }, [closeTerminalRequest, closeTerminalTab])
 
   const handleDisconnectAll = useCallback(async () => {
     const ok = await confirm({
@@ -109,10 +190,15 @@ export function TerminalLayout({
       variant: 'danger'
     })
     if (!ok) return
+    for (const tab of paneManager.getAllTabs()) {
+      paneManager.closeTerminalTab(tab.sessionId)
+      syncedSessionIds.current.delete(tab.sessionId)
+    }
     setLegacyTabs([])
     setActiveView('hosts')
     setSelectedHost(null)
-  }, [confirm, setLegacyTabs, setActiveView, setSelectedHost])
+    setTerminalSessionId(null)
+  }, [confirm, paneManager, setLegacyTabs, setActiveView, setSelectedHost, setTerminalSessionId])
 
   const handleTabDragStart = useCallback((e: React.DragEvent, tabId: string) => {
     e.dataTransfer.setData('text/plain', tabId)
@@ -120,6 +206,7 @@ export function TerminalLayout({
   }, [])
 
   const handlePaneDragOver = useCallback((e: React.DragEvent, paneId: string) => {
+    if (!e.dataTransfer.types.includes('text/plain')) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -145,6 +232,7 @@ export function TerminalLayout({
 
   const handlePaneDrop = useCallback(
     (e: React.DragEvent, targetPaneId: string) => {
+      if (!e.dataTransfer.types.includes('text/plain')) return
       e.preventDefault()
       const tabId = e.dataTransfer.getData('text/plain')
       if (!tabId) return
@@ -152,22 +240,27 @@ export function TerminalLayout({
       const edge = dragOverEdge
       if (edge) {
         const direction = edge === 'top' || edge === 'bottom' ? 'vertical' : 'horizontal'
-        paneManager.splitPaneWithTab(targetPaneId, direction, tabId)
+        const placement = edge === 'top' || edge === 'left' ? 'before' : 'after'
+        paneManager.splitPaneWithTab(targetPaneId, direction, tabId, placement)
       } else {
         const sourceLeaf = paneManager.findPaneForTab(tabId)
         if (sourceLeaf && sourceLeaf.id !== targetPaneId) {
           paneManager.moveTab(tabId, sourceLeaf.id, targetPaneId)
         }
       }
+      syncTerminalSelection(tabId)
       setDragOverPaneId(null)
       setDragOverEdge(null)
     },
-    [dragOverEdge, paneManager]
+    [dragOverEdge, paneManager, syncTerminalSelection]
   )
 
   const renderLeaf = useCallback(
     (leaf: PaneLeaf) => {
-      const tabs = paneManager.getLeafTabs(leaf)
+      const tabs = paneManager
+        .getLeafTabs(leaf)
+        .map((tab) => legacyTabs.find((legacyTab) => legacyTab.sessionId === tab.sessionId) ?? tab)
+      const showPaneTitle = tabs.length > 0 && (tabs.length > 1 || leafCount > 1)
 
       return (
         <div
@@ -179,14 +272,14 @@ export function TerminalLayout({
           onDragLeave={handlePaneDragLeave}
           onDrop={(e) => handlePaneDrop(e, leaf.id)}
         >
-          {tabs.length > 1 && (
+          {showPaneTitle && (
             <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted px-1 pt-0.5 no-scrollbar">
               {tabs.map((tab) => (
                 <div
                   key={tab.sessionId}
                   draggable
                   onDragStart={(e) => handleTabDragStart(e, tab.sessionId)}
-                  onClick={() => paneManager.focusTab(tab.sessionId)}
+                  onClick={() => focusTerminalTab(tab.sessionId)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold cursor-grab transition-colors border-b-2 whitespace-nowrap ${
                     leaf.activeTabId === tab.sessionId
                       ? 'text-workspace-foreground border-accent bg-workspace'
@@ -194,7 +287,7 @@ export function TerminalLayout({
                   }`}
                 >
                   <TerminalIcon size={10} />
-                  <span>{tab.host.alias}</span>
+                  <span>{tab.title || tab.host.alias}</span>
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
@@ -235,6 +328,7 @@ export function TerminalLayout({
                   hostId={tab.host.id}
                   fontSize={terminalFontSize}
                   onClose={() => handleCloseTab(tab.sessionId)}
+                  onFocusSession={() => focusTerminalTab(tab.sessionId)}
                   onFileDrop={(sourceHostId, sourcePath, fileName, destHostId, destPath) => {
                     const transferId = `ft-${Date.now()}-${Math.random().toString(36).slice(2)}`
                     const srcTab = paneManager.getAllTabs().find((t) => t.host.id === sourceHostId)
@@ -260,17 +354,22 @@ export function TerminalLayout({
       paneManager,
       terminalFontSize,
       handleCloseTab,
+      focusTerminalTab,
       handleTabDragStart,
       handlePaneDragOver,
       handlePaneDragLeave,
       handlePaneDrop,
       dragOverPaneId,
       dragOverEdge,
-      startTransfer
+      startTransfer,
+      leafCount,
+      legacyTabs
     ]
   )
 
-  const allTabs = paneManager.getAllTabs()
+  const allTabs = paneManager
+    .getAllTabs()
+    .map((tab) => legacyTabs.find((legacyTab) => legacyTab.sessionId === tab.sessionId) ?? tab)
 
   return (
     <div className="flex-1 flex overflow-hidden bg-workspace">
@@ -280,7 +379,7 @@ export function TerminalLayout({
             <div className="flex items-center gap-3 no-drag">
               <TerminalIcon size={13} className="text-accent" />
               <span className="font-mono text-xs font-semibold text-workspace-foreground">
-                {activeTab?.host.alias || selectedHost?.alias}
+                {activeTab?.title || activeTab?.host.alias || selectedHost?.alias}
               </span>
               <span className="font-mono text-xs text-workspace-muted-foreground">
                 {activeTab?.host.id === 'local' || selectedHost?.id === 'local'
@@ -401,7 +500,7 @@ export function TerminalLayout({
                   <div
                     key={tab.sessionId}
                     onClick={() => {
-                      paneManager.focusTab(tab.sessionId)
+                      focusTerminalTab(tab.sessionId)
                       setShowTerminalList(false)
                     }}
                     className="flex cursor-pointer items-center gap-3 rounded-xl border border-white/70 bg-white/60 p-3 transition hover:border-accent/25 hover:bg-accent-soft/45"
@@ -409,7 +508,7 @@ export function TerminalLayout({
                     <TerminalIcon size={16} className="text-accent" />
                     <div className="flex-1 min-w-0">
                       <div className="truncate text-xs font-semibold text-workspace-foreground">
-                        {tab.host.alias}
+                        {tab.title || tab.host.alias}
                       </div>
                       <div className="font-mono text-xs text-workspace-muted-foreground">
                         {tab.host.id === 'local' ? '本机' : `${tab.host.username}@${tab.host.ip}`}
