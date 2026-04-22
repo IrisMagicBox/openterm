@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { ChevronDown, Cpu } from 'lucide-react'
 import type { Provider, Model } from '../../../shared/types'
+import { Badge, Button } from './ui'
+import { cn } from '../lib/utils'
 
 interface ModelSelectorProps {
   providers: Provider[]
@@ -18,7 +20,7 @@ export function ModelSelector({
   selectedModelId,
   onSelect,
   disabled = false
-}: ModelSelectorProps) {
+}: ModelSelectorProps): React.ReactElement {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -30,7 +32,7 @@ export function ModelSelector({
   )
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: MouseEvent): void => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false)
       }
@@ -39,37 +41,33 @@ export function ModelSelector({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleSelect = (providerId: string, modelId: string) => {
+  const handleSelect = (providerId: string, modelId: string): void => {
     onSelect(providerId, modelId)
     setIsOpen(false)
   }
 
-  const getProviderModels = (providerId: string) => {
+  const getProviderModels = (providerId: string): Model[] => {
     return models.filter((m) => m.providerId === providerId)
   }
 
   if (enabledProviders.length === 0) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm">
+      <Badge variant="neutral">
         <Cpu size={14} />
         <span>未启用提供商</span>
-      </div>
+      </Badge>
     )
   }
 
   return (
     <div className="relative" ref={dropdownRef}>
-      <button
+      <Button
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className={`flex items-center gap-2.5 px-4 py-2 bg-white border rounded-xl text-sm font-semibold transition-all shadow-sm ${
-          disabled
-            ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50'
-            : 'hover:border-blue-300 hover:shadow-md border-gray-200 active:scale-95'
-        }`}
+        variant="secondary"
       >
-        <Cpu size={14} className={selectedProvider ? 'text-blue-600' : 'text-gray-400'} />
-        <span className="max-w-[150px] truncate text-gray-700">
+        <Cpu size={14} className={selectedProvider ? 'text-accent' : 'text-muted-foreground'} />
+        <span className="max-w-[150px] truncate">
           {selectedModel
             ? selectedModel.name
             : selectedProvider
@@ -78,22 +76,22 @@ export function ModelSelector({
         </span>
         <ChevronDown
           size={14}
-          className={`text-gray-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}
+          className={`text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
         />
-      </button>
+      </Button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-3 w-80 bg-white border border-gray-100 rounded-3xl shadow-[0_20px_40px_-12px_rgba(0,0,0,0.15)] overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-300 backdrop-blur-xl">
-          <div className="max-h-96 overflow-y-auto scrollbar-hide py-2">
+        <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-lg border border-border bg-surface shadow-lg animate-in fade-in">
+          <div className="max-h-96 overflow-y-auto py-2">
             {enabledProviders.map((provider) => {
               const providerModels = getProviderModels(provider.id)
               return (
                 <div key={provider.id} className="mb-2 last:mb-0">
-                  <div className="px-4 py-2 flex items-center gap-2">
-                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
+                  <div className="flex items-center gap-2 px-3 py-2">
+                    <span className="text-xs font-semibold text-muted-foreground">
                       {provider.name}
                     </span>
-                    <div className="h-[1px] flex-1 bg-gray-100" />
+                    <div className="h-px flex-1 bg-border" />
                   </div>
                   <div className="px-2 space-y-0.5">
                     {providerModels.length > 0 ? (
@@ -101,26 +99,27 @@ export function ModelSelector({
                         <button
                           key={`${provider.id}-${model.id}`}
                           onClick={() => handleSelect(provider.id, model.id)}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm text-left transition-all ${
+                          className={cn(
+                            'flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors',
                             selectedProviderId === provider.id && selectedModelId === model.id
-                              ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 border border-transparent hover:border-gray-100'
-                          }`}
+                              ? 'border-accent bg-accent text-white'
+                              : 'border-transparent text-muted-foreground hover:border-border hover:bg-surface-muted hover:text-foreground'
+                          )}
                         >
                           <div
                             className={`w-2 h-2 rounded-full ${
                               selectedProviderId === provider.id && selectedModelId === model.id
                                 ? 'bg-white'
-                                : 'bg-transparent'
+                                : 'bg-border'
                             }`}
                           />
                           <span className="truncate flex-1 font-medium">{model.name}</span>
                           {model.group && (
                             <span
-                              className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                              className={`text-xs font-semibold px-1.5 py-0.5 rounded-md ${
                                 selectedProviderId === provider.id && selectedModelId === model.id
                                   ? 'bg-white/20 text-white'
-                                  : 'bg-gray-100 text-gray-400'
+                                  : 'bg-surface-muted text-muted-foreground'
                               }`}
                             >
                               {model.group}
@@ -131,11 +130,12 @@ export function ModelSelector({
                     ) : (
                       <button
                         onClick={() => handleSelect(provider.id, 'default')}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm text-left transition-all ${
+                        className={cn(
+                          'flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors',
                           selectedProviderId === provider.id && selectedModelId === null
-                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 border border-transparent hover:border-gray-100'
-                        }`}
+                            ? 'border-accent bg-accent text-white'
+                            : 'border-transparent text-muted-foreground hover:border-border hover:bg-surface-muted hover:text-foreground'
+                        )}
                       >
                         <div
                           className={`w-2 h-2 rounded-full ${

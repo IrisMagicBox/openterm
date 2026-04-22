@@ -1,15 +1,27 @@
 import { getErrorMessage } from '../../../../shared/errors'
 import { useState } from 'react'
-import { Server, X, Eye, EyeOff, Plus } from 'lucide-react'
+import { Eye, EyeOff, Plus, Server } from 'lucide-react'
 import { DEFAULT_SSH_PORT } from '../../../../shared/constants'
 import type { Host } from '../../../../shared/types'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  FormField,
+  IconButton,
+  Input
+} from '../ui'
 
 interface AddHostModalProps {
   onClose: () => void
   onSave: (host: Omit<Host, 'id' | 'createdAt'>) => void
 }
 
-export function AddHostModal({ onClose, onSave }: AddHostModalProps) {
+export function AddHostModal({ onClose, onSave }: AddHostModalProps): React.ReactElement {
   const [form, setForm] = useState({
     alias: '',
     ip: '',
@@ -22,7 +34,7 @@ export function AddHostModal({ onClose, onSave }: AddHostModalProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     if (!form.alias || !form.ip || !form.username) {
       setError('别名、IP 和用户名是必填项。')
       return
@@ -39,136 +51,94 @@ export function AddHostModal({ onClose, onSave }: AddHostModalProps) {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/40 backdrop-blur-md animate-in fade-in duration-300"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-[40px] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] border border-gray-100 w-full max-w-md p-10 mx-4 animate-in zoom-in-95 slide-in-from-bottom-8 duration-500"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
-              <Server size={20} />
-            </div>
-            <div>
-              <h2 className="font-black text-gray-900 text-lg leading-none">添加新主机</h2>
-              <p className="text-xs text-gray-400 mt-0.5">配置 SSH 终点</p>
-            </div>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-md bg-accent-soft text-accent">
+            <Server size={18} />
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
-          >
-            <X size={18} />
-          </button>
-        </div>
+          <DialogTitle>添加新主机</DialogTitle>
+          <DialogDescription>配置 SSH 终点</DialogDescription>
+        </DialogHeader>
 
         {error && (
-          <div className="mb-4 px-4 py-3 bg-red-50 border border-red-100 text-red-600 text-sm font-medium rounded-xl">
+          <div className="rounded-md border border-danger/20 bg-danger-soft px-3 py-2 text-sm font-medium text-danger">
             {error}
           </div>
         )}
 
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                Alias
-              </label>
-              <input
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="别名">
+              <Input
                 value={form.alias}
                 onChange={(e) => setForm((f) => ({ ...f, alias: e.target.value }))}
-                placeholder="e.g. prod-server"
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50 transition"
+                placeholder="prod-server"
               />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                Username
-              </label>
-              <input
+            </FormField>
+            <FormField label="用户名">
+              <Input
                 value={form.username}
                 onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
                 placeholder="root"
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50 transition"
               />
-            </div>
+            </FormField>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <div className="col-span-2">
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                IP Address
-              </label>
-              <input
+          <div className="grid grid-cols-3 gap-3">
+            <FormField label="IP 地址" className="col-span-2">
+              <Input
                 value={form.ip}
                 onChange={(e) => setForm((f) => ({ ...f, ip: e.target.value }))}
                 placeholder="192.168.1.100"
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50 transition font-mono"
+                className="font-mono"
               />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                Port
-              </label>
-              <input
+            </FormField>
+            <FormField label="端口">
+              <Input
                 value={form.port}
                 onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))}
                 placeholder="22"
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50 transition font-mono"
+                className="font-mono"
               />
-            </div>
+            </FormField>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-              Password
-            </label>
+          <FormField label="密码" hint="留空时使用 SSH key">
             <div className="relative">
-              <input
+              <Input
                 type={showPass ? 'text' : 'password'}
                 value={form.password}
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                placeholder="Optional - leave blank to use SSH key"
-                className="w-full px-4 py-3 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50 transition"
+                placeholder="可选"
+                className="pr-10"
               />
-              <button
+              <IconButton
+                aria-label={showPass ? '隐藏密码' : '显示密码'}
                 type="button"
                 onClick={() => setShowPass((v) => !v)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+                className="absolute right-1 top-1/2 -translate-y-1/2"
               >
-                {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
+                {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
+              </IconButton>
             </div>
-          </div>
+          </FormField>
 
-          <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-              SSH Key Path
-            </label>
-            <input
+          <FormField label="SSH Key 路径">
+            <Input
               value={form.keyPath}
               onChange={(e) => setForm((f) => ({ ...f, keyPath: e.target.value }))}
-              placeholder="~/.ssh/id_rsa (optional)"
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50 transition font-mono"
+              placeholder="~/.ssh/id_rsa"
+              className="font-mono"
             />
-          </div>
+          </FormField>
         </div>
 
-        <div className="flex gap-3 mt-8">
-          <button
-            onClick={onClose}
-            className="flex-1 py-3 border border-gray-200 text-gray-600 rounded-xl font-bold text-sm hover:bg-gray-50 transition"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-60 transition shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
-          >
+        <DialogFooter>
+          <Button onClick={onClose} variant="ghost">
+            取消
+          </Button>
+          <Button onClick={handleSave} disabled={saving} variant="primary">
             {saving ? (
               '正在保存...'
             ) : (
@@ -176,9 +146,9 @@ export function AddHostModal({ onClose, onSave }: AddHostModalProps) {
                 <Plus size={16} /> 保存主机
               </>
             )}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Search, Terminal as TerminalIcon, X } from 'lucide-react'
+import { IconButton, Input } from '../ui'
 
 const api = window.api
 
@@ -15,7 +16,10 @@ interface CommandHistorySearchProps {
   onClose: () => void
 }
 
-export function CommandHistorySearch({ onSelect, onClose }: CommandHistorySearchProps) {
+export function CommandHistorySearch({
+  onSelect,
+  onClose
+}: CommandHistorySearchProps): React.ReactElement {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<HistoryEntry[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -37,7 +41,7 @@ export function CommandHistorySearch({ onSelect, onClose }: CommandHistorySearch
   }, [query])
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         setSelectedIndex((prev) => Math.min(prev + 1, results.length - 1))
@@ -56,7 +60,7 @@ export function CommandHistorySearch({ onSelect, onClose }: CommandHistorySearch
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [results, selectedIndex, onSelect, onClose])
 
-  const formatDate = (ts: number) => {
+  const formatDate = (ts: number): string => {
     return new Date(ts).toLocaleString('zh-CN', {
       month: 'short',
       day: 'numeric',
@@ -70,14 +74,14 @@ export function CommandHistorySearch({ onSelect, onClose }: CommandHistorySearch
       className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]"
       onClick={onClose}
     >
-      <div className="fixed inset-0 bg-black/30" />
+      <div className="fixed inset-0 bg-black/35 backdrop-blur-sm" />
       <div
-        className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden"
+        className="relative w-full max-w-xl overflow-hidden rounded-lg border border-border bg-surface shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
-          <Search size={16} className="text-gray-400" />
-          <input
+        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+          <Search size={16} className="text-muted-foreground" />
+          <Input
             ref={inputRef}
             value={query}
             onChange={(e) => {
@@ -85,27 +89,27 @@ export function CommandHistorySearch({ onSelect, onClose }: CommandHistorySearch
               setSelectedIndex(0)
             }}
             placeholder="搜索命令历史..."
-            className="flex-1 text-sm bg-transparent outline-none placeholder-gray-400"
+            className="h-7 flex-1 border-0 bg-transparent px-0 focus-visible:ring-0"
           />
-          <span className="text-[10px] font-bold text-gray-300 bg-gray-50 px-2 py-0.5 rounded">
+          <span className="rounded bg-surface-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
             Ctrl+R
           </span>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded transition">
-            <X size={14} className="text-gray-400" />
-          </button>
+          <IconButton aria-label="关闭命令历史" onClick={onClose} className="h-7 w-7">
+            <X size={14} />
+          </IconButton>
         </div>
 
         <div className="max-h-[300px] overflow-y-auto">
           {results.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-gray-400">
+            <div className="px-4 py-8 text-center text-xs text-muted-foreground">
               {query ? '没有找到匹配的命令' : '输入关键词搜索命令历史'}
             </div>
           ) : (
             results.map((entry, i) => (
               <button
                 key={`${entry.content}-${entry.timestamp}`}
-                className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition ${
-                  i === selectedIndex ? 'bg-blue-50' : 'hover:bg-gray-50'
+                className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition ${
+                  i === selectedIndex ? 'bg-accent-soft' : 'hover:bg-surface-muted'
                 }`}
                 onClick={() => {
                   onSelect(entry.content)
@@ -113,9 +117,9 @@ export function CommandHistorySearch({ onSelect, onClose }: CommandHistorySearch
                 }}
                 onMouseEnter={() => setSelectedIndex(i)}
               >
-                <TerminalIcon size={12} className="text-gray-400 flex-shrink-0" />
+                <TerminalIcon size={12} className="flex-shrink-0 text-muted-foreground" />
                 <span className="text-xs font-mono truncate flex-1">{entry.content}</span>
-                <span className="text-[10px] text-gray-400 flex-shrink-0">
+                <span className="flex-shrink-0 text-xs text-muted-foreground">
                   {formatDate(entry.timestamp)}
                 </span>
               </button>
@@ -123,7 +127,7 @@ export function CommandHistorySearch({ onSelect, onClose }: CommandHistorySearch
           )}
         </div>
 
-        <div className="px-4 py-2 border-t border-gray-50 text-[10px] text-gray-400 flex items-center gap-4">
+        <div className="flex items-center gap-4 border-t border-border bg-surface-muted px-4 py-2 text-xs text-muted-foreground">
           <span>↑↓ 导航</span>
           <span>↵ 选择</span>
           <span>Esc 关闭</span>

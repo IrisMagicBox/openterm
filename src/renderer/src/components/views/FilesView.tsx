@@ -26,7 +26,7 @@ export function FilesView({
   setFileBrowserHostAlias,
   setActiveView,
   hosts
-}: FilesViewProps) {
+}: FilesViewProps): React.ReactElement {
   const paneManager = useFilePaneManager()
   const { confirm, ConfirmDialogComponent } = useConfirm()
   const { transfers, startTransfer, removeTransfer } = useFileTransfer()
@@ -39,9 +39,12 @@ export function FilesView({
   const openFileTabRef = useRef(paneManager.openFileTab)
   const focusTabRef = useRef(paneManager.focusTab)
   const getAllTabsRef = useRef(paneManager.getAllTabs)
-  openFileTabRef.current = paneManager.openFileTab
-  focusTabRef.current = paneManager.focusTab
-  getAllTabsRef.current = paneManager.getAllTabs
+
+  useEffect(() => {
+    openFileTabRef.current = paneManager.openFileTab
+    focusTabRef.current = paneManager.focusTab
+    getAllTabsRef.current = paneManager.getAllTabs
+  }, [paneManager.openFileTab, paneManager.focusTab, paneManager.getAllTabs])
 
   useEffect(() => {
     if (!fileBrowserHostId) return
@@ -189,8 +192,8 @@ export function FilesView({
 
       return (
         <div
-          className={`flex flex-col h-full bg-[#1a1b1e] relative transition-colors ${
-            paneManager.focusedLeafId === leaf.id ? 'ring-1 ring-inset ring-blue-500/30' : ''
+          className={`flex h-full flex-col bg-workspace relative transition-colors ${
+            paneManager.focusedLeafId === leaf.id ? 'ring-1 ring-inset ring-accent/60' : ''
           }`}
           onMouseDown={() => paneManager.setFocusedLeafId(leaf.id)}
           onDragOver={(e) => handlePaneDragOver(e, leaf.id)}
@@ -198,7 +201,7 @@ export function FilesView({
           onDrop={(e) => handlePaneDrop(e, leaf.id)}
         >
           {tabs.length > 0 && (
-            <div className="flex items-center bg-gray-900 border-b border-gray-700/50 px-1 pt-0.5 overflow-x-auto no-scrollbar">
+            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted px-1 pt-0.5 no-scrollbar">
               {tabs.map((tab) => (
                 <div
                   key={tab.tabId}
@@ -207,8 +210,8 @@ export function FilesView({
                   onClick={() => paneManager.focusTab(tab.tabId)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold cursor-grab transition-colors border-b-2 whitespace-nowrap ${
                     leaf.activeTabId === tab.tabId
-                      ? 'text-white border-blue-500 bg-gray-800/50'
-                      : 'text-gray-400 border-transparent hover:text-gray-200 hover:bg-gray-800/30'
+                      ? 'text-workspace-foreground border-accent bg-workspace'
+                      : 'text-workspace-muted-foreground border-transparent hover:text-workspace-foreground hover:bg-workspace/70'
                   }`}
                 >
                   <Folder size={10} />
@@ -218,7 +221,7 @@ export function FilesView({
                       e.stopPropagation()
                       handleCloseTab(tab.tabId)
                     }}
-                    className="ml-1 p-0.5 hover:bg-gray-700 rounded text-gray-500 hover:text-gray-300 transition"
+                    className="ml-1 rounded p-0.5 text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-workspace-foreground"
                   >
                     <X size={9} />
                   </button>
@@ -226,7 +229,7 @@ export function FilesView({
               ))}
               <button
                 onClick={() => setShowHostPicker(true)}
-                className="flex items-center justify-center px-2 py-1.5 text-xs text-gray-500 hover:text-blue-400 hover:bg-gray-800/30 transition rounded"
+                className="flex items-center justify-center rounded px-2 py-1.5 text-xs text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
                 title="打开文件管理"
               >
                 <Plus size={12} />
@@ -236,7 +239,7 @@ export function FilesView({
 
           {dragOverPaneId === leaf.id && dragOverEdge && (
             <div
-              className={`absolute z-20 bg-blue-500/20 border-2 border-blue-400 pointer-events-none ${
+              className={`absolute z-20 border-2 border-accent bg-accent/20 pointer-events-none ${
                 dragOverEdge === 'top'
                   ? 'top-0 left-0 right-0 h-10'
                   : dragOverEdge === 'bottom'
@@ -298,21 +301,21 @@ export function FilesView({
   const allTabs = paneManager.getAllTabs()
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="bg-gray-900 flex flex-col flex-shrink-0">
-        <div className="h-11 text-white px-5 flex items-center justify-between flex-shrink-0 drag">
+    <div className="flex-1 flex flex-col overflow-hidden bg-workspace">
+      <div className="flex flex-col flex-shrink-0 bg-workspace-muted border-b border-workspace-border">
+        <div className="h-11 text-workspace-foreground px-5 flex items-center justify-between flex-shrink-0 drag">
           <div className="flex items-center gap-3 no-drag">
             <div className="flex gap-1.5">
               <div className="w-3 h-3 bg-red-500 rounded-full" />
               <div className="w-3 h-3 bg-yellow-400 rounded-full" />
               <div className="w-3 h-3 bg-emerald-400 rounded-full" />
             </div>
-            <div className="w-px h-4 bg-gray-700" />
-            <Folder size={13} className="text-blue-400" />
-            <span className="text-xs font-bold font-mono text-gray-300">
+            <div className="w-px h-4 bg-workspace-border" />
+            <Folder size={13} className="text-accent" />
+            <span className="text-xs font-semibold font-mono text-workspace-foreground">
               {activeTab?.hostAlias || '文件管理'}
             </span>
-            <span className="text-[10px] text-gray-600 font-mono">文件管理</span>
+            <span className="text-xs text-workspace-muted-foreground font-mono">文件管理</span>
           </div>
           <div className="flex items-center gap-2 no-drag">
             {allTabs.length > 0 && (
@@ -325,14 +328,14 @@ export function FilesView({
                     <>
                       <button
                         onClick={() => handleSplit(leafToSplit.id, 'horizontal')}
-                        className="text-[11px] bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-blue-400 px-2 py-1.5 rounded-lg font-bold transition flex items-center gap-1"
+                        className="flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
                         title="水平分屏"
                       >
                         <Columns size={12} />
                       </button>
                       <button
                         onClick={() => handleSplit(leafToSplit.id, 'vertical')}
-                        className="text-[11px] bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-blue-400 px-2 py-1.5 rounded-lg font-bold transition flex items-center gap-1"
+                        className="flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
                         title="垂直分屏"
                       >
                         <Rows size={12} />
@@ -344,21 +347,21 @@ export function FilesView({
             )}
             <button
               onClick={() => setShowFileList(!showFileList)}
-              className="text-[11px] bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-blue-400 px-2.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1"
+              className="flex items-center gap-1 rounded-md bg-workspace px-2.5 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
               title="文件列表"
             >
               <LayoutGrid size={12} />
             </button>
             <button
               onClick={() => setShowHostPicker(true)}
-              className="text-[11px] bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-blue-400 px-2.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
+              className="flex items-center gap-1.5 rounded-md bg-workspace px-2.5 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
               title="打开文件管理"
             >
               <Plus size={12} /> 新建
             </button>
             <button
               onClick={handleDisconnectAll}
-              className="text-[11px] bg-gray-800 hover:bg-red-900/60 text-gray-500 hover:text-red-400 px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
+              className="flex items-center gap-1.5 rounded-md bg-workspace px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-danger/15 hover:text-danger"
             >
               <X size={12} /> 关闭全部
             </button>
@@ -368,13 +371,15 @@ export function FilesView({
 
       <div className="flex-1 flex flex-col relative overflow-hidden">
         {paneManager.isEmpty ? (
-          <div className="flex-1 flex items-center justify-center bg-[#1a1b1e] h-full">
+          <div className="flex-1 flex items-center justify-center bg-workspace h-full">
             <div className="text-center">
-              <Folder size={40} className="text-gray-700 mx-auto mb-4" />
-              <p className="text-gray-500 text-sm font-bold mb-4">无活跃文件管理</p>
+              <Folder size={40} className="text-workspace-border mx-auto mb-4" />
+              <p className="text-workspace-muted-foreground text-sm font-semibold mb-4">
+                无活跃文件管理
+              </p>
               <button
                 onClick={() => setShowHostPicker(true)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-2 mx-auto"
+                className="mx-auto flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-xs font-semibold text-white transition hover:bg-accent-strong"
               >
                 <Plus size={14} /> 打开文件管理
               </button>
@@ -395,10 +400,10 @@ export function FilesView({
           onClick={() => setShowFileList(false)}
         >
           <div
-            className="bg-gray-900 rounded-2xl p-6 max-w-2xl w-full mx-4 border border-gray-700"
+            className="bg-workspace rounded-lg p-5 max-w-2xl w-full mx-4 border border-workspace-border"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-white font-black text-sm mb-4 flex items-center gap-2">
+            <h3 className="text-workspace-foreground font-bold text-sm mb-4 flex items-center gap-2">
               <LayoutGrid size={14} /> 文件管理列表 ({allTabs.length})
             </h3>
             <div className="grid grid-cols-2 gap-3 max-h-80 overflow-y-auto">
@@ -409,12 +414,14 @@ export function FilesView({
                     paneManager.focusTab(tab.tabId)
                     setShowFileList(false)
                   }}
-                  className="p-3 bg-gray-800 rounded-xl cursor-pointer hover:bg-gray-700 transition flex items-center gap-3"
+                  className="flex cursor-pointer items-center gap-3 rounded-md bg-workspace-muted p-3 transition hover:bg-workspace-border"
                 >
-                  <Folder size={16} className="text-blue-400" />
+                  <Folder size={16} className="text-accent" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-white text-xs font-bold truncate">{tab.hostAlias}</div>
-                    <div className="text-gray-500 text-[10px] font-mono">
+                    <div className="truncate text-xs font-semibold text-workspace-foreground">
+                      {tab.hostAlias}
+                    </div>
+                    <div className="font-mono text-xs text-workspace-muted-foreground">
                       {tab.hostId === 'local' ? '本机' : tab.hostId}
                     </div>
                   </div>
@@ -431,14 +438,14 @@ export function FilesView({
           onClick={() => setShowHostPicker(false)}
         >
           <div
-            className="bg-gray-900 rounded-2xl p-6 max-w-lg w-full mx-4 border border-gray-700"
+            className="bg-workspace rounded-lg p-5 max-w-lg w-full mx-4 border border-workspace-border"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-white font-black text-sm mb-4 flex items-center gap-2">
+            <h3 className="text-workspace-foreground font-bold text-sm mb-4 flex items-center gap-2">
               <Monitor size={14} /> 选择主机
             </h3>
             {hosts.length === 0 ? (
-              <p className="text-gray-500 text-xs">暂无可用主机</p>
+              <p className="text-workspace-muted-foreground text-xs">暂无可用主机</p>
             ) : (
               <div className="grid grid-cols-1 gap-2 max-h-80 overflow-y-auto">
                 {hosts.map((host) => {
@@ -449,22 +456,22 @@ export function FilesView({
                       onClick={() => handleOpenHost(host)}
                       className={`p-3 rounded-xl cursor-pointer transition flex items-center gap-3 ${
                         isOpen
-                          ? 'bg-gray-800/50 border border-gray-700/50'
-                          : 'bg-gray-800 hover:bg-gray-700'
+                          ? 'bg-workspace-muted/60 border border-workspace-border'
+                          : 'bg-workspace-muted hover:bg-workspace-border'
                       }`}
                     >
-                      <Folder size={16} className="text-blue-400" />
+                      <Folder size={16} className="text-accent" />
                       <div className="flex-1 min-w-0">
-                        <div className="text-white text-xs font-bold truncate">{host.alias}</div>
-                        <div className="text-gray-500 text-[10px] font-mono">
+                        <div className="truncate text-xs font-semibold text-workspace-foreground">
+                          {host.alias}
+                        </div>
+                        <div className="font-mono text-xs text-workspace-muted-foreground">
                           {host.id === 'local'
                             ? '本机'
                             : `${host.username}@${host.ip}${host.port && host.port !== 22 ? `:${host.port}` : ''}`}
                         </div>
                       </div>
-                      {isOpen && (
-                        <span className="text-[10px] text-blue-400 font-bold">已打开</span>
-                      )}
+                      {isOpen && <span className="text-xs text-accent font-semibold">已打开</span>}
                     </div>
                   )
                 })}

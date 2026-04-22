@@ -45,6 +45,8 @@ interface FileBrowserProps {
 
 const api = window.api
 
+type ElectronFile = File & { path?: string }
+
 function formatSize(bytes: number): string {
   if (bytes === 0) return '-'
   const units = ['B', 'KB', 'MB', 'GB']
@@ -61,19 +63,24 @@ function formatDate(ts: number): string {
   })
 }
 
-export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrowserProps) {
+export function FileBrowser({
+  hostId,
+  hostAlias,
+  onClose,
+  onFileDrop
+}: FileBrowserProps): React.ReactElement {
   const { confirm, ConfirmDialogComponent } = useConfirm()
   const isLocal = hostId === 'local'
-  const fsConnect = isLocal ? () => api.localFsConnect() : () => api.sftpConnect(hostId)
   const fsList = isLocal ? api.localFsList : api.sftpList
   const fsUpload = isLocal ? api.localFsUpload : api.sftpUpload
   const fsDownload = isLocal ? api.localFsDownload : api.sftpDownload
   const fsMkdir = isLocal ? api.localFsMkdir : api.sftpMkdir
   const fsDelete = isLocal ? api.localFsDelete : api.sftpDelete
   const fsClose = isLocal ? api.localFsClose : api.sftpClose
+  const initialPathRef = useRef(isLocal ? process.env.HOME || '/' : '/')
 
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [currentPath, setCurrentPath] = useState(isLocal ? process.env.HOME || '/' : '/')
+  const [currentPath, setCurrentPath] = useState(initialPathRef.current)
   const [items, setItems] = useState<FileItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -87,16 +94,22 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
   const isConnectedRef = useRef(false)
   const sessionIdRef = useRef(sessionId)
   const fsCloseRef = useRef(fsClose)
-  sessionIdRef.current = sessionId
-  fsCloseRef.current = fsClose
 
-  const connect = useCallback(async () => {
+  useEffect(() => {
+    sessionIdRef.current = sessionId
+  }, [sessionId])
+
+  useEffect(() => {
+    fsCloseRef.current = fsClose
+  }, [fsClose])
+
+  const connect = useCallback(async (): Promise<void> => {
     if (sessionId || isConnectedRef.current) return
     isConnectedRef.current = true
     setLoading(true)
     setError(null)
     try {
-      const result = await fsConnect()
+      const result = isLocal ? await api.localFsConnect() : await api.sftpConnect(hostId)
       setSessionId(result.sessionId)
     } catch (err: unknown) {
       setError(getErrorMessage(err) || '连接失败')
@@ -104,7 +117,7 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
     } finally {
       setLoading(false)
     }
-  }, [sessionId, fsConnect])
+  }, [hostId, isLocal, sessionId])
 
   useEffect(() => {
     return () => {
@@ -113,7 +126,7 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
   }, [])
 
   const loadDirectory = useCallback(
-    async (path: string) => {
+    async (path: string): Promise<void> => {
       if (!sessionId) return
       setLoading(true)
       setError(null)
@@ -139,21 +152,15 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
   }, [connect])
 
   useEffect(() => {
-    if (sessionId) loadDirectory(currentPath)
+    if (sessionId) void loadDirectory(initialPathRef.current)
   }, [sessionId, loadDirectory])
 
-  useEffect(() => {
-    return () => {
-      if (sessionIdRef.current) fsCloseRef.current(sessionIdRef.current)
-    }
-  }, [])
-
-  const navigateTo = (path: string) => {
-    loadDirectory(path)
+  const navigateTo = (path: string): void => {
+    void loadDirectory(path)
     setSelectedItem(null)
   }
 
-  const handleItemClick = (item: FileItem) => {
+  const handleItemClick = (item: FileItem): void => {
     if (item.type === 'directory') {
       const newPath = currentPath === '/' ? `/${item.name}` : `${currentPath}/${item.name}`
       navigateTo(newPath)
@@ -162,24 +169,29 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
     }
   }
 
-  const handleBreadcrumb = (index: number) => {
+  const handleBreadcrumb = (index: number): void => {
     const parts = currentPath.split('/').filter(Boolean)
     const newPath = '/' + parts.slice(0, index + 1).join('/')
     navigateTo(newPath)
   }
 
-  const handleUpload = async () => {
+  const handleUpload = async (): Promise<void> => {
     fileInputRef.current?.click()
   }
 
-  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = e.target.files?.[0]
     if (!file || !sessionId) return
     setUploading(true)
     setError(null)
     try {
       const remotePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`
-      await fsUpload(sessionId, (file as any).path, remotePath)
+      const filePath = (file as ElectronFile).path
+      if (!filePath) {
+        setError('无法读取本地文件路径')
+        return
+      }
+      await fsUpload(sessionId, filePath, remotePath)
       await loadDirectory(currentPath)
     } catch (err: unknown) {
       setError(getErrorMessage(err) || '上传失败')
@@ -189,7 +201,7 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
     }
   }
 
-  const handleDownload = async () => {
+  const handleDownload = async (): Promise<void> => {
     if (!selectedItem || !sessionId) return
     const remotePath = currentPath === '/' ? `/${selectedItem}` : `${currentPath}/${selectedItem}`
     const localPath = `${process.env.HOME || '~'}/Downloads/${selectedItem}`
@@ -204,7 +216,7 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
     }
   }
 
-  const handleMkdir = async () => {
+  const handleMkdir = async (): Promise<void> => {
     if (!mkdirName.trim() || !sessionId) return
     setLoading(true)
     setError(null)
@@ -222,7 +234,7 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
     }
   }
 
-  const handleDelete = async () => {
+  const handleDelete = async (): Promise<void> => {
     if (!selectedItem || !sessionId) return
     const ok = await confirm({
       title: '删除文件',
@@ -245,16 +257,15 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
     }
   }
 
-  const goUp = () => {
+  const goUp = (): void => {
     if (currentPath === '/') return
     const parts = currentPath.split('/').filter(Boolean)
     parts.pop()
     navigateTo('/' + parts.join('/'))
   }
 
-  const handleRowDragStart = (e: React.DragEvent, item: FileItem) => {
-    const fullPath =
-      currentPath === '/' ? `/${item.name}` : `${currentPath}/${item.name}`
+  const handleRowDragStart = (e: React.DragEvent, item: FileItem): void => {
+    const fullPath = currentPath === '/' ? `/${item.name}` : `${currentPath}/${item.name}`
 
     // If local, use native drag
     if (isLocal) {
@@ -274,7 +285,7 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
     e.dataTransfer.effectAllowed = 'copy'
   }
 
-  const handleContainerDragOver = (e: React.DragEvent) => {
+  const handleContainerDragOver = (e: React.DragEvent): void => {
     const isInternal = e.dataTransfer.types.includes('application/json')
     const isFiles = e.dataTransfer.types.includes('Files')
     if (!isInternal && !isFiles) return
@@ -283,12 +294,12 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
     setIsDragOver(true)
   }
 
-  const handleContainerDragLeave = (e: React.DragEvent) => {
+  const handleContainerDragLeave = (e: React.DragEvent): void => {
     if (e.currentTarget.contains(e.relatedTarget as Node)) return
     setIsDragOver(false)
   }
 
-  const handleContainerDrop = async (e: React.DragEvent) => {
+  const handleContainerDrop = async (e: React.DragEvent): Promise<void> => {
     e.preventDefault()
     setIsDragOver(false)
 
@@ -299,10 +310,9 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
       try {
         for (let i = 0; i < e.dataTransfer.files.length; i++) {
           const file = e.dataTransfer.files[i]
-          const filePath = (file as any).path
+          const filePath = (file as ElectronFile).path
           if (!filePath) continue
-          const remotePath =
-            currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`
+          const remotePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`
           await fsUpload(sessionId, filePath, remotePath)
         }
         await loadDirectory(currentPath)
@@ -343,45 +353,45 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
 
   return (
     <div
-      className="flex flex-col h-full bg-[#1a1a2e] text-gray-200 text-sm relative"
+      className="relative flex h-full flex-col bg-workspace text-sm text-workspace-foreground"
       onDragOver={handleContainerDragOver}
       onDragLeave={handleContainerDragLeave}
       onDrop={handleContainerDrop}
     >
       {isDragOver && (
         <div className="absolute inset-0 z-10 bg-blue-500/10 border-2 border-blue-400/50 rounded pointer-events-none flex items-center justify-center">
-          <span className="text-blue-400 text-xs font-bold bg-gray-900/80 px-3 py-1.5 rounded-lg">
+          <span className="rounded-md bg-workspace/90 px-3 py-1.5 text-xs font-semibold text-accent">
             释放以传输文件
           </span>
         </div>
       )}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700/50 bg-[#16162a]">
+      <div className="flex items-center justify-between border-b border-workspace-border bg-workspace-muted px-3 py-2">
         <div className="flex items-center gap-2 min-w-0">
-          <Folder className="w-4 h-4 text-blue-400 shrink-0" />
+          <Folder className="h-4 w-4 shrink-0 text-accent" />
           <span className="font-medium truncate">{hostAlias}</span>
-          <span className="text-gray-500 text-xs">文件管理</span>
+          <span className="text-xs text-workspace-muted-foreground">文件管理</span>
         </div>
         <button
           onClick={onClose}
-          className="p-1 rounded hover:bg-gray-700/50 text-gray-400 hover:text-gray-200"
+          className="rounded p-1 text-workspace-muted-foreground hover:bg-workspace-border hover:text-workspace-foreground"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      <div className="flex items-center gap-1 px-3 py-1.5 border-b border-gray-700/30 text-xs overflow-x-auto">
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-workspace-border px-3 py-1.5 text-xs">
         <button
           onClick={() => navigateTo('/')}
-          className="px-1.5 py-0.5 rounded hover:bg-gray-700/50 text-blue-400 shrink-0"
+          className="shrink-0 rounded px-1.5 py-0.5 text-accent hover:bg-workspace-border"
         >
           /
         </button>
         {pathParts.map((part, i) => (
           <div key={i} className="flex items-center gap-1 shrink-0">
-            <ChevronRight className="w-3 h-3 text-gray-600" />
+            <ChevronRight className="h-3 w-3 text-workspace-muted-foreground" />
             <button
               onClick={() => handleBreadcrumb(i)}
-              className="px-1.5 py-0.5 rounded hover:bg-gray-700/50 text-blue-400"
+              className="rounded px-1.5 py-0.5 text-accent hover:bg-workspace-border"
             >
               {part}
             </button>
@@ -389,17 +399,17 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
         ))}
       </div>
 
-      <div className="flex items-center gap-1 px-3 py-1.5 border-b border-gray-700/30">
+      <div className="flex items-center gap-1 border-b border-workspace-border px-3 py-1.5">
         <button
           onClick={goUp}
           disabled={currentPath === '/'}
-          className="px-2 py-1 rounded text-xs bg-gray-700/40 hover:bg-gray-700/70 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="rounded bg-workspace-muted px-2 py-1 text-xs hover:bg-workspace-border disabled:cursor-not-allowed disabled:opacity-30"
         >
           ..
         </button>
         <button
           onClick={() => loadDirectory(currentPath)}
-          className="p-1.5 rounded hover:bg-gray-700/50 text-gray-400 hover:text-gray-200"
+          className="rounded p-1.5 text-workspace-muted-foreground hover:bg-workspace-border hover:text-workspace-foreground"
           title="刷新"
         >
           <RefreshCw className="w-3.5 h-3.5" />
@@ -407,7 +417,7 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
         <div className="flex-1" />
         <button
           onClick={() => setShowMkdir(true)}
-          className="p-1.5 rounded hover:bg-gray-700/50 text-gray-400 hover:text-gray-200"
+          className="rounded p-1.5 text-workspace-muted-foreground hover:bg-workspace-border hover:text-workspace-foreground"
           title="新建目录"
         >
           <FolderPlus className="w-3.5 h-3.5" />
@@ -415,7 +425,7 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
         <button
           onClick={handleUpload}
           disabled={uploading}
-          className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-blue-600/80 hover:bg-blue-600 disabled:opacity-50"
+          className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs text-white hover:bg-accent-strong disabled:opacity-50"
         >
           {uploading ? (
             <Loader2 className="w-3 h-3 animate-spin" />
@@ -427,7 +437,7 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
         <button
           onClick={handleDownload}
           disabled={!selectedItem}
-          className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-green-600/80 hover:bg-green-600 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex items-center gap-1 rounded bg-success px-2 py-1 text-xs text-white hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-30"
         >
           <Download className="w-3 h-3" />
           下载
@@ -435,7 +445,7 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
         <button
           onClick={handleDelete}
           disabled={!selectedItem}
-          className="p-1.5 rounded hover:bg-red-600/50 text-gray-400 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="rounded p-1.5 text-workspace-muted-foreground hover:bg-danger/20 hover:text-danger disabled:cursor-not-allowed disabled:opacity-30"
           title="删除"
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -444,18 +454,18 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
       </div>
 
       {showMkdir && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-700/30 bg-gray-800/30">
+        <div className="flex items-center gap-2 border-b border-workspace-border bg-workspace-muted px-3 py-2">
           <input
             value={mkdirName}
             onChange={(e) => setMkdirName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleMkdir()}
             placeholder="目录名称"
-            className="flex-1 px-2 py-1 rounded bg-gray-900/50 border border-gray-600/50 text-sm outline-none focus:border-blue-500/50"
+            className="flex-1 rounded border border-workspace-border bg-workspace px-2 py-1 text-sm outline-none focus:border-accent/60"
             autoFocus
           />
           <button
             onClick={handleMkdir}
-            className="px-2 py-1 rounded text-xs bg-blue-600/80 hover:bg-blue-600"
+            className="rounded bg-accent px-2 py-1 text-xs text-white hover:bg-accent-strong"
           >
             创建
           </button>
@@ -464,7 +474,7 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
               setShowMkdir(false)
               setMkdirName('')
             }}
-            className="px-2 py-1 rounded text-xs bg-gray-700/50 hover:bg-gray-700"
+            className="rounded bg-workspace-border px-2 py-1 text-xs hover:bg-workspace-border/80"
           >
             取消
           </button>
@@ -472,25 +482,25 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
       )}
 
       {error && (
-        <div className="px-3 py-1.5 text-xs text-red-400 bg-red-900/20 border-b border-red-800/30">
+        <div className="border-b border-danger/30 bg-danger/10 px-3 py-1.5 text-xs text-danger">
           {error}
         </div>
       )}
 
       <div className="flex-1 overflow-y-auto">
         {loading && items.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-gray-500">
+          <div className="flex h-full items-center justify-center text-workspace-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin mr-2" />
             加载中...
           </div>
         ) : items.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-gray-600 text-xs">
+          <div className="flex h-full items-center justify-center text-xs text-workspace-muted-foreground">
             空目录
           </div>
         ) : (
           <table className="w-full">
             <thead>
-              <tr className="text-xs text-gray-500 border-b border-gray-700/30">
+              <tr className="border-b border-workspace-border text-xs text-workspace-muted-foreground">
                 <th className="text-left px-3 py-1.5 font-normal">名称</th>
                 <th className="text-right px-3 py-1.5 font-normal w-20">大小</th>
                 <th className="text-right px-3 py-1.5 font-normal w-32">修改时间</th>
@@ -503,22 +513,22 @@ export function FileBrowser({ hostId, hostAlias, onClose, onFileDrop }: FileBrow
                   onClick={() => handleItemClick(item)}
                   draggable
                   onDragStart={(e) => handleRowDragStart(e, item)}
-                  className={`cursor-pointer border-b border-gray-800/30 hover:bg-gray-700/20 ${
-                    selectedItem === item.name ? 'bg-blue-900/20' : ''
+                  className={`cursor-pointer border-b border-workspace-border/60 hover:bg-workspace-muted ${
+                    selectedItem === item.name ? 'bg-accent/15' : ''
                   }`}
                 >
                   <td className="px-3 py-1.5 flex items-center gap-2">
                     {item.type === 'directory' ? (
-                      <Folder className="w-4 h-4 text-blue-400 shrink-0" />
+                      <Folder className="h-4 w-4 shrink-0 text-accent" />
                     ) : (
-                      <File className="w-4 h-4 text-gray-500 shrink-0" />
+                      <File className="h-4 w-4 shrink-0 text-workspace-muted-foreground" />
                     )}
                     <span className="truncate">{item.name}</span>
                   </td>
-                  <td className="text-right px-3 py-1.5 text-gray-500 text-xs">
+                  <td className="px-3 py-1.5 text-right text-xs text-workspace-muted-foreground">
                     {item.type === 'file' ? formatSize(item.size) : '-'}
                   </td>
-                  <td className="text-right px-3 py-1.5 text-gray-500 text-xs">
+                  <td className="px-3 py-1.5 text-right text-xs text-workspace-muted-foreground">
                     {formatDate(item.modifyTime)}
                   </td>
                 </tr>

@@ -89,11 +89,9 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
 
   if (loading && visibleParts.length === 0) {
     return (
-      <div className="flex items-center gap-2 py-2 px-4 bg-gray-50/50 rounded-xl border border-dashed border-gray-200 animate-pulse">
-        <Loader2 size={12} className="text-blue-400 animate-spin" />
-        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-          初始化 Agent Runtime...
-        </span>
+      <div className="flex animate-pulse items-center gap-2 rounded-lg border border-dashed border-border bg-surface-muted px-3 py-2">
+        <Loader2 size={12} className="animate-spin text-accent" />
+        <span className="text-xs font-semibold text-muted-foreground">初始化 Agent Runtime...</span>
       </div>
     )
   }
@@ -103,11 +101,9 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
   return (
     <div className="space-y-2 mt-1">
       <div className="flex items-center gap-2 px-1">
-        <div className="h-px bg-gray-100 flex-1" />
-        <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest">
-          Agent Runtime
-        </span>
-        <div className="h-px bg-gray-100 flex-1" />
+        <div className="h-px bg-border flex-1" />
+        <span className="text-xs font-semibold text-muted-foreground">Agent Runtime</span>
+        <div className="h-px bg-border flex-1" />
       </div>
 
       <div className="space-y-1.5">
@@ -116,15 +112,15 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
             key={part.id}
             className={`group relative flex items-start gap-3 pl-4 border-l-2 transition-all ${
               part.status === 'running' || part.status === 'pending'
-                ? 'border-blue-400 bg-blue-50/30'
+                ? 'border-accent bg-accent-soft/40'
                 : part.status === 'completed'
-                  ? 'border-emerald-200'
+                  ? 'border-success/30'
                   : part.status === 'error'
-                    ? 'border-red-200 bg-red-50/30'
+                    ? 'border-danger/30 bg-danger-soft/40'
                     : part.status === 'blocked'
-                      ? 'border-amber-200 bg-amber-50/30'
-                      : 'border-gray-100'
-            } py-2 px-3 rounded-r-xl`}
+                      ? 'border-warning/30 bg-warning-soft/40'
+                      : 'border-border'
+            } py-2 px-3 rounded-r-lg`}
           >
             <div className="flex-shrink-0 mt-0.5">{iconFor(part)}</div>
 
@@ -132,25 +128,25 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
               <div className="flex items-center justify-between gap-2">
                 <span
                   className={`text-[11px] font-bold truncate ${
-                    part.status === 'running' ? 'text-blue-700' : 'text-gray-700'
-                  }`}
+                    part.status === 'running' ? 'text-accent' : 'text-foreground'
+                  } text-xs font-semibold`}
                 >
                   {titleFor(part)}
                 </span>
                 {part.endedAt && (
-                  <span className="text-[10px] text-gray-400 font-mono">
+                  <span className="text-xs text-muted-foreground font-mono">
                     {Math.max(0, part.endedAt - (part.startedAt || part.createdAt))}ms
                   </span>
                 )}
               </div>
 
-              <div className="mt-1 flex items-center gap-1.5 text-[10px] text-gray-400 min-w-0">
+              <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
                 <span className="shrink-0">{typeIcon(part)}</span>
                 <span className="truncate font-mono">{previewFor(part)}</span>
               </div>
             </div>
 
-            <div className="absolute -left-[9px] top-2.5 w-4 h-4 rounded-full bg-white border-2 border-inherit flex items-center justify-center text-[8px] font-black text-gray-400 group-hover:bg-gray-50 transition shadow-sm font-mono">
+            <div className="absolute -left-[9px] top-2.5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-inherit bg-surface text-[11px] font-semibold text-muted-foreground transition group-hover:bg-surface-muted font-mono">
               {idx + 1}
             </div>
           </div>

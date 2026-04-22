@@ -8,6 +8,7 @@ import { AppSidebar } from './components/AppSidebar'
 import { TerminalLayout, CommandHistorySearch } from './features/terminal'
 import { FilesView } from './features/files'
 import { DebugPanel } from './components/DebugPanel'
+import { TooltipProvider } from './components/ui'
 import { usePermissions } from './hooks/usePermissions'
 import { useDebug } from './hooks/useDebug'
 import { useHosts } from './hooks/useHosts'
@@ -117,157 +118,159 @@ export default function App(): JSX.Element {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-white text-gray-900 select-none">
-      <AppSidebar
-        sidebarCollapsed={sidebarCollapsed}
-        setSidebarCollapsed={setSidebarCollapsed}
-        activeView={activeView}
-        setActiveView={setActiveView}
-        hosts={hosts}
-        topics={topics}
-        selectedTopic={selectedTopic}
-        setSelectedTopic={setSelectedTopic}
-        editingTopicId={editingTopicId}
-        setEditingTopicId={setEditingTopicId}
-        editingTopicTitle={editingTopicTitle}
-        setEditingTopicTitle={setEditingTopicTitle}
-        requireConfirmation={requireConfirmation}
-        onCreateTopic={() => handleCreateTopic()}
-        onStartRenameTopic={handleStartRenameTopic}
-        onCommitRenameTopic={handleCommitRenameTopic}
-        onDeleteTopic={handleDeleteTopic}
-        setPrefilledText={setPrefilledText}
-      />
-
-      <main className="flex-1 flex flex-col overflow-hidden relative">
-        <div className={activeView === 'hosts' ? 'flex-1 flex flex-col' : 'hidden'}>
-          <HostsView
-            filteredHosts={filteredHosts}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            setShowAddHost={setShowAddHost}
-            selectedTopic={selectedTopic}
-            setSelectedHost={setSelectedHost}
-            setTerminalSessionId={setTerminalSessionId}
-            setTerminalTabs={setTerminalTabs}
-            setActiveTerminalTabIndex={setActiveTerminalTabIndex}
-            setActiveView={setActiveView}
-            topics={topics}
-            setTopics={setTopics}
-            setSelectedTopic={setSelectedTopic}
-            setPrefilledText={setPrefilledText}
-            setFileBrowserHostId={setFileBrowserHostId}
-            setFileBrowserHostAlias={setFileBrowserHostAlias}
-            handleDeleteHost={handleDeleteHost}
-            onCreateLocalAgentTopic={handleCreateLocalAgentTopic}
-          />
-        </div>
-
-        <div className={activeView === 'terminal' ? 'flex-1 flex flex-col' : 'hidden'}>
-          <TerminalLayout
-            terminalTabs={terminalTabs}
-            setTerminalTabs={setTerminalTabs}
-            activeTerminalTabIndex={activeTerminalTabIndex}
-            setActiveTerminalTabIndex={setActiveTerminalTabIndex}
-            selectedHost={selectedHost}
-            setSelectedHost={setSelectedHost}
-            terminalSessionId={terminalSessionId}
-            setTerminalSessionId={setTerminalSessionId}
-            terminalFontSize={terminalFontSize}
-            setTerminalFontSize={setTerminalFontSize}
-            setActiveView={setActiveView}
-            fileBrowserHostId={fileBrowserHostId}
-            setFileBrowserHostId={setFileBrowserHostId}
-            fileBrowserHostAlias={fileBrowserHostAlias}
-            setFileBrowserHostAlias={setFileBrowserHostAlias}
-          />
-        </div>
-
-        <div
-          className={
-            activeView === 'files' && fileBrowserHostId ? 'flex-1 flex flex-col' : 'hidden'
-          }
-        >
-          <FilesView
-            fileBrowserHostId={fileBrowserHostId || ''}
-            fileBrowserHostAlias={fileBrowserHostAlias}
-            setFileBrowserHostId={setFileBrowserHostId}
-            setFileBrowserHostAlias={setFileBrowserHostAlias}
-            setActiveView={setActiveView}
-            hosts={hosts}
-          />
-        </div>
-
-        {activeView === 'chat' && selectedTopic && (
-          <ChatPanel
-            key={selectedTopic.id}
-            topic={selectedTopic}
-            hosts={hosts}
-            prefill={prefilledText}
-            thinking={thinkingTopics.has(selectedTopic.id)}
-            onManageHosts={() => setShowManageHosts(true)}
-            agentSessions={agentSessions}
-            onCloseAgentTerminal={handleCloseTerminal}
-            onToggleAgentTerminalPaused={handleToggleAgentTerminalPaused}
-            terminalWidth={terminalWidth}
-            setTerminalWidth={setTerminalWidth}
-            terminalFontSize={terminalFontSize}
-            setTerminalFontSize={setTerminalFontSize}
-            onRemoveHostFromTopic={handleRemoveHostFromTopic}
-            onCreateTerminal={handleCreateTerminal}
-            onCloseTerminal={handleCloseTerminal}
-            onRenameTerminal={handleRenameTerminal}
-            onToggleTerminalPin={handleToggleTerminalPin}
-            onUpdateModel={handleUpdateTopicModel}
-          />
-        )}
-
-        {activeView === 'chat' && !selectedTopic && (
-          <ChatEmptyState onCreateTopic={() => handleCreateTopic()} />
-        )}
-
-        {activeView === 'settings' && <SettingsPage />}
-      </main>
-
-      {showAddHost && (
-        <AddHostModal onClose={() => setShowAddHost(false)} onSave={handleCreateHost} />
-      )}
-      {pendingAuth && (
-        <AuthModal
-          requestId={pendingAuth.requestId}
-          command={pendingAuth.command}
-          riskLevel={pendingAuth.riskLevel}
-          reason={pendingAuth.reason}
-          onResolve={handleResolveAuth}
+    <TooltipProvider>
+      <div className="flex h-screen w-screen overflow-hidden bg-app text-foreground select-none">
+        <AppSidebar
+          sidebarCollapsed={sidebarCollapsed}
+          setSidebarCollapsed={setSidebarCollapsed}
+          activeView={activeView}
+          setActiveView={setActiveView}
+          hosts={hosts}
+          topics={topics}
+          selectedTopic={selectedTopic}
+          setSelectedTopic={setSelectedTopic}
+          editingTopicId={editingTopicId}
+          setEditingTopicId={setEditingTopicId}
+          editingTopicTitle={editingTopicTitle}
+          setEditingTopicTitle={setEditingTopicTitle}
+          requireConfirmation={requireConfirmation}
+          onCreateTopic={() => handleCreateTopic()}
+          onStartRenameTopic={handleStartRenameTopic}
+          onCommitRenameTopic={handleCommitRenameTopic}
+          onDeleteTopic={handleDeleteTopic}
+          setPrefilledText={setPrefilledText}
         />
-      )}
-      {showManageHosts && selectedTopic && (
-        <ManageHostsModal
-          topic={selectedTopic}
-          allHosts={hosts}
-          onClose={() => setShowManageHosts(false)}
-          onAddHost={handleAddHostToTopic}
-          onRemoveHost={handleRemoveHostFromTopic}
-        />
-      )}
 
-      {commandHistoryOpen && (
-        <CommandHistorySearch
-          onSelect={(cmd) => {
-            if (activeView === 'terminal' && terminalSessionId) {
-              window.api.sendSSHInput(terminalSessionId, cmd + '\n')
+        <main className="flex-1 flex flex-col overflow-hidden relative">
+          <div className={activeView === 'hosts' ? 'flex-1 flex flex-col' : 'hidden'}>
+            <HostsView
+              filteredHosts={filteredHosts}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              setShowAddHost={setShowAddHost}
+              selectedTopic={selectedTopic}
+              setSelectedHost={setSelectedHost}
+              setTerminalSessionId={setTerminalSessionId}
+              setTerminalTabs={setTerminalTabs}
+              setActiveTerminalTabIndex={setActiveTerminalTabIndex}
+              setActiveView={setActiveView}
+              topics={topics}
+              setTopics={setTopics}
+              setSelectedTopic={setSelectedTopic}
+              setPrefilledText={setPrefilledText}
+              setFileBrowserHostId={setFileBrowserHostId}
+              setFileBrowserHostAlias={setFileBrowserHostAlias}
+              handleDeleteHost={handleDeleteHost}
+              onCreateLocalAgentTopic={handleCreateLocalAgentTopic}
+            />
+          </div>
+
+          <div className={activeView === 'terminal' ? 'flex-1 flex flex-col' : 'hidden'}>
+            <TerminalLayout
+              terminalTabs={terminalTabs}
+              setTerminalTabs={setTerminalTabs}
+              activeTerminalTabIndex={activeTerminalTabIndex}
+              setActiveTerminalTabIndex={setActiveTerminalTabIndex}
+              selectedHost={selectedHost}
+              setSelectedHost={setSelectedHost}
+              terminalSessionId={terminalSessionId}
+              setTerminalSessionId={setTerminalSessionId}
+              terminalFontSize={terminalFontSize}
+              setTerminalFontSize={setTerminalFontSize}
+              setActiveView={setActiveView}
+              fileBrowserHostId={fileBrowserHostId}
+              setFileBrowserHostId={setFileBrowserHostId}
+              fileBrowserHostAlias={fileBrowserHostAlias}
+              setFileBrowserHostAlias={setFileBrowserHostAlias}
+            />
+          </div>
+
+          <div
+            className={
+              activeView === 'files' && fileBrowserHostId ? 'flex-1 flex flex-col' : 'hidden'
             }
-          }}
-          onClose={() => setCommandHistoryOpen(false)}
-        />
-      )}
+          >
+            <FilesView
+              fileBrowserHostId={fileBrowserHostId || ''}
+              fileBrowserHostAlias={fileBrowserHostAlias}
+              setFileBrowserHostId={setFileBrowserHostId}
+              setFileBrowserHostAlias={setFileBrowserHostAlias}
+              setActiveView={setActiveView}
+              hosts={hosts}
+            />
+          </div>
 
-      <DebugPanel
-        showDebug={showDebug}
-        setShowDebug={setShowDebug}
-        debugLogs={debugLogs}
-        clearDebugLogs={clearDebugLogs}
-      />
-    </div>
+          {activeView === 'chat' && selectedTopic && (
+            <ChatPanel
+              key={selectedTopic.id}
+              topic={selectedTopic}
+              hosts={hosts}
+              prefill={prefilledText}
+              thinking={thinkingTopics.has(selectedTopic.id)}
+              onManageHosts={() => setShowManageHosts(true)}
+              agentSessions={agentSessions}
+              onCloseAgentTerminal={handleCloseTerminal}
+              onToggleAgentTerminalPaused={handleToggleAgentTerminalPaused}
+              terminalWidth={terminalWidth}
+              setTerminalWidth={setTerminalWidth}
+              terminalFontSize={terminalFontSize}
+              setTerminalFontSize={setTerminalFontSize}
+              onRemoveHostFromTopic={handleRemoveHostFromTopic}
+              onCreateTerminal={handleCreateTerminal}
+              onCloseTerminal={handleCloseTerminal}
+              onRenameTerminal={handleRenameTerminal}
+              onToggleTerminalPin={handleToggleTerminalPin}
+              onUpdateModel={handleUpdateTopicModel}
+            />
+          )}
+
+          {activeView === 'chat' && !selectedTopic && (
+            <ChatEmptyState onCreateTopic={() => handleCreateTopic()} />
+          )}
+
+          {activeView === 'settings' && <SettingsPage />}
+        </main>
+
+        {showAddHost && (
+          <AddHostModal onClose={() => setShowAddHost(false)} onSave={handleCreateHost} />
+        )}
+        {pendingAuth && (
+          <AuthModal
+            requestId={pendingAuth.requestId}
+            command={pendingAuth.command}
+            riskLevel={pendingAuth.riskLevel}
+            reason={pendingAuth.reason}
+            onResolve={handleResolveAuth}
+          />
+        )}
+        {showManageHosts && selectedTopic && (
+          <ManageHostsModal
+            topic={selectedTopic}
+            allHosts={hosts}
+            onClose={() => setShowManageHosts(false)}
+            onAddHost={handleAddHostToTopic}
+            onRemoveHost={handleRemoveHostFromTopic}
+          />
+        )}
+
+        {commandHistoryOpen && (
+          <CommandHistorySearch
+            onSelect={(cmd) => {
+              if (activeView === 'terminal' && terminalSessionId) {
+                window.api.sendSSHInput(terminalSessionId, cmd + '\n')
+              }
+            }}
+            onClose={() => setCommandHistoryOpen(false)}
+          />
+        )}
+
+        <DebugPanel
+          showDebug={showDebug}
+          setShowDebug={setShowDebug}
+          debugLogs={debugLogs}
+          clearDebugLogs={clearDebugLogs}
+        />
+      </div>
+    </TooltipProvider>
   )
 }

@@ -12,6 +12,7 @@ import { useProvider } from '../../hooks/useProvider'
 import { useVisibilityRestore } from '../../hooks/useVisibilityRestore'
 import { useChatMessages } from '../../hooks/useChatMessages'
 import { useCommandPalette } from '../../hooks/useCommandPalette'
+import { Badge, PageHeader } from '../ui'
 
 import { LOCAL_HOST } from '../../constants'
 
@@ -55,38 +56,27 @@ export function ChatPanel({
   onRenameTerminal,
   onToggleTerminalPin,
   onUpdateModel
-}: ChatPanelProps) {
-  console.log('[ChatPanel] Rendering with topic:', topic?.id, topic?.title)
-  if (!topic) {
-    console.warn('[ChatPanel] NO TOPIC PASSED!')
-    return null
-  }
+}: ChatPanelProps): React.ReactElement {
   const [inputValue, setInputValue] = useState(prefill || '')
   const [showMentions, setShowMentions] = useState(false)
   const [mentionFilter, setMentionFilter] = useState('')
-  const [topicHosts, setTopicHosts] = useState<Host[]>([])
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
   const [isResizing, setIsResizing] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const { animationKey } = useVisibilityRestore()
   const { providers, models, defaultProviderId, defaultModelId } = useProvider()
 
-  useEffect(() => {
-    // Priority: 1. Topic settings 2. Explicitly selected 3. Global defaults
-    if (topic.selectedProviderId && topic.selectedModelId) {
-      setSelectedProviderId(topic.selectedProviderId)
-      setSelectedModelId(topic.selectedModelId)
-      return
-    }
-
-    if (selectedProviderId) return
-    const targetPid = defaultProviderId || providers.find((p) => p.enabled)?.id
-    if (!targetPid) return
-    setSelectedProviderId(targetPid)
-    const targetMid = defaultModelId || models.find((m) => m.providerId === targetPid)?.id
-    if (targetMid) setSelectedModelId(targetMid)
-  }, [topic.id, providers, models, defaultProviderId, defaultModelId])
+  const selectedProviderId =
+    topic.selectedProviderId || defaultProviderId || providers.find((p) => p.enabled)?.id || null
+  const selectedModelId =
+    topic.selectedModelId ||
+    (selectedProviderId
+      ? (defaultModelId &&
+        models.some(
+          (model) => model.id === defaultModelId && model.providerId === selectedProviderId
+        )
+          ? defaultModelId
+          : models.find((model) => model.providerId === selectedProviderId)?.id) || null
+      : null)
   const {
     messages,
     activeSteps,
@@ -108,21 +98,17 @@ export function ChatPanel({
     setFocusedSessionId,
     openCommandPalette
   } = useCommandPalette(visibleSessions)
+  const realHosts = hosts.filter((h) => topic.hostIds.includes(h.id))
+  const topicHosts = topic.hostIds.includes('local') ? [LOCAL_HOST, ...realHosts] : realHosts
   const filteredHosts = topicHosts.filter(
     (h) =>
       h.alias.toLowerCase().includes(mentionFilter.toLowerCase()) || h.ip.includes(mentionFilter)
   )
-
-  useEffect(() => {
-    const realHosts = hosts.filter((h) => topic.hostIds.includes(h.id))
-    const includesLocal = topic.hostIds.includes('local')
-    setTopicHosts(includesLocal ? [LOCAL_HOST, ...realHosts] : realHosts)
-  }, [topic.hostIds, hosts])
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [messages, thinking])
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
     const value = e.target.value
     setInputValue(value)
     const lastWord = value.split(' ').pop() || ''
@@ -131,19 +117,19 @@ export function ChatPanel({
       setMentionFilter(lastWord.slice(1))
     } else setShowMentions(false)
   }
-  const insertMention = (host: Host) => {
+  const insertMention = (host: Host): void => {
     const parts = inputValue.split(' ')
     parts.pop()
     setInputValue([...parts, `@${host.alias} `].join(' '))
     setShowMentions(false)
   }
-  const handleSend = async () => {
+  const handleSend = async (): Promise<void> => {
     if (!inputValue.trim()) return
     const c = inputValue
     setInputValue('')
     await sendMessage(c)
   }
-  const handleSubmitCommandPalette = async () => {
+  const handleSubmitCommandPalette = async (): Promise<void> => {
     if (!commandPaletteValue.trim()) return
     const prefix = focusedSession ? `@${focusedSession.hostAlias} ` : ''
     setCommandPaletteOpen(false)
@@ -151,77 +137,74 @@ export function ChatPanel({
     setInputValue('')
     await sendMessage(`${prefix}${commandPaletteValue.trim()}`)
   }
-  const handleFocusSession = (id: string) => setFocusedSessionId(id)
+  const handleFocusSession = (id: string): void => setFocusedSessionId(id)
 
   return (
-    <div className="flex flex-col h-full bg-white">
-      <div className="px-7 py-5 border-b border-gray-100 flex items-center justify-between drag">
-        <div className="no-drag">
-          <h2 className="font-black text-gray-900">{topic.title}</h2>
-          <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5">
-            <Clock size={11} />
+    <div className="flex h-full flex-col bg-surface">
+      <PageHeader
+        title={topic.title}
+        dense
+        description={
+          <>
+            <Clock size={12} />
             {messages.length > 0 ? `${messages.length} 条消息` : '暂无消息'}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 no-drag">
-          {visibleSessions.length > 0 && (
-            <div className="hidden lg:flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50 border border-gray-200">
-              <Monitor size={14} className="text-gray-400" />
-              <span className="text-xs font-bold text-gray-600">
-                共驾终端 {visibleSessions.length}
-              </span>
-              {focusedSession && (
-                <span className="text-[11px] text-blue-600 font-bold">
-                  当前: {focusedSession.hostAlias}
-                </span>
-              )}
-            </div>
-          )}
-          {selectedProviderId &&
-            selectedModelId &&
-            (() => {
-              const sp = providers.find((p) => p.id === selectedProviderId)
-              const sm = models.find(
-                (m) => m.id === selectedModelId && m.providerId === selectedProviderId
-              )
-              return sp && sm ? (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 border border-blue-100">
-                  <Cpu size={13} className="text-blue-500" />
-                  <span className="text-xs font-bold text-blue-700">{sm.name}</span>
-                  <span className="text-[10px] text-blue-400">{sp.name}</span>
-                </div>
-              ) : null
-            })()}
-          <ModelSelector
-            providers={providers}
-            models={models}
-            selectedProviderId={selectedProviderId}
-            selectedModelId={selectedModelId}
-            onSelect={(pid, mid) => {
-              setSelectedProviderId(pid)
-              setSelectedModelId(mid)
-              onUpdateModel(topic.id, pid, mid)
-            }}
-            disabled={thinking}
-          />
-          {topicHosts.length > 0 && (
-            <div className="flex -space-x-2">
-              {topicHosts.slice(0, 4).map((h) => (
-                <div
-                  key={h.id}
-                  title={h.alias}
-                  className="w-8 h-8 bg-blue-100 text-blue-600 text-[10px] font-black rounded-full border-2 border-white flex items-center justify-center ring-1 ring-blue-200"
-                >
-                  {h.alias.slice(0, 2).toUpperCase()}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            {visibleSessions.length > 0 && (
+              <Badge variant="neutral" className="hidden lg:flex">
+                <Monitor size={13} />
+                <span>共驾终端 {visibleSessions.length}</span>
+                {focusedSession && (
+                  <span className="text-accent">当前: {focusedSession.hostAlias}</span>
+                )}
+              </Badge>
+            )}
+            {selectedProviderId &&
+              selectedModelId &&
+              (() => {
+                const sp = providers.find((p) => p.id === selectedProviderId)
+                const sm = models.find(
+                  (m) => m.id === selectedModelId && m.providerId === selectedProviderId
+                )
+                return sp && sm ? (
+                  <Badge variant="accent">
+                    <Cpu size={13} />
+                    <span>{sm.name}</span>
+                    <span className="text-accent/70">{sp.name}</span>
+                  </Badge>
+                ) : null
+              })()}
+            <ModelSelector
+              providers={providers}
+              models={models}
+              selectedProviderId={selectedProviderId}
+              selectedModelId={selectedModelId}
+              onSelect={(pid, mid) => {
+                onUpdateModel(topic.id, pid, mid)
+              }}
+              disabled={thinking}
+            />
+            {topicHosts.length > 0 && (
+              <div className="flex -space-x-2">
+                {topicHosts.slice(0, 4).map((h) => (
+                  <div
+                    key={h.id}
+                    title={h.alias}
+                    className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-surface bg-accent-soft text-[11px] font-semibold text-accent ring-1 ring-accent/20"
+                  >
+                    {h.alias.slice(0, 2).toUpperCase()}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        }
+      />
 
       <div className="flex-1 overflow-hidden flex">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-7 py-6 space-y-6">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {messages.length === 0 && (
             <EmptyState
               topicHosts={topicHosts}

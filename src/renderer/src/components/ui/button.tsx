@@ -1,0 +1,56 @@
+/* eslint-disable react-refresh/only-export-components */
+import * as React from 'react'
+import { cva, type VariantProps } from 'class-variance-authority'
+import { Slot } from 'radix-ui'
+import { cn } from '../../lib/utils'
+
+export const buttonVariants = cva(
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35 disabled:pointer-events-none disabled:opacity-50 no-drag',
+  {
+    variants: {
+      variant: {
+        primary: 'bg-accent text-white hover:bg-accent-strong',
+        secondary: 'border border-border bg-surface text-foreground hover:bg-surface-muted',
+        ghost: 'text-muted-foreground hover:bg-surface-muted hover:text-foreground',
+        subtle: 'bg-surface-muted text-foreground hover:bg-border/70',
+        destructive: 'bg-danger text-white hover:bg-danger-strong'
+      },
+      size: {
+        sm: 'h-7 px-2.5 text-xs',
+        md: 'h-8 px-3',
+        lg: 'h-10 px-4',
+        icon: 'h-8 w-8 p-0'
+      }
+    },
+    defaultVariants: {
+      variant: 'secondary',
+      size: 'md'
+    }
+  }
+)
+
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
+  asChild?: boolean
+}
+
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, asChild = false, ...props }, ref) => {
+    const Comp = asChild ? Slot.Root : 'button'
+    return (
+      <Comp ref={ref} className={cn(buttonVariants({ variant, size, className }))} {...props} />
+    )
+  }
+)
+Button.displayName = 'Button'
+
+export interface IconButtonProps extends Omit<ButtonProps, 'size'> {
+  'aria-label': string
+}
+
+export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
+  ({ className, variant = 'ghost', ...props }, ref) => (
+    <Button ref={ref} variant={variant} size="icon" className={className} {...props} />
+  )
+)
+IconButton.displayName = 'IconButton'

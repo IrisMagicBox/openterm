@@ -30,14 +30,10 @@ interface TerminalLayoutProps {
 }
 
 export function TerminalLayout({
-  terminalTabs: _legacyTabs,
+  terminalTabs: legacyTabs,
   setTerminalTabs: setLegacyTabs,
-  activeTerminalTabIndex: _legacyIndex,
-  setActiveTerminalTabIndex: _setLegacyIndex,
   selectedHost,
   setSelectedHost,
-  terminalSessionId: _legacySessionId,
-  setTerminalSessionId: _setLegacySessionId,
   terminalFontSize,
   setTerminalFontSize,
   setActiveView,
@@ -45,7 +41,7 @@ export function TerminalLayout({
   setFileBrowserHostId,
   fileBrowserHostAlias,
   setFileBrowserHostAlias
-}: TerminalLayoutProps) {
+}: TerminalLayoutProps): React.ReactElement {
   const paneManager = useTerminalPaneManager()
   const { confirm, ConfirmDialogComponent } = useConfirm()
   const { transfers, startTransfer, removeTransfer } = useFileTransfer()
@@ -55,16 +51,19 @@ export function TerminalLayout({
 
   const syncedSessionIds = useRef<Set<string>>(new Set())
   const openTerminalRef = useRef(paneManager.openTerminal)
-  openTerminalRef.current = paneManager.openTerminal
 
   useEffect(() => {
-    for (const tab of _legacyTabs) {
+    openTerminalRef.current = paneManager.openTerminal
+  }, [paneManager.openTerminal])
+
+  useEffect(() => {
+    for (const tab of legacyTabs) {
       if (!syncedSessionIds.current.has(tab.sessionId)) {
         syncedSessionIds.current.add(tab.sessionId)
         openTerminalRef.current(tab.host, tab.sessionId)
       }
     }
-  }, [_legacyTabs])
+  }, [legacyTabs])
 
   const activeTab = paneManager
     .getLeaves()
@@ -172,8 +171,8 @@ export function TerminalLayout({
 
       return (
         <div
-          className={`flex flex-col h-full bg-white transition-colors ${
-            paneManager.focusedLeafId === leaf.id ? 'ring-1 ring-inset ring-blue-500/50' : ''
+          className={`flex flex-col h-full bg-workspace transition-colors ${
+            paneManager.focusedLeafId === leaf.id ? 'ring-1 ring-inset ring-accent/70' : ''
           }`}
           onMouseDown={() => paneManager.setFocusedLeafId(leaf.id)}
           onDragOver={(e) => handlePaneDragOver(e, leaf.id)}
@@ -181,7 +180,7 @@ export function TerminalLayout({
           onDrop={(e) => handlePaneDrop(e, leaf.id)}
         >
           {tabs.length > 1 && (
-            <div className="flex items-center bg-gray-100 border-b border-gray-200 px-1 pt-0.5 overflow-x-auto no-scrollbar">
+            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted px-1 pt-0.5 no-scrollbar">
               {tabs.map((tab) => (
                 <div
                   key={tab.sessionId}
@@ -190,8 +189,8 @@ export function TerminalLayout({
                   onClick={() => paneManager.focusTab(tab.sessionId)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold cursor-grab transition-colors border-b-2 whitespace-nowrap ${
                     leaf.activeTabId === tab.sessionId
-                      ? 'text-blue-600 border-blue-500 bg-white'
-                      : 'text-gray-500 border-transparent hover:text-gray-700 hover:bg-white/50'
+                      ? 'text-workspace-foreground border-accent bg-workspace'
+                      : 'text-workspace-muted-foreground border-transparent hover:text-workspace-foreground hover:bg-workspace/70'
                   }`}
                 >
                   <TerminalIcon size={10} />
@@ -201,7 +200,7 @@ export function TerminalLayout({
                       e.stopPropagation()
                       handleCloseTab(tab.sessionId)
                     }}
-                    className="ml-1 p-0.5 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600 transition"
+                    className="ml-1 rounded p-0.5 text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-workspace-foreground"
                   >
                     <X size={9} />
                   </button>
@@ -212,7 +211,7 @@ export function TerminalLayout({
 
           {dragOverPaneId === leaf.id && dragOverEdge && (
             <div
-              className={`absolute z-20 bg-blue-500/20 border-2 border-blue-400 pointer-events-none ${
+              className={`absolute z-20 border-2 border-accent bg-accent/20 pointer-events-none ${
                 dragOverEdge === 'top'
                   ? 'top-0 left-0 right-0 h-10'
                   : dragOverEdge === 'bottom'
@@ -274,16 +273,16 @@ export function TerminalLayout({
   const allTabs = paneManager.getAllTabs()
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 flex overflow-hidden bg-workspace">
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="bg-gray-50 flex flex-col flex-shrink-0 border-b border-gray-200">
-          <div className="h-11 text-gray-800 px-5 flex items-center justify-between flex-shrink-0 drag">
+        <div className="flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted">
+          <div className="h-11 px-5 flex items-center justify-between flex-shrink-0 drag text-workspace-foreground">
             <div className="flex items-center gap-3 no-drag">
-              <TerminalIcon size={13} className="text-blue-500" />
-              <span className="text-xs font-bold font-mono text-gray-800">
+              <TerminalIcon size={13} className="text-accent" />
+              <span className="font-mono text-xs font-semibold text-workspace-foreground">
                 {activeTab?.host.alias || selectedHost?.alias}
               </span>
-              <span className="text-[10px] text-gray-400 font-mono">
+              <span className="font-mono text-xs text-workspace-muted-foreground">
                 {activeTab?.host.id === 'local' || selectedHost?.id === 'local'
                   ? '本机'
                   : activeTab
@@ -294,18 +293,18 @@ export function TerminalLayout({
               </span>
             </div>
             <div className="flex items-center gap-2 no-drag">
-              <div className="flex bg-white rounded-lg overflow-hidden border border-gray-200 mr-1 shadow-sm">
+              <div className="mr-1 flex overflow-hidden rounded-md border border-workspace-border bg-workspace">
                 <button
                   onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
-                  className="px-3 py-1.5 text-xs font-black hover:bg-gray-50 text-gray-400 hover:text-gray-700 transition-colors"
+                  className="px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition-colors hover:bg-workspace-border hover:text-workspace-foreground"
                   title="缩小"
                 >
                   -
                 </button>
-                <div className="w-[1px] bg-gray-200" />
+                <div className="w-px bg-workspace-border" />
                 <button
                   onClick={() => setTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
-                  className="px-3 py-1.5 text-xs font-black hover:bg-gray-50 text-gray-400 hover:text-gray-700 transition-colors"
+                  className="px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition-colors hover:bg-workspace-border hover:text-workspace-foreground"
                   title="放大"
                 >
                   +
@@ -321,14 +320,14 @@ export function TerminalLayout({
                       <>
                         <button
                           onClick={() => handleSplit(leafToSplit.id, 'horizontal')}
-                          className="text-[11px] bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-blue-400 px-2 py-1.5 rounded-lg font-bold transition flex items-center gap-1"
+                          className="flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
                           title="水平分屏"
                         >
                           <Columns size={12} />
                         </button>
                         <button
                           onClick={() => handleSplit(leafToSplit.id, 'vertical')}
-                          className="text-[11px] bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-blue-400 px-2 py-1.5 rounded-lg font-bold transition flex items-center gap-1"
+                          className="flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
                           title="垂直分屏"
                         >
                           <Rows size={12} />
@@ -340,7 +339,7 @@ export function TerminalLayout({
               )}
               <button
                 onClick={() => setShowTerminalList(!showTerminalList)}
-                className="text-[11px] bg-white border border-gray-200 shadow-sm hover:bg-gray-50 text-gray-600 hover:text-blue-500 px-2.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1"
+                className="flex items-center gap-1 rounded-md border border-workspace-border bg-workspace px-2.5 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
                 title="终端列表"
               >
                 <LayoutGrid size={12} />
@@ -353,14 +352,14 @@ export function TerminalLayout({
                     setFileBrowserHostAlias(h.alias)
                   }
                 }}
-                className="text-[11px] bg-white border border-gray-200 shadow-sm hover:bg-gray-50 text-gray-600 hover:text-blue-500 px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
+                className="flex items-center gap-1.5 rounded-md border border-workspace-border bg-workspace px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
                 title="文件管理"
               >
                 <Folder size={12} /> 文件
               </button>
               <button
                 onClick={handleDisconnectAll}
-                className="text-[11px] bg-white border border-gray-200 shadow-sm hover:bg-red-50 text-gray-500 hover:text-red-500 px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
+                className="flex items-center gap-1.5 rounded-md border border-workspace-border bg-workspace px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-danger/10 hover:text-danger"
               >
                 <X size={12} /> 断开全部
               </button>
@@ -372,8 +371,8 @@ export function TerminalLayout({
           {paneManager.isEmpty ? (
             <div className="flex-1 flex items-center justify-center bg-white">
               <div className="text-center">
-                <TerminalIcon size={40} className="text-gray-200 mx-auto mb-4" />
-                <p className="text-gray-400 text-sm font-bold">无活跃终端</p>
+                <TerminalIcon size={40} className="text-workspace-border mx-auto mb-4" />
+                <p className="text-workspace-muted-foreground text-sm font-semibold">无活跃终端</p>
               </div>
             </div>
           ) : (
@@ -391,10 +390,10 @@ export function TerminalLayout({
             onClick={() => setShowTerminalList(false)}
           >
             <div
-              className="bg-gray-900 rounded-2xl p-6 max-w-2xl w-full mx-4 border border-gray-700"
+              className="bg-workspace rounded-lg p-5 max-w-2xl w-full mx-4 border border-workspace-border"
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-white font-black text-sm mb-4 flex items-center gap-2">
+              <h3 className="text-workspace-foreground font-bold text-sm mb-4 flex items-center gap-2">
                 <LayoutGrid size={14} /> 终端列表 ({allTabs.length})
               </h3>
               <div className="grid grid-cols-2 gap-3 max-h-80 overflow-y-auto">
@@ -405,12 +404,14 @@ export function TerminalLayout({
                       paneManager.focusTab(tab.sessionId)
                       setShowTerminalList(false)
                     }}
-                    className="p-3 bg-gray-800 rounded-xl cursor-pointer hover:bg-gray-700 transition flex items-center gap-3"
+                    className="flex cursor-pointer items-center gap-3 rounded-md bg-workspace-muted p-3 transition hover:bg-workspace-border"
                   >
-                    <TerminalIcon size={16} className="text-blue-400" />
+                    <TerminalIcon size={16} className="text-accent" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-white text-xs font-bold truncate">{tab.host.alias}</div>
-                      <div className="text-gray-500 text-[10px] font-mono">
+                      <div className="truncate text-xs font-semibold text-workspace-foreground">
+                        {tab.host.alias}
+                      </div>
+                      <div className="font-mono text-xs text-workspace-muted-foreground">
                         {tab.host.id === 'local' ? '本机' : `${tab.host.username}@${tab.host.ip}`}
                       </div>
                     </div>
@@ -423,7 +424,7 @@ export function TerminalLayout({
       </div>
 
       {fileBrowserHostId && (
-        <div className="w-96 border-l border-gray-200 flex-shrink-0 bg-white">
+        <div className="w-96 flex-shrink-0 border-l border-workspace-border bg-workspace">
           <FileBrowser
             hostId={fileBrowserHostId}
             hostAlias={fileBrowserHostAlias}

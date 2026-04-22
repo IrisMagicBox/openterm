@@ -3,6 +3,8 @@ import { TerminalView } from '../TerminalView'
 import { TerminalTabBar } from '../terminal/TerminalTabBar'
 import type { TerminalSession } from '../../../../shared/types'
 import { useConfirm } from '../../hooks/useConfirm'
+import { Badge, Button, IconButton } from '../ui'
+import { cn } from '../../lib/utils'
 
 interface TerminalSessionGridProps {
   visibleSessions: TerminalSession[]
@@ -24,6 +26,15 @@ interface TerminalSessionGridProps {
   onFocusSession: (sessionId: string) => void
 }
 
+function statusTone(
+  status: TerminalSession['commandStatus']
+): 'accent' | 'success' | 'danger' | 'neutral' {
+  if (status === 'running') return 'accent'
+  if (status === 'completed') return 'success'
+  if (status === 'failed') return 'danger'
+  return 'neutral'
+}
+
 export function TerminalSessionGrid({
   visibleSessions,
   focusedSession,
@@ -42,13 +53,16 @@ export function TerminalSessionGrid({
   onSetResizing,
   onSetFocusedSessionId,
   onFocusSession
-}: TerminalSessionGridProps) {
+}: TerminalSessionGridProps): React.ReactElement {
   const { confirm, ConfirmDialogComponent } = useConfirm()
 
   return (
     <>
       <div
-        className={`w-1.5 hover:w-2 bg-transparent hover:bg-blue-400/20 cursor-col-resize transition-all z-20 active:bg-blue-500/30 ${isResizing ? 'bg-blue-500/30 w-2' : ''}`}
+        className={cn(
+          'z-20 w-1.5 cursor-col-resize bg-transparent transition-all hover:w-2 hover:bg-accent/15 active:bg-accent/25',
+          isResizing && 'w-2 bg-accent/25'
+        )}
         onMouseDown={(e) => {
           e.preventDefault()
           onSetResizing(true)
@@ -56,24 +70,22 @@ export function TerminalSessionGrid({
       />
       <div
         style={{ width: terminalWidth }}
-        className="border-l border-gray-100 bg-gray-50 flex flex-col shrink-0"
+        className="flex shrink-0 flex-col border-l border-border bg-app"
       >
-        <div className="px-4 py-3 border-b border-gray-100 bg-white space-y-3">
+        <div className="space-y-3 border-b border-border bg-surface px-4 py-3">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
-              <Monitor size={12} />
+            <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
+              <Monitor size={13} />
               共驾终端
             </h3>
-            <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-blue-50 text-blue-600">
-              {visibleSessions.length} 个活动终端
-            </span>
+            <Badge variant="accent">{visibleSessions.length} 个活动终端</Badge>
           </div>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-sm font-black text-gray-900">
+              <div className="truncate text-sm font-bold text-foreground">
                 {focusedSession ? focusedSession.hostAlias : '未选择终端'}
               </div>
-              <div className="text-[11px] text-gray-400 mt-0.5">
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">
                 {focusedSession
                   ? focusedSession.paused
                     ? '当前由人工接管，Agent 已暂停'
@@ -81,17 +93,12 @@ export function TerminalSessionGrid({
                   : '点击任一终端后即可接管或自然语言下达指令'}
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={onOpenCommandPalette}
-                className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
-                title="Command+K"
-              >
-                Cmd+K
-              </button>
-            </div>
+            <Button onClick={onOpenCommandPalette} variant="primary" size="sm" title="Command+K">
+              Cmd+K
+            </Button>
           </div>
         </div>
+
         {visibleSessions.length > 0 && (
           <TerminalTabBar
             tabs={visibleSessions.map((s) => ({
@@ -117,175 +124,203 @@ export function TerminalSessionGrid({
             }}
           />
         )}
-        <div className="flex-1 min-h-0 flex bg-gray-50/50">
+
+        <div className="flex min-h-0 flex-1 bg-app">
           <div
-            className={`flex-1 min-h-0 overflow-y-auto p-4 grid gap-4 auto-rows-fr ${visibleSessions.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
+            className={cn(
+              'grid min-h-0 flex-1 auto-rows-fr gap-3 overflow-y-auto p-3',
+              visibleSessions.length > 1 ? 'grid-cols-2' : 'grid-cols-1'
+            )}
           >
-            {visibleSessions.slice(0, 4).map((session) => (
-              <div
-                key={session.id}
-                onClick={() => onSetFocusedSessionId(session.id)}
-                className={`bg-white rounded-2xl border overflow-hidden shadow-sm transition cursor-pointer flex flex-col ${focusedSession?.id === session.id ? 'border-blue-300 ring-2 ring-blue-100 shadow-blue-100/70' : 'border-gray-200 hover:border-gray-300'}`}
-              >
+            {visibleSessions.slice(0, 4).map((session) => {
+              const isFocused = focusedSession?.id === session.id
+              const tone = statusTone(session.commandStatus)
+              return (
                 <div
-                  className={`px-3 py-2.5 text-gray-800 flex items-center justify-between gap-2 border-b border-gray-100 ${focusedSession?.id === session.id ? 'bg-gray-50' : 'bg-white'}`}
+                  key={session.id}
+                  onClick={() => onSetFocusedSessionId(session.id)}
+                  className={cn(
+                    'flex cursor-pointer flex-col overflow-hidden rounded-lg border bg-surface transition-colors',
+                    isFocused
+                      ? 'border-accent ring-2 ring-accent/15'
+                      : 'border-border hover:border-accent/40'
+                  )}
                 >
-                  <div className="flex items-center gap-2 min-w-0 shrink">
-                    <TerminalIcon
-                      size={12}
-                      className={session.paused ? 'text-amber-500' : 'text-emerald-500'}
-                    />
-                    <span className="text-xs font-bold truncate">{session.hostAlias}</span>
-                    {focusedSession?.id === session.id && (
-                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                        当前
-                      </span>
+                  <div
+                    className={cn(
+                      'flex items-center justify-between gap-2 border-b border-border px-3 py-2 text-foreground',
+                      isFocused ? 'bg-accent-soft/60' : 'bg-surface'
                     )}
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <div className="flex bg-gray-100 rounded-lg overflow-hidden border border-gray-200 mr-1">
+                  >
+                    <div className="flex min-w-0 shrink items-center gap-2">
+                      <TerminalIcon
+                        size={12}
+                        className={session.paused ? 'text-warning' : 'text-success'}
+                      />
+                      <span className="truncate text-xs font-semibold">{session.hostAlias}</span>
+                      {isFocused && <Badge variant="accent">当前</Badge>}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <div className="mr-1 flex overflow-hidden rounded-md border border-border bg-surface-muted">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSetTerminalFontSize(Math.max(terminalFontSize - 1, 6))
+                          }}
+                          className="px-2 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-border/60 hover:text-foreground"
+                          title="缩小 (Cmd -)"
+                        >
+                          -
+                        </button>
+                        <div className="w-px bg-border" />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSetTerminalFontSize(Math.min(terminalFontSize + 1, 30))
+                          }}
+                          className="px-2 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-border/60 hover:text-foreground"
+                          title="放大 (Cmd +)"
+                        >
+                          +
+                        </button>
+                      </div>
                       <button
-                        onClick={() => onSetTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
-                        className="px-2 py-1 text-[10px] font-black hover:bg-gray-200 text-gray-500 hover:text-gray-800 transition-colors"
-                        title="缩小 (Cmd -)"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onToggleAgentTerminalPaused(session.id, !session.paused)
+                        }}
+                        className={cn(
+                          'rounded-md px-2 py-1 text-xs font-semibold transition',
+                          session.paused
+                            ? 'bg-warning-soft text-warning hover:bg-warning/15'
+                            : 'bg-success-soft text-success hover:bg-success/15'
+                        )}
+                        title={session.paused ? '恢复 Agent 控制' : '暂停 Agent，人工接管'}
                       >
-                        -
+                        {session.paused ? <Play size={12} /> : <Pause size={12} />}
                       </button>
-                      <div className="w-[1px] bg-gray-200" />
-                      <button
-                        onClick={() => onSetTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
-                        className="px-2 py-1 text-[10px] font-black hover:bg-gray-200 text-gray-500 hover:text-gray-800 transition-colors"
-                        title="放大 (Cmd +)"
+                      <IconButton
+                        aria-label="关闭终端"
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          const ok = await confirm({
+                            title: '关闭终端',
+                            message: '确定关闭此终端？',
+                            confirmText: '关闭',
+                            variant: 'danger'
+                          })
+                          if (!ok) return
+                          onCloseAgentTerminal(session.id)
+                        }}
+                        className="h-6 w-6"
                       >
-                        +
-                      </button>
+                        <X size={12} />
+                      </IconButton>
                     </div>
-                    <button
-                      onClick={() => onToggleAgentTerminalPaused(session.id, !session.paused)}
-                      className={`px-2 py-1 rounded-lg text-[11px] font-bold transition ${
-                        session.paused
-                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                          : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                      }`}
-                      title={session.paused ? '恢复 Agent 控制' : '暂停 Agent，人工接管'}
+                  </div>
+
+                  {session.commandStatus && session.commandStatus !== 'idle' && (
+                    <div
+                      className={cn(
+                        'border-b px-3 py-2',
+                        tone === 'accent' && 'border-accent/20 bg-accent-soft',
+                        tone === 'success' && 'border-success/20 bg-success-soft',
+                        tone === 'danger' && 'border-danger/20 bg-danger-soft'
+                      )}
                     >
-                      {session.paused ? <Play size={12} /> : <Pause size={12} />}
-                    </button>
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation()
-                        const ok = await confirm({
-                          title: '关闭终端',
-                          message: '确定关闭此终端？',
-                          confirmText: '关闭',
-                          variant: 'danger'
-                        })
-                        if (!ok) return
-                        onCloseAgentTerminal(session.id)
-                      }}
-                      className="p-1 hover:bg-gray-100 text-gray-400 hover:text-gray-600 rounded transition"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                </div>
-                {session.commandStatus === 'running' && (
-                  <div className="px-3 py-2 bg-blue-50 border-b border-blue-100">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                        <span className="text-[11px] font-bold text-blue-700">
-                          {session.command}
-                        </span>
-                        <span className="text-[10px] text-blue-500">
-                          {session.commandStartTime
-                            ? `${Math.floor((Date.now() - session.commandStartTime) / 1000)}s`
-                            : ''}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-blue-600 font-medium">执行中...</span>
-                    </div>
-                  </div>
-                )}
-                {session.commandStatus === 'completed' && (
-                  <div className="px-3 py-2 bg-emerald-50 border-b border-emerald-100">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-                        <span className="text-[11px] font-bold text-emerald-700">
-                          {session.command}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span
+                            className={cn(
+                              'h-2 w-2 shrink-0 rounded-full',
+                              tone === 'accent' && 'animate-pulse bg-accent',
+                              tone === 'success' && 'bg-success',
+                              tone === 'danger' && 'bg-danger'
+                            )}
+                          />
+                          <span
+                            className={cn(
+                              'truncate text-xs font-semibold',
+                              tone === 'accent' && 'text-accent',
+                              tone === 'success' && 'text-success',
+                              tone === 'danger' && 'text-danger'
+                            )}
+                          >
+                            {session.command}
+                          </span>
+                        </div>
+                        <span
+                          className={cn(
+                            'shrink-0 text-xs',
+                            tone === 'accent' && 'text-accent',
+                            tone === 'success' && 'text-success',
+                            tone === 'danger' && 'text-danger'
+                          )}
+                        >
+                          {session.commandStatus === 'running'
+                            ? '执行中...'
+                            : `exit ${session.commandExitCode} · ${session.commandDurationMs}ms`}
                         </span>
                       </div>
-                      <span className="text-[10px] text-emerald-600">
-                        exit {session.commandExitCode} · {session.commandDurationMs}ms
-                      </span>
-                    </div>
-                  </div>
-                )}
-                {session.commandStatus === 'failed' && (
-                  <div className="px-3 py-2 bg-red-50 border-b border-red-100">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 bg-red-500 rounded-full" />
-                        <span className="text-[11px] font-bold text-red-700">
-                          {session.command}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-red-600">
-                        exit {session.commandExitCode} · {session.commandDurationMs}ms
-                      </span>
-                    </div>
-                  </div>
-                )}
-                <div className="flex-1 min-h-0 bg-white relative">
-                  <TerminalView
-                    id={session.id}
-                    topicId={topicId}
-                    hostId={session.hostId}
-                    fontSize={terminalFontSize}
-                    onFocusSession={() => onFocusSession(session.id)}
-                    onClose={() => onCloseTerminal(session.id)}
-                    command={session.command}
-                    commandStatus={session.commandStatus}
-                  />
-                  {session.paused && (
-                    <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-amber-500/90 text-white text-[10px] font-black shadow-sm">
-                      人工接管中
                     </div>
                   )}
-                </div>
-                <div className="px-3 py-2.5 bg-gray-50 border-t border-gray-100">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${session.paused ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}
-                      />
-                      <span
-                        className={`text-[10px] font-black truncate ${session.paused ? 'text-amber-600' : 'text-emerald-600'}`}
-                      >
-                        {session.paused ? '人工接管中' : 'Agent 正在控制'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
+
+                  <div className="relative min-h-0 flex-1 bg-surface">
+                    <TerminalView
+                      id={session.id}
+                      topicId={topicId}
+                      hostId={session.hostId}
+                      fontSize={terminalFontSize}
+                      onFocusSession={() => onFocusSession(session.id)}
+                      onClose={() => onCloseTerminal(session.id)}
+                      command={session.command}
+                      commandStatus={session.commandStatus}
+                    />
+                    {session.paused && (
+                      <div className="absolute right-3 top-3 rounded-md bg-warning px-2 py-1 text-xs font-semibold text-white shadow-sm">
+                        人工接管中
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-t border-border bg-surface-muted px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className={cn(
+                            'h-1.5 w-1.5 shrink-0 rounded-full',
+                            session.paused ? 'animate-pulse bg-warning' : 'bg-success'
+                          )}
+                        />
+                        <span
+                          className={cn(
+                            'truncate text-xs font-semibold',
+                            session.paused ? 'text-warning' : 'text-success'
+                          )}
+                        >
+                          {session.paused ? '人工接管中' : 'Agent 正在控制'}
+                        </span>
+                      </div>
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
                           onSetFocusedSessionId(session.id)
                           onOpenCommandPalette()
                         }}
-                        className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md transition ${
-                          focusedSession?.id === session.id
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
-                        }`}
+                        className={cn(
+                          'rounded-md px-2 py-0.5 text-xs font-semibold transition',
+                          isFocused
+                            ? 'bg-accent text-white'
+                            : 'bg-border text-muted-foreground hover:bg-muted-foreground/20'
+                        )}
                       >
                         执行命令
                       </button>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </div>

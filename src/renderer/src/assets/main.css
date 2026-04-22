@@ -3,12 +3,61 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-white text-gray-900 h-screen overflow-hidden;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  :root {
+    --app: 248 250 252;
+    --surface: 255 255 255;
+    --surface-muted: 241 245 249;
+    --border: 226 232 240;
+    --foreground: 15 23 42;
+    --muted-foreground: 100 116 139;
+
+    --accent: 37 99 235;
+    --accent-strong: 29 78 216;
+    --accent-soft: 219 234 254;
+
+    --success: 5 150 105;
+    --success-soft: 209 250 229;
+    --warning: 217 119 6;
+    --warning-soft: 254 243 199;
+    --danger: 220 38 38;
+    --danger-strong: 185 28 28;
+    --danger-soft: 254 226 226;
+
+    --workspace: 24 26 30;
+    --workspace-muted: 31 34 40;
+    --workspace-border: 55 65 81;
+    --workspace-foreground: 229 231 235;
+    --workspace-muted-foreground: 156 163 175;
   }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply h-screen overflow-hidden bg-app text-foreground;
+    font-family:
+      'Inter',
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      Roboto,
+      Helvetica,
+      Arial,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   #root {
     @apply h-full w-full flex;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
   }
 }
 
@@ -21,10 +70,12 @@
   -webkit-app-region: no-drag;
 }
 
-button, input, textarea, [role="button"] {
+button,
+input,
+textarea,
+[role='button'] {
   -webkit-app-region: no-drag;
 }
-
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
@@ -35,21 +86,31 @@ button, input, textarea, [role="button"] {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #e5e7eb;
+  background: rgb(var(--border));
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #d1d5db;
+  background: rgb(var(--muted-foreground) / 0.35);
 }
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 @keyframes zoomIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 .animate-in {
   animation: fadeIn 0.15s ease;
@@ -59,4 +120,14 @@ button, input, textarea, [role="button"] {
 }
 .zoom-in-95 {
   animation: zoomIn 0.15s ease;
+}
+
+.scrollbar-hide::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide,
+.no-scrollbar {
+  scrollbar-width: none;
 }

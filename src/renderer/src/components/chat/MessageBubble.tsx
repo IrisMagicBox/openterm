@@ -11,6 +11,7 @@ import { Message, Host } from '../../../../shared/types'
 import logo from '../../assets/logo.png'
 import { AgentRunTimeline } from '../AgentRunTimeline'
 import { MarkdownRenderer } from '../MarkdownRenderer'
+import { Badge } from '../ui'
 
 interface MessageBubbleProps {
   message: Message
@@ -18,32 +19,36 @@ interface MessageBubbleProps {
   onToggleThought: (msgId: string) => void
 }
 
-export function MessageBubble({ message, expandedThoughts, onToggleThought }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  expandedThoughts,
+  onToggleThought
+}: MessageBubbleProps): React.ReactElement {
   const msg = message
 
   return (
     <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[80%] flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end gap-2.5`}
+        className={`max-w-[82%] flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end gap-2.5`}
       >
         <div
-          className={`w-8 h-8 rounded-2xl flex-shrink-0 flex items-center justify-center shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}
+          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md ${msg.role === 'user' ? 'bg-accent text-white' : 'bg-surface-muted text-muted-foreground'}`}
         >
           {msg.role === 'user' ? <User size={14} /> : <Bot size={14} />}
         </div>
         <div className="flex flex-col gap-2 min-w-0">
           {msg.thought && (
-            <div className="bg-amber-50 border border-amber-100 rounded-2xl overflow-hidden">
+            <div className="overflow-hidden rounded-lg border border-warning/20 bg-warning-soft">
               <button
                 onClick={() => onToggleThought(msg.id)}
-                className="flex items-center gap-2 px-4 py-2.5 text-[11px] font-black text-amber-600 uppercase tracking-widest hover:bg-amber-100/50 transition w-full"
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-warning transition hover:bg-warning/10"
               >
                 {expandedThoughts[msg.id] ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                 <Zap size={11} />
                 助手推理
               </button>
               {expandedThoughts[msg.id] && (
-                <div className="px-4 pb-3 text-xs text-amber-800/80 italic leading-relaxed border-t border-amber-100">
+                <div className="border-t border-warning/20 px-3 pb-3 text-xs leading-relaxed text-warning">
                   {msg.thought}
                 </div>
               )}
@@ -58,15 +63,17 @@ export function MessageBubble({ message, expandedThoughts, onToggleThought }: Me
                 let cmd = ''
                 try {
                   cmd = JSON.parse(tool.function.arguments).command
-                } catch {}
+                } catch {
+                  cmd = tool.function.name
+                }
                 return (
                   <div
                     key={tool.id}
-                    className="flex items-center gap-2.5 text-[11px] font-mono font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 px-3.5 py-2 rounded-xl"
+                    className="flex items-center gap-2.5 rounded-md border border-success/20 bg-success-soft px-3 py-2 font-mono text-xs font-semibold text-success"
                   >
-                    <TerminalIcon size={11} className="text-emerald-500 flex-shrink-0" />
+                    <TerminalIcon size={11} className="flex-shrink-0 text-success" />
                     <span className="truncate">{cmd || tool.function.name}</span>
-                    <CheckCircle2 size={11} className="ml-auto text-emerald-500 flex-shrink-0" />
+                    <CheckCircle2 size={11} className="ml-auto flex-shrink-0 text-success" />
                   </div>
                 )
               })}
@@ -74,13 +81,13 @@ export function MessageBubble({ message, expandedThoughts, onToggleThought }: Me
           )}
 
           <div
-            className={`px-5 py-3.5 text-sm leading-relaxed rounded-2xl shadow-sm select-text no-drag cursor-auto ${
+            className={`cursor-auto select-text rounded-lg px-4 py-3 text-sm leading-relaxed no-drag ${
               msg.role === 'user'
-                ? 'bg-blue-600 text-white rounded-br-sm'
+                ? 'rounded-br-sm bg-accent text-white'
                 : msg.role === 'tool'
-                  ? 'bg-gray-900 border border-gray-800 rounded-bl-sm max-w-full overflow-x-auto shadow-xl'
-                  : 'bg-gray-50 border border-gray-100 text-gray-800 rounded-bl-sm'
-            } ${msg.metadata?.isVerifying ? 'ring-2 ring-emerald-500/20 bg-emerald-50/10' : ''}`}
+                  ? 'max-w-full overflow-x-auto rounded-bl-sm border border-workspace-border bg-workspace'
+                  : 'rounded-bl-sm border border-border bg-surface-muted text-foreground'
+            } ${msg.metadata?.isVerifying ? 'ring-2 ring-success/20' : ''}`}
           >
             {msg.role === 'user' ? (
               <div className="whitespace-pre-wrap">{msg.content}</div>
@@ -89,7 +96,7 @@ export function MessageBubble({ message, expandedThoughts, onToggleThought }: Me
                 <div className="flex items-center justify-between">
                   <button
                     onClick={() => onToggleThought(msg.id)}
-                    className="flex items-center gap-2 text-[10px] font-black text-emerald-400/70 hover:text-emerald-400 transition uppercase tracking-widest no-drag"
+                    className="flex items-center gap-2 text-xs font-semibold text-emerald-400/75 transition hover:text-emerald-400 no-drag"
                   >
                     {expandedThoughts[msg.id] ? (
                       <ChevronDown size={10} />
@@ -99,18 +106,18 @@ export function MessageBubble({ message, expandedThoughts, onToggleThought }: Me
                     终端原始输出
                   </button>
                   {msg.metadata?.isVerifying && (
-                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                    <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-500">
                       验证凭证
                     </span>
                   )}
                 </div>
                 {expandedThoughts[msg.id] && (
-                  <div className="mt-2 border-t border-gray-800 pt-2 break-all text-emerald-400 font-mono text-[11px] whitespace-pre-wrap">
+                  <div className="mt-2 whitespace-pre-wrap break-all border-t border-workspace-border pt-2 font-mono text-xs text-emerald-400">
                     {msg.content}
                   </div>
                 )}
                 {!expandedThoughts[msg.id] && (
-                  <div className="text-[10px] italic text-emerald-400/40">
+                  <div className="text-xs text-emerald-400/50">
                     输出内容已提纯并同步至终端视图。点击查看原始文本...
                   </div>
                 )}
@@ -118,14 +125,14 @@ export function MessageBubble({ message, expandedThoughts, onToggleThought }: Me
             ) : (
               <div className="space-y-3">
                 {msg.metadata?.memoryRecalled && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 w-fit rounded-full text-[10px] font-black tracking-widest uppercase mb-1">
+                  <Badge variant="accent" className="mb-1 w-fit">
                     <Zap size={10} /> 已调取经验记忆
-                  </div>
+                  </Badge>
                 )}
                 {msg.metadata?.isVerifying && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 w-fit rounded-full text-[10px] font-black tracking-widest uppercase mb-1">
+                  <Badge variant="success" className="mb-1 w-fit">
                     <CheckCircle2 size={10} /> 任务目标验证通过
-                  </div>
+                  </Badge>
                 )}
                 <MarkdownRenderer content={msg.content} />
               </div>
@@ -137,22 +144,20 @@ export function MessageBubble({ message, expandedThoughts, onToggleThought }: Me
   )
 }
 
-export function ThinkingIndicator({ animationKey }: { animationKey: number }) {
+export function ThinkingIndicator({ animationKey }: { animationKey: number }): React.ReactElement {
   return (
     <div key={`thinking-${animationKey}`} className="flex justify-start">
       <div className="flex items-end gap-2.5">
-        <div className="w-8 h-8 rounded-2xl bg-blue-50 text-blue-500 flex items-center justify-center animate-pulse">
+        <div className="flex h-8 w-8 animate-pulse items-center justify-center rounded-md bg-accent-soft text-accent">
           <Bot size={14} />
         </div>
-        <div className="bg-gray-50 border border-gray-100 rounded-2xl rounded-bl-sm px-5 py-4 flex items-center gap-2 shadow-sm">
+        <div className="flex items-center gap-2 rounded-lg rounded-bl-sm border border-border bg-surface-muted px-4 py-3">
           <div className="flex gap-1">
             <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce [animation-delay:0ms]" />
             <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:150ms]" />
             <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:300ms]" />
           </div>
-          <span className="text-[10px] font-black text-blue-600/50 uppercase tracking-widest ml-1">
-            思考并分析中...
-          </span>
+          <span className="ml-1 text-xs font-semibold text-accent/60">思考并分析中...</span>
         </div>
       </div>
     </div>
@@ -165,16 +170,16 @@ export function EmptyState({
 }: {
   topicHosts: Host[]
   onMentionHost: (alias: string) => void
-}) {
+}): React.ReactElement {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center max-w-xs mx-auto space-y-5">
-      <div className="w-16 h-16 rounded-3xl flex items-center justify-center overflow-hidden">
+      <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg">
         <img src={logo} alt="OpenTerm" className="w-full h-full object-contain" />
       </div>
       <div>
-        <h3 className="font-black text-gray-900">准备就绪</h3>
-        <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-          描述您想执行的操作。使用 <span className="font-bold text-blue-500">@别名</span>{' '}
+        <h3 className="font-bold text-foreground">准备就绪</h3>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          描述您想执行的操作。使用 <span className="font-semibold text-accent">@别名</span>{' '}
           来指定特定主机。
         </p>
       </div>
@@ -184,7 +189,7 @@ export function EmptyState({
             <button
               key={h.id}
               onClick={() => onMentionHost(h.alias)}
-              className="px-3 py-1.5 border border-blue-100 bg-blue-50 text-blue-600 text-xs font-bold rounded-full hover:bg-blue-100 transition"
+              className="rounded-md border border-accent/20 bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-accent/15"
             >
               @{h.alias}
             </button>

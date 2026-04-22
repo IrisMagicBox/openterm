@@ -1,5 +1,6 @@
 import { Server, Trash2, Terminal as TerminalIcon, Folder, Zap } from 'lucide-react'
 import type { Host } from '../../../../shared/types'
+import { Badge, Button, IconButton, Surface } from '../ui'
 
 interface HostCardProps {
   host: Host
@@ -15,69 +16,54 @@ export function HostCard({
   onDelete,
   onAgentClick,
   onFileBrowser
-}: HostCardProps) {
+}: HostCardProps): React.ReactElement {
   return (
-    <div className="group relative bg-white rounded-3xl p-7 border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-gray-100 hover:-translate-y-1 transition-all duration-300 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-50/0 to-blue-50/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none rounded-3xl" />
-
-      <button
-        onClick={onDelete}
-        className="absolute top-4 right-4 p-2 opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-      >
-        <Trash2 size={14} />
-      </button>
-
-      <div className="flex items-center gap-4 mb-6">
-        <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors shadow-inner">
-          <Server size={26} />
+    <Surface className="group flex min-h-[160px] flex-col gap-4 transition-colors hover:border-accent/30">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-surface-muted text-muted-foreground group-hover:text-accent">
+          <Server size={20} />
         </div>
-        <div className="flex-1 min-w-0 overflow-hidden">
-          <h3 className="text-base font-black text-gray-900 truncate" title={host.alias}>
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <h3 className="truncate text-base font-bold text-foreground" title={host.alias}>
             {host.alias}
           </h3>
           <span
-            className="text-xs font-mono text-gray-400 truncate block"
+            className="block truncate font-mono text-xs text-muted-foreground"
             title={`${host.username}@${host.ip}:${host.port || 22}`}
           >
             {host.username}@{host.ip}:{host.port || 22}
           </span>
         </div>
+        <IconButton
+          aria-label={`删除主机 ${host.alias}`}
+          onClick={onDelete}
+          className="text-muted-foreground hover:text-danger"
+        >
+          <Trash2 size={14} />
+        </IconButton>
       </div>
 
       {host.tags && host.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-5">
+        <div className="flex flex-wrap gap-1.5">
           {host.tags.map((tag) => (
-            <span
-              key={tag}
-              className="px-2 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-bold rounded-full uppercase tracking-widest"
-            >
+            <Badge key={tag} variant="neutral">
               {tag}
-            </span>
+            </Badge>
           ))}
         </div>
       )}
 
-      <div className="flex gap-2.5 mt-auto">
-        <button
-          onClick={onConnect}
-          className="flex-1 py-2.5 bg-gray-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-gray-700 transition active:scale-95"
-        >
+      <div className="mt-auto flex gap-2">
+        <Button onClick={onConnect} variant="primary" size="sm" className="flex-1">
           <TerminalIcon size={13} /> 终端
-        </button>
-        <button
-          onClick={onFileBrowser}
-          className="py-2.5 px-3 bg-gray-100 text-gray-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-gray-200 transition active:scale-95"
-          title="文件管理"
-        >
+        </Button>
+        <IconButton aria-label={`打开 ${host.alias} 文件管理`} onClick={onFileBrowser}>
           <Folder size={13} />
-        </button>
-        <button
-          onClick={onAgentClick}
-          className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition active:scale-95 shadow-md shadow-blue-500/20"
-        >
+        </IconButton>
+        <Button onClick={onAgentClick} variant="secondary" size="sm" className="flex-1">
           <Zap size={13} /> 助手
-        </button>
+        </Button>
       </div>
-    </div>
+    </Surface>
   )
 }

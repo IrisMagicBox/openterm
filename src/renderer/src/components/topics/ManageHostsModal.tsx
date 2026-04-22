@@ -1,6 +1,16 @@
-import { X, Server, Minus, Plus, Monitor } from 'lucide-react'
+import { Server, Minus, Plus, Monitor } from 'lucide-react'
 import type { Host, Topic } from '../../../../shared/types'
 import { useConfirm } from '../../hooks/useConfirm'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  IconButton,
+  Surface
+} from '../ui'
 
 interface ManageHostsModalProps {
   topic: Topic
@@ -16,163 +26,95 @@ export function ManageHostsModal({
   onClose,
   onAddHost,
   onRemoveHost
-}: ManageHostsModalProps) {
+}: ManageHostsModalProps): React.ReactElement {
   const { confirm, ConfirmDialogComponent } = useConfirm()
   const topicHosts = allHosts.filter((h) => topic.hostIds.includes(h.id))
   const availableHosts = allHosts.filter((h) => !topic.hostIds.includes(h.id))
   const hasLocal = topic.hostIds.includes('local')
 
-  return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/40 backdrop-blur-md animate-in fade-in duration-300"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-[40px] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] border border-gray-100 w-full max-w-lg p-10 mx-4 animate-in zoom-in-95 slide-in-from-bottom-8 duration-500"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="font-black text-gray-900 text-lg">管理话题主机</h2>
-            <p className="text-xs text-gray-400 mt-0.5">添加或移除此话题中的主机</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
-          >
-            <X size={18} />
-          </button>
+  const renderHostRow = (
+    host: Pick<Host, 'id' | 'alias'> & Partial<Pick<Host, 'ip' | 'port'>>,
+    mode: 'add' | 'remove',
+    isLocal = false
+  ): React.ReactElement => (
+    <Surface key={`${mode}-${host.id}`} padding="sm" className="flex items-center justify-between">
+      <div className="flex min-w-0 items-center gap-3">
+        <div
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${isLocal ? 'bg-success-soft text-success' : 'bg-accent-soft text-accent'}`}
+        >
+          {isLocal ? <Monitor size={17} /> : <Server size={17} />}
         </div>
-
-        <div className="space-y-6">
-          <div>
-            <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
-              已连接主机
-            </h3>
-            {topicHosts.length === 0 && !hasLocal ? (
-              <p className="text-sm text-gray-400 italic">暂无主机</p>
-            ) : (
-              <div className="space-y-2">
-                {hasLocal && (
-                  <div className="flex items-center justify-between p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
-                        <Monitor size={18} />
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm text-gray-900">本机</div>
-                        <div className="text-xs text-gray-400">本地终端</div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        const ok = await confirm({
-                          title: '移除本机',
-                          message: '确定从话题中移除本机终端？',
-                          confirmText: '移除',
-                          variant: 'danger'
-                        })
-                        if (!ok) return
-                        onRemoveHost('local')
-                      }}
-                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition"
-                    >
-                      <Minus size={16} />
-                    </button>
-                  </div>
-                )}
-                {topicHosts.map((host) => (
-                  <div
-                    key={host.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
-                        <Server size={18} />
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm text-gray-900">{host.alias}</div>
-                        <div className="text-xs text-gray-400 font-mono">
-                          {host.ip}:{host.port || 22}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        const ok = await confirm({
-                          title: '移除主机',
-                          message: `确定从话题中移除主机"${host.alias}"？`,
-                          confirmText: '移除',
-                          variant: 'danger'
-                        })
-                        if (!ok) return
-                        onRemoveHost(host.id)
-                      }}
-                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition"
-                    >
-                      <Minus size={16} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-foreground">{host.alias}</div>
+          <div className="truncate font-mono text-xs text-muted-foreground">
+            {isLocal ? '本地终端' : `${host.ip}:${host.port || 22}`}
           </div>
-
-          {(availableHosts.length > 0 || !hasLocal) && (
-            <div>
-              <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
-                可用主机
-              </h3>
-              <div className="space-y-2">
-                {!hasLocal && (
-                  <div className="flex items-center justify-between p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
-                        <Monitor size={18} />
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm text-gray-900">本机</div>
-                        <div className="text-xs text-gray-400">本地终端</div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => onAddHost('local')}
-                      className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
-                )}
-                {availableHosts.map((host) => (
-                  <div
-                    key={host.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gray-100 text-gray-400 rounded-xl flex items-center justify-center">
-                        <Server size={18} />
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm text-gray-900">{host.alias}</div>
-                        <div className="text-xs text-gray-400 font-mono">
-                          {host.ip}:{host.port || 22}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => onAddHost(host.id)}
-                      className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
+      {mode === 'add' ? (
+        <IconButton aria-label={`添加 ${host.alias}`} onClick={() => onAddHost(host.id)}>
+          <Plus size={15} />
+        </IconButton>
+      ) : (
+        <IconButton
+          aria-label={`移除 ${host.alias}`}
+          className="hover:text-danger"
+          onClick={async () => {
+            const ok = await confirm({
+              title: `移除${isLocal ? '本机' : '主机'}`,
+              message: `确定从话题中移除${isLocal ? '本机终端' : `主机"${host.alias}"`}？`,
+              confirmText: '移除',
+              variant: 'danger'
+            })
+            if (!ok) return
+            onRemoveHost(host.id)
+          }}
+        >
+          <Minus size={15} />
+        </IconButton>
+      )}
+    </Surface>
+  )
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>管理话题主机</DialogTitle>
+          <DialogDescription>添加或移除此话题中的主机</DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-[60vh] space-y-5 overflow-y-auto pr-1">
+          <section>
+            <h3 className="mb-2 text-xs font-semibold text-muted-foreground">已连接主机</h3>
+            {topicHosts.length === 0 && !hasLocal ? (
+              <p className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+                暂无主机
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {hasLocal && renderHostRow({ id: 'local', alias: '本机' }, 'remove', true)}
+                {topicHosts.map((host) => renderHostRow(host, 'remove'))}
+              </div>
+            )}
+          </section>
+
+          {(availableHosts.length > 0 || !hasLocal) && (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold text-muted-foreground">可用主机</h3>
+              <div className="space-y-2">
+                {!hasLocal && renderHostRow({ id: 'local', alias: '本机' }, 'add', true)}
+                {availableHosts.map((host) => renderHostRow(host, 'add'))}
+              </div>
+            </section>
+          )}
+        </div>
+
+        <div className="flex justify-end">
+          <Button onClick={onClose}>完成</Button>
+        </div>
+      </DialogContent>
       {ConfirmDialogComponent}
-    </div>
+    </Dialog>
   )
 }

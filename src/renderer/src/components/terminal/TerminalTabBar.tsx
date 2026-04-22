@@ -1,4 +1,5 @@
 import { X, Plus, Terminal as TerminalIcon } from 'lucide-react'
+import { cn } from '../../lib/utils'
 
 interface TerminalTab {
   id: string
@@ -14,29 +15,38 @@ interface TerminalTabBarProps {
   onNewTab: () => void
 }
 
-export function TerminalTabBar({ tabs, onTabSelect, onTabClose, onNewTab }: TerminalTabBarProps) {
+export function TerminalTabBar({
+  tabs,
+  onTabSelect,
+  onTabClose,
+  onNewTab
+}: TerminalTabBarProps): React.ReactElement | null {
   if (tabs.length === 0) return null
 
   return (
-    <div className="flex items-center bg-gray-100 border-b border-gray-200 px-2 gap-0.5 overflow-x-auto no-scrollbar">
+    <div className="flex items-center gap-0.5 overflow-x-auto border-b border-border bg-surface-muted px-2 no-scrollbar">
       {tabs.map((tab) => (
         <div
           key={tab.id}
-          className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg cursor-pointer text-xs font-semibold transition-all max-w-[160px] ${
+          className={cn(
+            'group flex max-w-[160px] cursor-pointer items-center gap-1.5 rounded-t-md border-b-2 px-3 py-1.5 text-xs font-semibold transition-colors',
             tab.active
-              ? 'bg-white text-gray-800 shadow-sm border border-gray-200 border-b-white -mb-px'
-              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-          }`}
+              ? 'border-accent bg-surface text-foreground'
+              : 'border-transparent text-muted-foreground hover:bg-surface hover:text-foreground'
+          )}
           onClick={() => onTabSelect(tab.id)}
         >
-          <TerminalIcon size={11} className={tab.active ? 'text-blue-500' : 'text-gray-400'} />
+          <TerminalIcon
+            size={11}
+            className={tab.active ? 'text-accent' : 'text-muted-foreground'}
+          />
           <span className="truncate">{tab.name || tab.hostAlias}</span>
           <button
             onClick={(e) => {
               e.stopPropagation()
               onTabClose(tab.id)
             }}
-            className={`ml-1 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-200 transition ${
+            className={`ml-1 rounded p-0.5 opacity-0 transition hover:bg-border ${
               tab.active ? 'opacity-60' : ''
             }`}
           >
@@ -46,7 +56,7 @@ export function TerminalTabBar({ tabs, onTabSelect, onTabClose, onNewTab }: Term
       ))}
       <button
         onClick={onNewTab}
-        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition"
+        className="rounded-md p-1.5 text-muted-foreground transition hover:bg-border hover:text-foreground"
         title="新建终端"
       >
         <Plus size={14} />

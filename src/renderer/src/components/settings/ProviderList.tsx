@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Cloud, Server, Cpu, ToggleLeft, ToggleRight, Plus, Trash2, RefreshCw } from 'lucide-react'
 import type { Provider } from '../../../../shared/types'
 import { useConfirm } from '../../hooks/useConfirm'
+import { Badge, IconButton, Input } from '../ui'
+import { cn } from '../../lib/utils'
 
 interface ProviderListProps {
   providers: Provider[]
@@ -37,7 +39,7 @@ const providerIcons: Record<string, React.ReactNode> = {
   coreshub: <Cpu size={18} />
 }
 
-function getProviderIcon(provider: Provider) {
+function getProviderIcon(provider: Provider): React.ReactNode {
   return providerIcons[provider.id] || <Cloud size={18} />
 }
 
@@ -49,7 +51,7 @@ export function ProviderList({
   onAddProvider,
   onDeleteProvider,
   onResetProvider
-}: ProviderListProps) {
+}: ProviderListProps): React.ReactElement {
   const { confirm, ConfirmDialogComponent } = useConfirm()
   const [filter, setFilter] = useState('')
 
@@ -60,58 +62,59 @@ export function ProviderList({
   const enabledCount = providers.filter((p) => p.enabled).length
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 border-r border-gray-200 w-72">
-      <div className="p-4 border-b border-gray-200 bg-white">
+    <div className="flex flex-col h-full bg-app border-r border-border w-72">
+      <div className="p-4 border-b border-border bg-surface">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-gray-900">AI 提供商</h2>
-          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+          <h2 className="font-semibold text-foreground">AI 提供商</h2>
+          <Badge variant="neutral">
             {enabledCount}/{providers.length} 已启用
-          </span>
+          </Badge>
         </div>
         <div className="flex gap-2">
-          <input
+          <Input
             type="text"
             placeholder="筛选提供商..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1"
           />
-          <button
-            onClick={onAddProvider}
-            className="p-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            title="添加自定义提供商"
-          >
+          <IconButton aria-label="添加自定义提供商" onClick={onAddProvider} variant="primary">
             <Plus size={18} />
-          </button>
+          </IconButton>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {filteredProviders.length === 0 ? (
-          <div className="p-4 text-center text-gray-500 text-sm">未找到提供商</div>
+          <div className="p-4 text-center text-muted-foreground text-sm">未找到提供商</div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-border">
             {filteredProviders.map((provider) => (
               <div
                 key={provider.id}
-                className={`group flex items-center gap-3 p-3 cursor-pointer transition-colors ${
+                className={`group flex items-center gap-3 p-3 cursor-pointer border-l-2 transition-colors ${
                   selectedProviderId === provider.id
-                    ? 'bg-blue-50 border-l-3 border-blue-500'
-                    : 'hover:bg-gray-100 border-l-3 border-transparent'
+                    ? 'bg-accent-soft border-accent'
+                    : 'hover:bg-surface-muted border-transparent'
                 }`}
                 onClick={() => onSelectProvider(provider)}
               >
                 <div
-                  className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${
-                    provider.enabled ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'
-                  }`}
+                  className={cn(
+                    'flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center',
+                    provider.enabled
+                      ? 'bg-accent-soft text-accent'
+                      : 'bg-surface-muted text-muted-foreground'
+                  )}
                 >
                   {getProviderIcon(provider)}
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-gray-900 truncate">{provider.name}</div>
-                  <div className="text-xs text-gray-500 truncate">{provider.type}</div>
+                  <div className="font-medium text-sm text-foreground truncate">
+                    {provider.name}
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">{provider.type}</div>
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -121,7 +124,7 @@ export function ProviderList({
                         e.stopPropagation()
                         onResetProvider(provider.id)
                       }}
-                      className="p-1.5 text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="p-1.5 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
                       title="恢复默认设置"
                     >
                       <RefreshCw size={14} />
@@ -141,7 +144,7 @@ export function ProviderList({
                         if (!ok) return
                         onDeleteProvider(provider.id)
                       }}
-                      className="p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="p-1.5 text-muted-foreground hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
                       title="删除提供商"
                     >
                       <Trash2 size={14} />
@@ -154,7 +157,7 @@ export function ProviderList({
                       onToggleEnabled(provider.id, !provider.enabled)
                     }}
                     className={`p-1 transition-colors ${
-                      provider.enabled ? 'text-blue-600' : 'text-gray-400'
+                      provider.enabled ? 'text-accent' : 'text-muted-foreground'
                     }`}
                     title={provider.enabled ? '禁用提供商' : '启用提供商'}
                   >
@@ -167,7 +170,7 @@ export function ProviderList({
         )}
       </div>
 
-      <div className="p-3 border-t border-gray-200 bg-white text-xs text-gray-500">
+      <div className="p-3 border-t border-border bg-surface text-xs text-muted-foreground">
         点击提供商以配置其设置
       </div>
       {ConfirmDialogComponent}

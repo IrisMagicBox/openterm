@@ -1,59 +1,66 @@
 import { X, ArrowRight, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
 import { FileTransfer } from '../hooks/useFileTransfer'
+import { IconButton } from './ui'
 
 interface FileTransferToastProps {
   transfers: FileTransfer[]
   onRemove: (id: string) => void
 }
 
-export function FileTransferToast({ transfers, onRemove }: FileTransferToastProps) {
+export function FileTransferToast({
+  transfers,
+  onRemove
+}: FileTransferToastProps): React.ReactElement | null {
   if (transfers.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+    <div className="fixed bottom-4 right-4 z-50 flex max-w-sm flex-col gap-2">
       {transfers.map((transfer) => (
         <div
           key={transfer.id}
-          className={`bg-gray-900 border rounded-xl p-3 shadow-xl flex items-center gap-3 transition-all ${
+          className={`flex items-center gap-3 rounded-lg border bg-workspace p-3 shadow-lg transition-all ${
             transfer.phase === 'error'
-              ? 'border-red-500/50'
+              ? 'border-danger/50'
               : transfer.phase === 'complete'
-                ? 'border-emerald-500/50'
-                : 'border-gray-700'
+                ? 'border-success/50'
+                : 'border-workspace-border'
           }`}
         >
           {transfer.phase === 'complete' ? (
-            <CheckCircle size={16} className="text-emerald-400 shrink-0" />
+            <CheckCircle size={16} className="shrink-0 text-success" />
           ) : transfer.phase === 'error' ? (
-            <AlertCircle size={16} className="text-red-400 shrink-0" />
+            <AlertCircle size={16} className="shrink-0 text-danger" />
           ) : (
-            <Loader2 size={16} className="text-blue-400 shrink-0 animate-spin" />
+            <Loader2 size={16} className="shrink-0 animate-spin text-accent" />
           )}
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-bold text-white truncate">{transfer.fileName}</div>
-            <div className="text-[10px] text-gray-400 flex items-center gap-1">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs font-bold text-workspace-foreground">
+              {transfer.fileName}
+            </div>
+            <div className="flex items-center gap-1 text-[11px] text-workspace-muted-foreground">
               {transfer.sourceHostAlias}
-              <ArrowRight size={8} />
+              <ArrowRight size={9} />
               {transfer.destHostAlias}
             </div>
             {transfer.phase !== 'complete' && transfer.phase !== 'error' && (
-              <div className="mt-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-workspace-muted">
                 <div
-                  className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                  className="h-full rounded-full bg-accent transition-all duration-300"
                   style={{ width: `${transfer.progress}%` }}
                 />
               </div>
             )}
             {transfer.phase === 'error' && transfer.error && (
-              <div className="text-[10px] text-red-400 mt-0.5 truncate">{transfer.error}</div>
+              <div className="mt-0.5 truncate text-[11px] text-danger">{transfer.error}</div>
             )}
           </div>
-          <button
+          <IconButton
+            aria-label="移除传输记录"
             onClick={() => onRemove(transfer.id)}
-            className="p-1 hover:bg-gray-800 rounded text-gray-500 hover:text-gray-300 transition shrink-0"
+            className="h-7 w-7 shrink-0 text-workspace-muted-foreground hover:bg-workspace-muted hover:text-workspace-foreground"
           >
-            <X size={10} />
-          </button>
+            <X size={12} />
+          </IconButton>
         </div>
       ))}
     </div>

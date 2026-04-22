@@ -1,7 +1,8 @@
 import { getErrorMessage } from '../../../../shared/errors'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Globe, Plus, X, ArrowRight, Trash2 } from 'lucide-react'
 import { useConfirm } from '../../hooks/useConfirm'
+import { Button, IconButton, Input } from '../ui'
 
 interface Tunnel {
   id: string
@@ -19,7 +20,11 @@ interface PortForwardingPanelProps {
   onClose: () => void
 }
 
-export function PortForwardingPanel({ hostId, hostAlias, onClose }: PortForwardingPanelProps) {
+export function PortForwardingPanel({
+  hostId,
+  hostAlias,
+  onClose
+}: PortForwardingPanelProps): React.ReactElement {
   const { confirm, ConfirmDialogComponent } = useConfirm()
   const [tunnels, setTunnels] = useState<Tunnel[]>([])
   const [localPort, setLocalPort] = useState('')
@@ -27,20 +32,32 @@ export function PortForwardingPanel({ hostId, hostAlias, onClose }: PortForwardi
   const [remotePort, setRemotePort] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const refresh = async () => {
+  const refresh = useCallback(async (): Promise<void> => {
     try {
       const list = await window.api.pfList(hostId)
       setTunnels(list)
     } catch (err: unknown) {
       setError(getErrorMessage(err))
     }
-  }
-
-  useEffect(() => {
-    refresh()
   }, [hostId])
 
-  const handleCreate = async () => {
+  useEffect(() => {
+    let active = true
+    window.api
+      .pfList(hostId)
+      .then((list) => {
+        if (active) setTunnels(list)
+      })
+      .catch((err: unknown) => {
+        if (active) setError(getErrorMessage(err))
+      })
+
+    return () => {
+      active = false
+    }
+  }, [hostId])
+
+  const handleCreate = async (): Promise<void> => {
     const lp = parseInt(localPort)
     const rp = parseInt(remotePort)
     if (isNaN(lp) || isNaN(rp)) {
@@ -51,15 +68,15 @@ export function PortForwardingPanel({ hostId, hostAlias, onClose }: PortForwardi
       setError(null)
       await window.api.pfCreate(hostId, lp, remoteHost, rp)
       setLocalPort('')
-      setRemotePort('localhost')
+      setRemoteHost('localhost')
       setRemotePort('')
-      refresh()
+      void refresh()
     } catch (err: unknown) {
       setError(getErrorMessage(err))
     }
   }
 
-  const handleClose = async (tunnelId: string) => {
+  const handleClose = async (tunnelId: string): Promise<void> => {
     const ok = await confirm({
       title: '关闭隧道',
       message: '确定关闭此端口转发隧道？',
@@ -69,86 +86,82 @@ export function PortForwardingPanel({ hostId, hostAlias, onClose }: PortForwardi
     if (!ok) return
     try {
       await window.api.pfClose(tunnelId)
-      refresh()
+      void refresh()
     } catch (err: unknown) {
       setError(getErrorMessage(err))
     }
   }
 
   return (
-    <div className="h-full flex flex-col bg-white">
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-        <Globe size={14} className="text-blue-500" />
-        <span className="text-xs font-bold text-gray-700">端口转发</span>
-        <span className="text-[10px] text-gray-400">{hostAlias}</span>
-        <button onClick={onClose} className="ml-auto p-1 rounded hover:bg-gray-100 transition">
-          <X size={14} className="text-gray-400" />
-        </button>
+    <div className="flex h-full flex-col bg-surface">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <Globe size={14} className="text-accent" />
+        <span className="text-xs font-bold text-foreground">端口转发</span>
+        <span className="text-xs text-muted-foreground">{hostAlias}</span>
+        <IconButton aria-label="关闭端口转发" onClick={onClose} className="ml-auto h-7 w-7">
+          <X size={14} />
+        </IconButton>
       </div>
 
-      {error && <div className="px-4 py-2 bg-red-50 text-red-600 text-[11px]">{error}</div>}
+      {error && <div className="bg-danger-soft px-4 py-2 text-xs text-danger">{error}</div>}
 
-      <div className="px-4 py-3 border-b border-gray-50">
-        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
-          新建转发
-        </div>
+      <div className="border-b border-border px-4 py-3">
+        <div className="mb-2 text-xs font-semibold text-muted-foreground">新建转发</div>
         <div className="flex items-center gap-2">
-          <input
+          <Input
             value={localPort}
             onChange={(e) => setLocalPort(e.target.value)}
             placeholder="本地端口"
-            className="w-20 text-xs bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-300"
+            className="h-7 w-20 text-xs"
           />
-          <ArrowRight size={12} className="text-gray-300" />
-          <input
+          <ArrowRight size={12} className="text-muted-foreground" />
+          <Input
             value={remoteHost}
             onChange={(e) => setRemoteHost(e.target.value)}
             placeholder="远程地址"
-            className="w-24 text-xs bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-300"
+            className="h-7 w-24 text-xs"
           />
-          <input
+          <Input
             value={remotePort}
             onChange={(e) => setRemotePort(e.target.value)}
             placeholder="远程端口"
-            className="w-20 text-xs bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-300"
+            className="h-7 w-20 text-xs"
           />
-          <button
-            onClick={handleCreate}
-            className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-          >
+          <Button onClick={handleCreate} variant="primary" size="icon" className="h-7 w-7">
             <Plus size={14} />
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {tunnels.length === 0 ? (
-          <div className="flex items-center justify-center py-8 text-gray-400 text-xs">
+          <div className="flex items-center justify-center py-8 text-muted-foreground text-xs">
             暂无活跃的端口转发
           </div>
         ) : (
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-border">
             {tunnels.map((tunnel) => (
               <div key={tunnel.id} className="px-4 py-2.5 flex items-center gap-3">
                 <div
-                  className={`w-2 h-2 rounded-full ${tunnel.status === 'active' ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                  className={`h-2 w-2 rounded-full ${tunnel.status === 'active' ? 'bg-success' : 'bg-border'}`}
                 />
                 <div className="flex-1">
                   <div className="text-xs font-mono font-semibold">
                     localhost:{tunnel.localPort}
-                    <ArrowRight size={10} className="inline mx-1 text-gray-300" />
+                    <ArrowRight size={10} className="inline mx-1 text-muted-foreground" />
                     {tunnel.remoteHost}:{tunnel.remotePort}
                   </div>
-                  <div className="text-[10px] text-gray-400">
+                  <div className="text-xs text-muted-foreground">
                     {new Date(tunnel.createdAt).toLocaleString('zh-CN')}
                   </div>
                 </div>
-                <button
+                <IconButton
+                  aria-label="关闭隧道"
                   onClick={() => handleClose(tunnel.id)}
-                  className="p-1 text-gray-400 hover:text-red-500 transition"
+                  className="h-7 w-7 hover:text-danger"
                 >
                   <Trash2 size={12} />
-                </button>
+                </IconButton>
               </div>
             ))}
           </div>

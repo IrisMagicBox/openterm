@@ -20,24 +20,24 @@ export function DebugPanel({
   setShowDebug,
   debugLogs,
   clearDebugLogs
-}: DebugPanelProps) {
+}: DebugPanelProps): React.ReactElement | null {
   if (!showDebug) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] w-[400px] max-h-[500px] bg-gray-900 border border-gray-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
-      <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between bg-black/20">
+    <div className="fixed bottom-4 right-4 z-[9999] flex max-h-[500px] w-[400px] flex-col overflow-hidden rounded-lg border border-workspace-border bg-workspace shadow-xl animate-in">
+      <div className="flex items-center justify-between border-b border-workspace-border bg-workspace-muted px-4 py-3">
         <div className="flex items-center gap-2">
-          <Zap size={14} className="text-blue-400" />
-          <h3 className="text-xs font-black text-white uppercase tracking-widest">系统调试信息</h3>
+          <Zap size={14} className="text-accent" />
+          <h3 className="text-xs font-semibold text-workspace-foreground">系统调试信息</h3>
         </div>
         <button
           onClick={() => setShowDebug(false)}
-          className="p-1.5 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition"
+          className="rounded-md p-1.5 text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-workspace-foreground"
         >
           <X size={14} />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-[10px]">
+      <div className="flex-1 space-y-3 overflow-y-auto p-4 font-mono text-xs">
         {debugLogs.length === 0 && (
           <div className="text-gray-600 italic text-center py-10">等待日志输入...</div>
         )}
@@ -45,7 +45,7 @@ export function DebugPanel({
           <div key={i} className="flex flex-col gap-1 border-l-2 border-gray-800 pl-3 py-1">
             <div className="flex items-center gap-2">
               <span
-                className={`px-1.5 py-0.5 rounded text-[8px] font-black ${
+                className={`rounded px-1.5 py-0.5 text-xs font-semibold ${
                   log.level === 'ERROR'
                     ? 'bg-red-500/20 text-red-400'
                     : log.level === 'WARN'
@@ -70,10 +70,10 @@ export function DebugPanel({
         ))}
       </div>
       <div className="px-4 py-2 bg-black/40 border-t border-gray-800 flex justify-between">
-        <span className="text-[9px] text-gray-500">显示最近 100 条日志</span>
+        <span className="text-xs text-gray-500">显示最近 100 条日志</span>
         <button
           onClick={() => clearDebugLogs()}
-          className="text-[9px] text-blue-500 hover:text-blue-400 font-bold"
+          className="text-xs text-accent hover:text-blue-400 font-semibold"
         >
           清空日志
         </button>
