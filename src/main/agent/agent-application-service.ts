@@ -4,6 +4,7 @@ import { getErrorMessage } from '../../shared/errors'
 import type { AgentRun, Message, Task } from '../../shared/types'
 import { agentRunDB, messageDB, taskDB, topicDB } from '../db'
 import { AgentRunner, type AgentContext, type IAgentService } from '../AgentRunner'
+import { resolveProviderSelection } from '../ai'
 import { logger } from '../logger'
 import { agentRunStore } from './agent-run-store'
 import type { AgentSessionManager } from './agent-session-manager'
@@ -26,6 +27,13 @@ export class AgentApplicationService {
   async handleMessage(topicId: string, content: string): Promise<Message> {
     const topic = topicDB.getTopicById(topicId)
     if (!topic) throw new Error('Topic not found')
+    const selection = (() => {
+      try {
+        return resolveProviderSelection({ topicId })
+      } catch {
+        return undefined
+      }
+    })()
 
     const task: Task = {
       id: uuidv4(),
@@ -33,6 +41,8 @@ export class AgentApplicationService {
       title: content.slice(0, 50),
       goal: content,
       status: 'running',
+      selectedProviderId: selection?.provider.id ?? topic.selectedProviderId,
+      selectedModelId: selection?.modelRecordId ?? topic.selectedModelId,
       createdAt: Date.now(),
       updatedAt: Date.now()
     }

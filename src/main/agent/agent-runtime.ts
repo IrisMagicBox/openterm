@@ -1,5 +1,5 @@
 import type { Message } from '../../shared/types'
-import { getCurrentModel } from '../ai'
+import { resolveProviderSelection } from '../ai'
 import type { AgentContext } from '../AgentRunner'
 import { createDefaultRegistry, ToolRegistry } from '../tools'
 import { getAgentConfig, type AgentConfig } from './agent-config'
@@ -35,13 +35,14 @@ export class AgentRuntime {
     this.context.agentName = this.agentName
     this.context.agent = this.agentName
     this.toolRegistry = createDefaultRegistry()
-    this.provider = new ProviderAdapter()
+    this.provider = new ProviderAdapter({ topicId: context.topicId })
     this.toolsReady = this.toolRegistry.initializeTools(this.agentName)
     eventBus.setWebContents(context.webContents)
   }
 
   async run(history: Message[]): Promise<Message> {
     await this.toolsReady
+    const selection = resolveProviderSelection({ topicId: this.context.topicId })
     const run =
       (this.options.runId ? agentRunStore.getRun(this.options.runId) : undefined) ??
       agentRunStore.createRun({
@@ -54,7 +55,8 @@ export class AgentRuntime {
         mode: this.config.mode === 'hidden' ? 'hidden' : this.config.mode,
         status: 'running',
         goal: this.options.goal ?? history.filter((m) => m.role === 'user').pop()?.content ?? '',
-        modelId: getCurrentModel()
+        providerId: selection.provider.id,
+        modelId: selection.modelId
       })
 
     this.context.runId = run.id

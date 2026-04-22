@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { ChevronDown, Cpu } from 'lucide-react'
 import type { Provider, Model } from '../../../shared/types'
+import { isAgentRuntimeProvider, isAgentUsableModel } from '../config/providers'
 import { Badge, Button } from './ui'
 import { cn } from '../lib/utils'
 
@@ -24,7 +25,7 @@ export function ModelSelector({
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  const enabledProviders = providers.filter((p) => p.enabled)
+  const enabledProviders = providers.filter((p) => p.enabled && isAgentRuntimeProvider(p))
 
   const selectedProvider = providers.find((p) => p.id === selectedProviderId)
   const selectedModel = models.find(
@@ -47,7 +48,7 @@ export function ModelSelector({
   }
 
   const getProviderModels = (providerId: string): Model[] => {
-    return models.filter((m) => m.providerId === providerId)
+    return models.filter((m) => m.providerId === providerId && isAgentUsableModel(m))
   }
 
   if (enabledProviders.length === 0) {

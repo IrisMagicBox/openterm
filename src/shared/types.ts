@@ -321,13 +321,28 @@ export type ProviderType =
   | 'modelscope'
   | 'hunyuan'
   | 'baidu-cloud'
+  | 'dashscope'
+  | 'moonshot'
+  | 'zhipu'
+  | 'doubao'
+  | 'baichuan'
+  | 'stepfun'
+  | 'yi'
+  | 'ppio'
   | 'aws-bedrock'
   | 'vertexai'
   | 'github'
   | 'copilot'
   | 'custom'
 
-export type ModelCapability = 'text' | 'vision' | 'embedding' | 'reasoning' | 'image-generation'
+export type ModelCapability =
+  | 'text'
+  | 'vision'
+  | 'embedding'
+  | 'reasoning'
+  | 'image-generation'
+  | 'tool-use'
+  | 'rerank'
 
 export interface ModelPricing {
   input_per_million_tokens?: number
@@ -337,6 +352,7 @@ export interface ModelPricing {
 export interface Model {
   id: string
   providerId: string
+  providerModelId?: string
   name: string
   group?: string
   capabilities?: ModelCapability[]
@@ -389,6 +405,20 @@ export type SystemProviderId =
   | 'fireworks'
   | 'nvidia'
   | 'grok'
+  | 'hyperbolic'
+  | 'jina'
+  | 'perplexity'
+  | 'modelscope'
+  | 'hunyuan'
+  | 'baidu-cloud'
+  | 'dashscope'
+  | 'moonshot'
+  | 'zhipu'
+  | 'doubao'
+  | 'baichuan'
+  | 'stepfun'
+  | 'yi'
+  | 'ppio'
   | 'aws-bedrock'
   | 'vertexai'
   | 'github'

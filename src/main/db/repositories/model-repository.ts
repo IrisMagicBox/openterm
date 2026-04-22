@@ -34,11 +34,12 @@ export class ModelRepository extends BaseRepository<ModelRow> {
       this.stmt(
         `
         UPDATE models
-        SET providerId = ?, name = ?, group_name = ?, capabilities = ?, endpointType = ?, pricing = ?
+        SET providerId = ?, providerModelId = ?, name = ?, group_name = ?, capabilities = ?, endpointType = ?, pricing = ?
         WHERE id = ?
       `
       ).run(
         model.providerId,
+        model.providerModelId,
         model.name,
         model.group,
         capabilitiesStr,
@@ -49,12 +50,13 @@ export class ModelRepository extends BaseRepository<ModelRow> {
     } else {
       this.stmt(
         `
-        INSERT INTO models (id, providerId, name, group_name, capabilities, endpointType, pricing, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO models (id, providerId, providerModelId, name, group_name, capabilities, endpointType, pricing, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
       ).run(
         model.id,
         model.providerId,
+        model.providerModelId,
         model.name,
         model.group,
         capabilitiesStr,

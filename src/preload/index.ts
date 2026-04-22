@@ -315,6 +315,8 @@ const api: Record<string, unknown> = {
   deleteProvider: (id: string) => ipcRenderer.invoke('delete-provider', id),
   testProviderConnection: (provider: Provider, modelId?: string) =>
     ipcRenderer.invoke('test-provider-connection', provider, modelId),
+  fetchProviderModels: (provider: Provider) =>
+    ipcRenderer.invoke('fetch-provider-models', provider),
 
   getModels: (providerId?: string) => ipcRenderer.invoke('get-models', providerId),
   saveModel: (model: Model) => ipcRenderer.invoke('save-model', model),
@@ -466,6 +468,7 @@ flatApi.settings = {
   deleteProvider: (id: string) => typedIpc.invoke('delete-provider', id),
   testProviderConnection: (provider: Provider, modelId?: string) =>
     typedIpc.invoke('test-provider-connection', provider, modelId),
+  fetchProviderModels: (provider: Provider) => typedIpc.invoke('fetch-provider-models', provider),
   getModels: (providerId?: string) => typedIpc.invoke('get-models', providerId),
   saveModel: (model: Model) => typedIpc.invoke('save-model', model),
   deleteModel: (id: string) => typedIpc.invoke('delete-model', id),

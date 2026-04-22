@@ -307,6 +307,7 @@ export const mapProviderRow = (row: ProviderRow): Provider => ({
 export const mapModelRow = (row: ModelRow): Model => ({
   id: row.id,
   providerId: row.providerId,
+  providerModelId: row.providerModelId ?? undefined,
   name: row.name,
   group: row.group_name ?? undefined,
   capabilities: parseJSON<Model['capabilities']>(row.capabilities, []),

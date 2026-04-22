@@ -14,7 +14,7 @@ import {
   RotateCw
 } from 'lucide-react'
 import type { Provider, Model } from '../../../../shared/types'
-import { PROVIDER_URLS } from '../../config/providers'
+import { PROVIDER_URLS, inferModelCapabilities } from '../../config/providers'
 import { useConfirm } from '../../hooks/useConfirm'
 import { Badge, Button, FormField, IconButton, Input, Surface, Switch } from '../ui'
 
@@ -113,6 +113,7 @@ export function ProviderSettings({
   }
 
   const providerUrls = PROVIDER_URLS[provider.id as keyof typeof PROVIDER_URLS]
+  const modelFetchRequiresApiKey = !['ollama', 'lmstudio'].includes(provider.id)
 
   return (
     <div className="p-6 max-w-2xl">
@@ -262,32 +263,24 @@ export function ProviderSettings({
         <div className="border-t border-border pt-6 mt-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-foreground">模型管理</h3>
-            {provider.type === 'openai' && (
+            {!['azure-openai', 'aws-bedrock', 'vertexai', 'custom'].includes(provider.type) && (
               <button
                 onClick={async () => {
                   setIsFetchingModels(true)
                   setModelError('')
                   try {
-                    // This is a bit of a hack: we use the connection test logic or a dedicated fetch
-                    // but for now, let's just use the apiHost/models endpoint
-                    const headers: Record<string, string> = {}
-                    if (formData.apiKey) headers['Authorization'] = `Bearer ${formData.apiKey}`
+                    const fetchedModels = await window.api.fetchProviderModels({
+                      ...provider,
+                      ...formData
+                    } as Provider)
 
-                    const url = `${formData.apiHost || ''}/models`
-                    const response = await fetch(url, { headers })
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-                    const data = await response.json()
-
-                    if (data.data && Array.isArray(data.data)) {
-                      for (const m of data.data) {
-                        const exists = models.find((em) => em.id === m.id)
-                        if (!exists && onAddModel) {
-                          await onAddModel({
-                            id: m.id,
-                            providerId: provider.id,
-                            name: m.id
-                          })
-                        }
+                    for (const fetchedModel of fetchedModels) {
+                      const apiModelId = fetchedModel.providerModelId || fetchedModel.id
+                      const exists = models.find(
+                        (em) => em.providerModelId === apiModelId || em.id === fetchedModel.id
+                      )
+                      if (!exists && onAddModel) {
+                        await onAddModel(fetchedModel)
                       }
                     }
                   } catch {
@@ -296,7 +289,7 @@ export function ProviderSettings({
                     setIsFetchingModels(false)
                   }
                 }}
-                disabled={isFetchingModels || !formData.apiKey}
+                disabled={isFetchingModels || (modelFetchRequiresApiKey && !formData.apiKey)}
                 className="text-xs text-accent hover:text-accent-strong font-semibold flex items-center gap-1 disabled:opacity-50"
               >
                 {isFetchingModels ? '正在获取...' : '自动获取模型'}
@@ -322,13 +315,16 @@ export function ProviderSettings({
             <Button
               onClick={async () => {
                 if (newModelName.trim() && newModelId.trim() && provider) {
+                  const apiModelId = newModelId.trim()
                   setModelError('')
                   try {
                     if (onAddModel) {
                       await onAddModel({
-                        id: newModelId.trim(),
+                        id: `${provider.id}:${apiModelId}`,
                         providerId: provider.id,
-                        name: newModelName.trim()
+                        providerModelId: apiModelId,
+                        name: newModelName.trim(),
+                        capabilities: inferModelCapabilities(apiModelId, provider.id, newModelName)
                       })
                     }
                     setNewModelName('')
@@ -358,58 +354,61 @@ export function ProviderSettings({
                 <p className="text-sm text-muted-foreground">暂无模型，请添加模型</p>
               </div>
             ) : (
-              models.map((model) => (
-                <Surface
-                  key={model.id}
-                  padding="sm"
-                  className="group flex items-center justify-between hover:border-accent/30"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-sm text-foreground truncate">
-                      {model.name}
+              models.map((model) => {
+                const apiModelId = model.providerModelId || model.id
+                return (
+                  <Surface
+                    key={model.id}
+                    padding="sm"
+                    className="group flex items-center justify-between hover:border-accent/30"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm text-foreground truncate">
+                        {model.name}
+                      </div>
+                      <div className="text-xs text-muted-foreground font-mono truncate">
+                        {apiModelId}
+                      </div>
                     </div>
-                    <div className="text-xs text-muted-foreground font-mono truncate">
-                      {model.id}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => handleTestConnection(model.id)}
-                      disabled={!!testingModelId}
-                      className={`p-1.5 rounded-md transition-colors ${
-                        testingModelId === model.id
-                          ? 'text-accent bg-accent-soft'
-                          : 'text-muted-foreground hover:text-accent hover:bg-accent-soft'
-                      }`}
-                      title="测试该模型"
-                    >
-                      {testingModelId === model.id ? (
-                        <RotateCw size={14} className="animate-spin" />
-                      ) : (
-                        <Play size={14} />
-                      )}
-                    </button>
-                    {onRemoveModel && (
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
-                        onClick={async () => {
-                          const ok = await confirm({
-                            title: '删除模型',
-                            message: `确定删除模型"${model.id}"吗？`,
-                            confirmText: '删除',
-                            variant: 'danger'
-                          })
-                          if (!ok) return
-                          onRemoveModel(model.providerId, model.id)
-                        }}
-                        className="p-1.5 text-muted-foreground hover:text-danger hover:bg-danger-soft rounded-md transition-colors"
-                        title="删除模型"
+                        onClick={() => handleTestConnection(apiModelId)}
+                        disabled={!!testingModelId}
+                        className={`p-1.5 rounded-md transition-colors ${
+                          testingModelId === apiModelId
+                            ? 'text-accent bg-accent-soft'
+                            : 'text-muted-foreground hover:text-accent hover:bg-accent-soft'
+                        }`}
+                        title="测试该模型"
                       >
-                        <Trash2 size={14} />
+                        {testingModelId === apiModelId ? (
+                          <RotateCw size={14} className="animate-spin" />
+                        ) : (
+                          <Play size={14} />
+                        )}
                       </button>
-                    )}
-                  </div>
-                </Surface>
-              ))
+                      {onRemoveModel && (
+                        <button
+                          onClick={async () => {
+                            const ok = await confirm({
+                              title: '删除模型',
+                              message: `确定删除模型"${apiModelId}"吗？`,
+                              confirmText: '删除',
+                              variant: 'danger'
+                            })
+                            if (!ok) return
+                            onRemoveModel(model.providerId, model.id)
+                          }}
+                          className="p-1.5 text-muted-foreground hover:text-danger hover:bg-danger-soft rounded-md transition-colors"
+                          title="删除模型"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </Surface>
+                )
+              })
             )}
           </div>
         </div>

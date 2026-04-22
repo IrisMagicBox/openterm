@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { SYSTEM_MODELS, SYSTEM_PROVIDERS, getModelApiId } from '../../shared/provider-presets'
 import { BASE_SCHEMA_SQL } from './schema'
 
 type Migration = {
@@ -72,6 +73,57 @@ const migrations: Migration[] = [
       db.prepare(
         "DELETE FROM providers WHERE id = 'coreshub' AND isSystem = 1 AND name = 'coreshub'"
       ).run()
+    }
+  },
+  {
+    id: '004_provider_model_presets',
+    run: (db) => {
+      addColumnIfMissing(db, 'models', 'providerModelId', 'TEXT')
+      db.prepare('UPDATE models SET providerModelId = id WHERE providerModelId IS NULL').run()
+
+      const insertProvider = db.prepare(`
+        INSERT OR IGNORE INTO providers
+          (id, name, type, apiKey, apiHost, apiVersion, enabled, isSystem, config, createdAt, updatedAt)
+        VALUES
+          (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+
+      const insertModel = db.prepare(`
+        INSERT OR IGNORE INTO models
+          (id, providerId, providerModelId, name, group_name, capabilities, endpointType, pricing, createdAt)
+        VALUES
+          (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+
+      for (const provider of SYSTEM_PROVIDERS) {
+        insertProvider.run(
+          provider.id,
+          provider.name,
+          provider.type,
+          provider.apiKey,
+          provider.apiHost,
+          provider.apiVersion,
+          provider.enabled ? 1 : 0,
+          provider.isSystem ? 1 : 0,
+          provider.config ? JSON.stringify(provider.config) : null,
+          provider.createdAt || Date.now(),
+          provider.updatedAt || Date.now()
+        )
+      }
+
+      for (const model of SYSTEM_MODELS) {
+        insertModel.run(
+          model.id,
+          model.providerId,
+          model.providerModelId ?? getModelApiId(model),
+          model.name,
+          model.group,
+          model.capabilities ? JSON.stringify(model.capabilities) : null,
+          model.endpointType,
+          model.pricing ? JSON.stringify(model.pricing) : null,
+          model.createdAt || Date.now()
+        )
+      }
     }
   }
 ]

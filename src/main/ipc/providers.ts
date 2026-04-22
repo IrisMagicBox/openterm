@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { providerDB } from '../db'
-import { testProviderConnection } from '../ai'
+import { fetchProviderModels, testProviderConnection } from '../ai'
 
 export function registerProviderIPC(): void {
   ipcMain.removeHandler('get-providers')
@@ -19,4 +19,7 @@ export function registerProviderIPC(): void {
   ipcMain.handle('test-provider-connection', (_, provider, modelId?: string) =>
     testProviderConnection(provider, modelId)
   )
+
+  ipcMain.removeHandler('fetch-provider-models')
+  ipcMain.handle('fetch-provider-models', (_, provider) => fetchProviderModels(provider))
 }

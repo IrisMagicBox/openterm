@@ -118,6 +118,7 @@ declare global {
           provider: Provider,
           modelId?: string
         ) => Promise<{ ok: boolean; message: string }>
+        fetchProviderModels: (provider: Provider) => Promise<Model[]>
         getModels: (providerId?: string) => Promise<Model[]>
         saveModel: (model: Model) => Promise<void>
         deleteModel: (id: string) => Promise<void>
@@ -285,6 +286,7 @@ declare global {
         provider: Provider,
         modelId?: string
       ) => Promise<{ ok: boolean; message: string }>
+      fetchProviderModels: (provider: Provider) => Promise<Model[]>
 
       getModels: (providerId?: string) => Promise<Model[]>
       saveModel: (model: Model) => Promise<void>

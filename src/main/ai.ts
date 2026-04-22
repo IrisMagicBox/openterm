@@ -1,23 +1,51 @@
 import OpenAI from 'openai'
-import { providerDB, modelDB } from './db'
-import type { Provider } from '../shared/types'
+import { providerDB, modelDB, topicDB } from './db'
+import type { Model, Provider } from '../shared/types'
 import { DEFAULT_MODEL } from '../shared/constants'
 import { PROVIDER_CONNECTION_TIMEOUT_MS } from './constants'
 import { getErrorMessage } from '../shared/errors'
+import {
+  getModelApiId,
+  getSystemModels,
+  inferModelCapabilities,
+  isAgentRuntimeProvider,
+  isAgentUsableModel
+} from '../shared/provider-presets'
 
 let cachedClient: OpenAI | null = null
 let cachedConfig = ''
 
-export const normalizeProviderApiHost = (provider: Pick<Provider, 'apiHost' | 'type'>): string => {
+type ProviderUrlInput = Pick<Provider, 'apiHost' | 'type'> & Partial<Pick<Provider, 'id'>>
+
+export interface ProviderSelectionOptions {
+  topicId?: string
+  providerId?: string | null
+  modelId?: string | null
+}
+
+export interface ProviderSelection {
+  provider: Provider
+  model?: Model
+  modelId: string
+  modelRecordId?: string
+}
+
+const OPENAI_HOST_WITHOUT_V1_PROVIDER_IDS = new Set(['github', 'copilot'])
+
+function hasVersionPath(url: string): boolean {
+  return /\/v\d+(?:\/|$)/.test(url)
+}
+
+export const normalizeProviderApiHost = (provider: ProviderUrlInput): string => {
   const trimmedHost = provider.apiHost.trim().replace(/\/+$/, '')
   if (!trimmedHost) return trimmedHost
 
-  if (
-    provider.type === 'openai' &&
-    !trimmedHost.endsWith('/v1') &&
-    !trimmedHost.includes('/api/v1') &&
-    !trimmedHost.endsWith('/openai')
-  ) {
+  if (provider.type === 'ollama') {
+    return hasVersionPath(trimmedHost) ? trimmedHost : `${trimmedHost}/v1`
+  }
+
+  if (provider.type === 'openai' && !hasVersionPath(trimmedHost)) {
+    if (provider.id && OPENAI_HOST_WITHOUT_V1_PROVIDER_IDS.has(provider.id)) return trimmedHost
     return `${trimmedHost}/v1`
   }
 
@@ -28,12 +56,23 @@ export const normalizeProviderApiHost = (provider: Pick<Provider, 'apiHost' | 't
   return trimmedHost
 }
 
-export const buildProviderModelsUrl = (provider: Pick<Provider, 'apiHost' | 'type'>): string => {
+export const buildProviderModelsUrl = (provider: ProviderUrlInput): string => {
+  const rawHost = provider.apiHost.trim().replace(/\/+$/, '')
+  if (!rawHost) return rawHost
+
+  if (provider.type === 'ollama') {
+    return `${rawHost}/api/tags`
+  }
+
+  if (provider.type === 'gemini') {
+    return `${rawHost}/v1beta/models`
+  }
+
   const normalizedHost = normalizeProviderApiHost(provider)
   if (!normalizedHost) return normalizedHost
 
-  if (provider.type === 'ollama') {
-    return `${normalizedHost}/api/tags`
+  if (provider.type === 'anthropic') {
+    return `${normalizedHost}/v1/models`
   }
 
   if (provider.type === 'azure-openai') {
@@ -47,7 +86,7 @@ export const buildProviderModelsUrl = (provider: Pick<Provider, 'apiHost' | 'typ
   return `${normalizedHost}/models`
 }
 
-export const buildProviderChatUrl = (provider: Pick<Provider, 'apiHost' | 'type'>): string => {
+export const buildProviderChatUrl = (provider: ProviderUrlInput): string => {
   const normalizedHost = normalizeProviderApiHost(provider)
   if (!normalizedHost) return normalizedHost
 
@@ -66,17 +105,70 @@ export const buildProviderChatUrl = (provider: Pick<Provider, 'apiHost' | 'type'
   return `${normalizedHost}/chat/completions`
 }
 
-export const getAIClient = (): OpenAI => {
-  const providers = providerDB.getProviders()
-  const enabledProviders = providers.filter((p) => p.enabled)
-
-  if (enabledProviders.length === 0) {
-    throw new Error('No AI providers enabled. Please enable a provider in Settings.')
+function getModelsWithPresets(providerId: string): Model[] {
+  const byId = new Map<string, Model>()
+  for (const preset of getSystemModels(providerId)) {
+    byId.set(preset.id, preset)
   }
 
-  const provider = enabledProviders[0]
+  for (const model of modelDB.getModels(providerId)) {
+    const apiModelId = model.providerModelId || getModelApiId(model)
+    const preset = byId.get(model.id)
+    byId.set(model.id, {
+      ...preset,
+      ...model,
+      providerModelId: apiModelId,
+      capabilities:
+        model.capabilities && model.capabilities.length > 0
+          ? model.capabilities
+          : preset?.capabilities || inferModelCapabilities(apiModelId, providerId, model.name)
+    })
+  }
+
+  return Array.from(byId.values())
+}
+
+export function resolveProviderSelection(
+  options: ProviderSelectionOptions = {}
+): ProviderSelection {
+  const providers = providerDB.getProviders()
+  const enabledProviders = providers.filter((p) => p.enabled && isAgentRuntimeProvider(p))
+
+  if (enabledProviders.length === 0) {
+    throw new Error(
+      'No supported AI providers enabled. Please enable an OpenAI-compatible or Anthropic provider in Settings.'
+    )
+  }
+
+  const topic = options.topicId ? topicDB.getTopicById(options.topicId) : undefined
+  const requestedProviderId = options.providerId || topic?.selectedProviderId
+  const provider =
+    (requestedProviderId && enabledProviders.find((p) => p.id === requestedProviderId)) ||
+    enabledProviders[0]
+  const models = getModelsWithPresets(provider.id).filter(isAgentUsableModel)
+  const requestedModelId = options.modelId || topic?.selectedModelId
+  const model =
+    (requestedModelId &&
+      models.find((m) => m.id === requestedModelId || m.providerModelId === requestedModelId)) ||
+    models[0]
+  const modelId = model ? getModelApiId(model) : DEFAULT_MODEL
+
+  return {
+    provider,
+    model,
+    modelId,
+    modelRecordId: model?.id
+  }
+}
+
+export const getAIClient = (options: ProviderSelectionOptions = {}): OpenAI => {
+  const { provider } = resolveProviderSelection(options)
+  if (provider.type === 'anthropic') {
+    throw new Error('Anthropic uses the Messages API and cannot be called with the OpenAI client.')
+  }
+
   const normalizedHost = normalizeProviderApiHost(provider)
-  const configKey = `${normalizedHost}:${provider.apiKey}`
+  const configKey = `${provider.id}:${normalizedHost}:${provider.apiKey}:${provider.apiVersion || ''}`
 
   if (!cachedClient || cachedConfig !== configKey) {
     cachedClient = new OpenAI({
@@ -89,27 +181,95 @@ export const getAIClient = (): OpenAI => {
   return cachedClient
 }
 
-export const getCurrentModel = (): string => {
-  const providers = providerDB.getProviders()
-  const enabledProviders = providers.filter((p) => p.enabled)
-
-  if (enabledProviders.length === 0) {
+export const getCurrentModel = (options: ProviderSelectionOptions = {}): string => {
+  try {
+    return resolveProviderSelection(options).modelId
+  } catch {
     return DEFAULT_MODEL
   }
-
-  const provider = enabledProviders[0]
-  const models = modelDB.getModels(provider.id)
-
-  if (models.length > 0) {
-    return models[0].id
-  }
-
-  return 'default'
 }
 
 export const getEnabledProviders = () => {
   const providers = providerDB.getProviders()
   return providers.filter((p) => p.enabled)
+}
+
+function createProviderModel(
+  provider: Provider,
+  providerModelId: string,
+  name = providerModelId
+): Model {
+  return {
+    id: `${provider.id}:${providerModelId}`,
+    providerId: provider.id,
+    providerModelId,
+    name,
+    capabilities: inferModelCapabilities(providerModelId, provider.id, name),
+    createdAt: Date.now()
+  }
+}
+
+export async function fetchProviderModels(provider: Provider): Promise<Model[]> {
+  const modelsUrl = buildProviderModelsUrl(provider)
+  if (!modelsUrl) throw new Error('API Host is required.')
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(provider.config?.extra_headers || {})
+  }
+
+  if (provider.type === 'anthropic') {
+    headers['x-api-key'] = provider.apiKey || ''
+    headers['anthropic-version'] = provider.apiVersion || '2023-06-01'
+  } else if (provider.apiKey && provider.type !== 'gemini') {
+    headers.Authorization = `Bearer ${provider.apiKey}`
+  }
+
+  const url =
+    provider.type === 'gemini' && provider.apiKey
+      ? `${modelsUrl}?key=${encodeURIComponent(provider.apiKey)}`
+      : modelsUrl
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), PROVIDER_CONNECTION_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(url, { headers, signal: controller.signal })
+    const data: any = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      const errorMsg = data.error?.message || data.error || response.statusText
+      throw new Error(`HTTP ${response.status}: ${errorMsg}`)
+    }
+
+    if (provider.type === 'ollama') {
+      const items = Array.isArray(data.models) ? data.models : []
+      return items
+        .map((item: any) => item.name || item.model)
+        .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+        .map((id) => createProviderModel(provider, id))
+    }
+
+    if (provider.type === 'gemini') {
+      const items = Array.isArray(data.models) ? data.models : []
+      return items
+        .filter((item: any) => item.supportedGenerationMethods?.includes?.('generateContent'))
+        .map((item: any) => String(item.name || '').replace(/^models\//, ''))
+        .filter((id: string) => id.length > 0)
+        .map((id: string) => createProviderModel(provider, id, id))
+    }
+
+    const items = Array.isArray(data.data)
+      ? data.data
+      : Array.isArray(data.models)
+        ? data.models
+        : []
+    return items
+      .map((item: any) => item.id || item.name || item.model)
+      .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+      .map((id) => createProviderModel(provider, id))
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }
 
 export const SYSTEM_PROMPT = `你是 OpenTerm Agent，一个专为 macOS 设计的、具备高度自主推理能力的 SSH 终端助手。
@@ -185,8 +345,8 @@ export async function testProviderConnection(
     if (!chatUrl) return { ok: false, message: 'API Host is required.' }
 
     // Get model to test
-    const models = modelDB.getModels(provider.id)
-    let testModel = modelId || (models.length > 0 ? models[0].id : '')
+    const models = getModelsWithPresets(provider.id)
+    let testModel = modelId || (models.length > 0 ? getModelApiId(models[0]) : '')
 
     if (!testModel) {
       // Fallback defaults for testing if no models configured
@@ -202,14 +362,15 @@ export async function testProviderConnection(
     }
 
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      ...(provider.config?.extra_headers || {})
     }
 
     let body: any = {}
 
     if (provider.type === 'anthropic') {
       headers['x-api-key'] = provider.apiKey || ''
-      headers['anthropic-version'] = '2023-06-01'
+      headers['anthropic-version'] = provider.apiVersion || '2023-06-01'
       body = {
         model: testModel,
         messages: [{ role: 'user', content: 'hi' }],
@@ -217,7 +378,9 @@ export async function testProviderConnection(
       }
     } else if (provider.type === 'gemini') {
       // Gemini specific quick test
-      const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${provider.apiKey || ''}`
+      const geminiModel = testModel || 'gemini-1.5-flash'
+      const rawHost = provider.apiHost.trim().replace(/\/+$/, '')
+      const testUrl = `${rawHost}/v1beta/models/${geminiModel}:generateContent?key=${provider.apiKey || ''}`
       const response = await fetch(testUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

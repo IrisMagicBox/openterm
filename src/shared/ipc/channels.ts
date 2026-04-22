@@ -246,6 +246,7 @@ export interface IpcInvokeChannels {
     payload: [provider: Provider, modelId?: string]
     result: ProviderConnectionTestResult
   }
+  'fetch-provider-models': { payload: [provider: Provider]; result: Model[] }
 
   'get-models': { payload: [providerId?: string]; result: Model[] }
   'save-model': { payload: [model: Model]; result: void }

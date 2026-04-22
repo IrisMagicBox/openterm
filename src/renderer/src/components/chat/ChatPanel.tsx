@@ -10,6 +10,7 @@ import { MessageBubble, ThinkingIndicator, EmptyState } from './MessageBubble'
 import { CommandPalette } from './CommandPalette'
 import { TerminalStage } from './TerminalStage'
 import { useProvider } from '../../hooks/useProvider'
+import { isAgentRuntimeProvider, isAgentUsableModel } from '../../config/providers'
 import { useVisibilityRestore } from '../../hooks/useVisibilityRestore'
 import { useChatMessages } from '../../hooks/useChatMessages'
 import { useCommandPalette } from '../../hooks/useCommandPalette'
@@ -68,9 +69,19 @@ export function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null)
   const { animationKey } = useVisibilityRestore()
   const { providers, models, defaultProviderId, defaultModelId } = useProvider()
+  const runtimeProviders = providers.filter((provider) => isAgentRuntimeProvider(provider))
+  const topicProviderId = runtimeProviders.find(
+    (provider) => provider.enabled && provider.id === topic.selectedProviderId
+  )?.id
+  const defaultRuntimeProviderId = runtimeProviders.find(
+    (provider) => provider.enabled && provider.id === defaultProviderId
+  )?.id
 
   const selectedProviderId =
-    topic.selectedProviderId || defaultProviderId || providers.find((p) => p.enabled)?.id || null
+    topicProviderId ||
+    defaultRuntimeProviderId ||
+    runtimeProviders.find((p) => p.enabled)?.id ||
+    null
   const selectedModelId =
     topic.selectedModelId ||
     (selectedProviderId
@@ -79,7 +90,9 @@ export function ChatPanel({
           (model) => model.id === defaultModelId && model.providerId === selectedProviderId
         )
           ? defaultModelId
-          : models.find((model) => model.providerId === selectedProviderId)?.id) || null
+          : models.find(
+              (model) => model.providerId === selectedProviderId && isAgentUsableModel(model)
+            )?.id) || null
       : null)
   const {
     messages,

@@ -16,7 +16,12 @@ import {
   loadProvidersFromDB,
   loadModelsFromDB
 } from '../store/llm'
-import { getSystemProvider, isSystemProviderId } from '../config/providers'
+import {
+  getModelApiId,
+  getSystemProvider,
+  inferModelCapabilities,
+  isSystemProviderId
+} from '../config/providers'
 
 export function useProvider() {
   const dispatch = useDispatch<AppDispatch>()
@@ -136,8 +141,12 @@ export function useProvider() {
 
   const createModel = useCallback(
     async (model: Omit<Model, 'createdAt'>) => {
+      const apiModelId = model.providerModelId || getModelApiId(model)
       const newModel: Model = {
         ...model,
+        providerModelId: apiModelId,
+        capabilities:
+          model.capabilities || inferModelCapabilities(apiModelId, model.providerId, model.name),
         createdAt: Date.now()
       }
       await window.api.saveModel(newModel)

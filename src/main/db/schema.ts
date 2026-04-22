@@ -59,6 +59,7 @@ export const BASE_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS models (
     id TEXT PRIMARY KEY,
     providerId TEXT NOT NULL,
+    providerModelId TEXT,
     name TEXT NOT NULL,
     group_name TEXT,
     capabilities TEXT,

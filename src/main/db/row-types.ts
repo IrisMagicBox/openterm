@@ -241,6 +241,7 @@ export interface ProviderRow {
 export interface ModelRow {
   id: string
   providerId: string
+  providerModelId: string | null
   name: string
   group_name: string | null
   capabilities: string | null // JSON-encoded string[]

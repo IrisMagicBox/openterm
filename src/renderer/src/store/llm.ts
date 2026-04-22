@@ -1,6 +1,11 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit'
 import type { Provider, Model, SystemProviderId } from '../../../shared/types'
-import { SYSTEM_PROVIDERS_CONFIG } from '../config/providers'
+import {
+  SYSTEM_MODELS,
+  SYSTEM_PROVIDERS_CONFIG,
+  getModelApiId,
+  inferModelCapabilities
+} from '../config/providers'
 
 export interface LLMState {
   providers: Provider[]
@@ -13,11 +18,36 @@ export interface LLMState {
 
 const initialState: LLMState = {
   providers: Object.values(SYSTEM_PROVIDERS_CONFIG),
-  models: [],
+  models: SYSTEM_MODELS,
   defaultProviderId: null,
   defaultModelId: null,
   loading: false,
   error: null
+}
+
+function hydrateModel(model: Model, preset?: Model): Model {
+  const apiModelId = model.providerModelId || preset?.providerModelId || getModelApiId(model)
+  return {
+    ...preset,
+    ...model,
+    providerModelId: apiModelId,
+    capabilities:
+      model.capabilities && model.capabilities.length > 0
+        ? model.capabilities
+        : preset?.capabilities || inferModelCapabilities(apiModelId, model.providerId, model.name),
+    createdAt: model.createdAt || preset?.createdAt || Date.now()
+  }
+}
+
+function mergeModelsWithPresets(dbModels: Model[]): Model[] {
+  const byId = new Map<string, Model>()
+  for (const preset of SYSTEM_MODELS) {
+    byId.set(preset.id, preset)
+  }
+  for (const model of dbModels) {
+    byId.set(model.id, hydrateModel(model, byId.get(model.id)))
+  }
+  return Array.from(byId.values())
 }
 
 const llmSlice = createSlice({
@@ -108,7 +138,7 @@ const llmSlice = createSlice({
 
     resetToDefaults: (state) => {
       state.providers = Object.values(SYSTEM_PROVIDERS_CONFIG)
-      state.models = []
+      state.models = SYSTEM_MODELS
       state.defaultProviderId = null
       state.defaultModelId = null
     },
@@ -178,6 +208,7 @@ export const loadProvidersFromDB = createAsyncThunk('llm/loadProviders', async (
           apiKey: dbProvider.apiKey || sysProvider.apiKey,
           enabled: dbProvider.enabled,
           apiHost: dbProvider.apiHost || sysProvider.apiHost,
+          apiVersion: dbProvider.apiVersion || sysProvider.apiVersion,
           config: dbProvider.config || sysProvider.config
         }
       : sysProvider
@@ -194,7 +225,7 @@ export const loadProvidersFromDB = createAsyncThunk('llm/loadProviders', async (
 
 export const loadModelsFromDB = createAsyncThunk('llm/loadModels', async () => {
   const models = await window.api.getModels()
-  return models
+  return mergeModelsWithPresets(models)
 })
 
 export default llmSlice.reducer
