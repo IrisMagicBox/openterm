@@ -340,7 +340,7 @@ export function ChatPanel({
       )}
       {portForwardHost && (
         <Dialog open onOpenChange={(open) => !open && setPortForwardHost(null)}>
-          <DialogContent className="h-[520px] max-w-2xl overflow-hidden p-0">
+          <DialogContent className="h-[520px] max-w-2xl overflow-hidden p-0" showClose={false}>
             <PortForwardingPanel
               hostId={portForwardHost.id}
               hostAlias={portForwardHost.alias}

@@ -140,7 +140,7 @@ export default function App(): JSX.Element {
     try {
       const topic = await createTopic(undefined, ['local'])
       setActiveView('chat')
-      setPrefilledText('本机: ')
+      setPrefilledText('@本机 ')
       return topic
     } catch (err) {
       console.error('Failed to create local agent topic:', err)

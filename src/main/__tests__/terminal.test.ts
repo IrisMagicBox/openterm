@@ -93,4 +93,27 @@ describe('CommandExecutor shell integration parsing', () => {
     expect(parsed.cleanData).toBe('')
     expect(terminalSessionDB.updateSessionShellIntegration).toHaveBeenCalledWith(sessionId, true)
   })
+
+  it('keeps a readable headless screen snapshot for interactive terminals', async () => {
+    const sessionId = `session-${Date.now()}-screen`
+    const stream = createFakeStream()
+
+    await commandExecutor.createSession(
+      sessionId,
+      'topic-1',
+      'local',
+      'Local',
+      stream as never,
+      undefined,
+      false
+    )
+
+    commandExecutor.handleStreamOutput(sessionId, Buffer.from('Choose an option:\r\n> Continue'))
+
+    const snapshot = await commandExecutor.getTerminalSnapshot(sessionId)
+    expect(snapshot.sessionId).toBe(sessionId)
+    expect(snapshot.visibleText).toContain('Choose an option:')
+    expect(snapshot.visibleText).toContain('> Continue')
+    expect(snapshot.bufferType).toBe('normal')
+  })
 })

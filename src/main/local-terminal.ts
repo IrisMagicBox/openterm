@@ -179,6 +179,7 @@ export function resizeLocalTerminal(sessionId: string, cols: number, rows: numbe
 
   try {
     session.pty.resize(cols, rows)
+    commandExecutor.resizeSession(sessionId, cols, rows)
   } catch (_) {
     /* PTY resize fails silently if process exited */
   }

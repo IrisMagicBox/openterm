@@ -72,7 +72,7 @@ const parameters = z.object({
 
 export default define('execute_command', {
   description:
-    '在指定主机上执行终端命令。当你需要检查系统状态、验证服务运行、收集信息或执行任何操作时，必须使用此工具而非猜测结果。主动执行命令来获取实时信息。',
+    '在指定主机上执行会自行结束的终端命令。当你需要检查系统状态、验证服务运行、收集信息或执行普通命令时，必须使用此工具而非猜测结果。若命令会进入 TUI、交互式安装器、菜单、编辑器、REPL 或需要键盘选择，不要用本工具等待完成；改用 manage_terminal + observe_terminal + send_terminal_keys + wait_terminal_text 自动交互。',
   parameters,
   async execute(args: z.infer<typeof parameters>, ctx: Tool.Context): Promise<Tool.ExecuteResult> {
     const { hostId, command, reason, terminalName } = args

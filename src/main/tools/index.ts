@@ -7,6 +7,11 @@ import listHostsTool from './list-hosts'
 import manageTerminalTool from './manage-terminal'
 import managePortForwardTool from './manage-port-forward'
 import listTerminalsTool from './list-terminals'
+import {
+  observeTerminalTool,
+  sendTerminalKeysTool,
+  waitTerminalTextTool
+} from './terminal-automation'
 import manageHostTool from './manage-host'
 import searchMemoryTool from './search-memory'
 import searchTopicsTool from './search-topics'
@@ -36,6 +41,9 @@ export function createDefaultRegistry(): ToolRegistry {
   registry.register(manageTerminalTool)
   registry.register(managePortForwardTool)
   registry.register(listTerminalsTool)
+  registry.register(observeTerminalTool)
+  registry.register(sendTerminalKeysTool)
+  registry.register(waitTerminalTextTool)
   registry.register(manageHostTool)
   registry.register(searchMemoryTool)
   registry.register(searchTopicsTool)

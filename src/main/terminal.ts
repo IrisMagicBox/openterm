@@ -1,4 +1,5 @@
 import { WebContents } from 'electron'
+import * as HeadlessXterm from '@xterm/headless'
 import { v4 as uuidv4 } from 'uuid'
 import { logger } from './logger'
 import { TerminalSession, TerminalIO, CommandResult, TerminalStream } from '../shared/types'
@@ -15,8 +16,21 @@ import {
   RAW_BUFFER_MAX,
   RAW_BUFFER_TRIM,
   TRUNCATION_HEAD_SIZE,
-  TRUNCATION_TAIL_SIZE
+  TRUNCATION_TAIL_SIZE,
+  DEFAULT_TERMINAL_COLS,
+  DEFAULT_TERMINAL_ROWS
 } from './constants'
+
+type HeadlessXtermModule = typeof HeadlessXterm & { default?: typeof HeadlessXterm }
+type HeadlessTerminal = InstanceType<typeof HeadlessXterm.Terminal>
+
+const HeadlessTerminalCtor =
+  (HeadlessXterm as HeadlessXtermModule).Terminal ??
+  (HeadlessXterm as HeadlessXtermModule).default?.Terminal
+
+if (!HeadlessTerminalCtor) {
+  throw new Error('@xterm/headless Terminal export is unavailable')
+}
 
 interface ActiveCommand {
   inputId: string
@@ -35,12 +49,54 @@ export interface CommandExecutionOptions {
   onOutputChunk?: (chunk: string, fullOutput: string) => void
 }
 
+export interface TerminalScreenLine {
+  row: number
+  text: string
+  wrapped: boolean
+}
+
+export interface TerminalScreenSnapshot {
+  sessionId: string
+  hostId: string
+  hostAlias: string
+  cols: number
+  rows: number
+  cursorX: number
+  cursorY: number
+  bufferType: 'normal' | 'alternate'
+  viewportY: number
+  baseY: number
+  isLocked: boolean
+  lockedBy: 'agent' | 'user' | null
+  isCommandRunning: boolean
+  updatedAt: number
+  lines: TerminalScreenLine[]
+  visibleText: string
+}
+
+export interface WaitTerminalTextOptions {
+  text?: string
+  regex?: RegExp
+  timeoutMs: number
+  stableMs?: number
+}
+
+export interface WaitTerminalTextResult {
+  matched: boolean
+  timedOut: boolean
+  elapsedMs: number
+  snapshot: TerminalScreenSnapshot
+}
+
 interface SessionState {
   session: TerminalSession
   stream: TerminalStream
   webContents?: WebContents
   currentCommand?: ActiveCommand
   commandQueue: TerminalCommandQueue
+  screen: HeadlessTerminal
+  screenWriteChain: Promise<void>
+  lastScreenUpdatedAt: number
   outputBuffer: string
   rawBuffer: string
   isLocked: boolean
@@ -80,6 +136,14 @@ class CommandExecutor {
       stream,
       webContents,
       commandQueue: new TerminalCommandQueue(),
+      screen: new HeadlessTerminalCtor({
+        cols: DEFAULT_TERMINAL_COLS,
+        rows: DEFAULT_TERMINAL_ROWS,
+        allowProposedApi: true,
+        scrollback: 1000
+      }),
+      screenWriteChain: Promise.resolve(),
+      lastScreenUpdatedAt: Date.now(),
       outputBuffer: '',
       rawBuffer: '',
       isLocked: false,
@@ -335,6 +399,7 @@ class CommandExecutor {
     if (!state) return { cleanData: textDataRaw, isCommandEnd: false }
 
     const rawChunk = data.toString()
+    this.writeToScreen(state, data)
     const parsed = this.shellParser.parse(state.rawBuffer, rawChunk)
     state.rawBuffer = parsed.rawBuffer
 
@@ -413,6 +478,180 @@ class CommandExecutor {
     }
 
     return { cleanData: displayData, isCommandEnd: parsed.isCommandEnd }
+  }
+
+  private writeToScreen(state: SessionState, data: string | Uint8Array): void {
+    state.screenWriteChain = state.screenWriteChain
+      .catch(() => undefined)
+      .then(
+        () =>
+          new Promise<void>((resolve) => {
+            state.screen.write(data, () => {
+              state.lastScreenUpdatedAt = Date.now()
+              resolve()
+            })
+          })
+      )
+  }
+
+  private async waitForScreenWrites(state: SessionState): Promise<void> {
+    await state.screenWriteChain.catch((err) => {
+      logger.warn('Terminal', `Headless terminal write failed: ${err}`)
+    })
+  }
+
+  resizeSession(sessionId: string, cols: number, rows: number): void {
+    const state = this.sessions.get(sessionId)
+    if (!state) return
+
+    try {
+      state.screen.resize(cols, rows)
+      state.lastScreenUpdatedAt = Date.now()
+    } catch (err) {
+      logger.warn('Terminal', `Failed to resize headless terminal ${sessionId}: ${err}`)
+    }
+  }
+
+  async getTerminalSnapshot(sessionId: string): Promise<TerminalScreenSnapshot> {
+    const state = this.sessions.get(sessionId)
+    if (!state) {
+      throw new Error(`Session not found: ${sessionId}`)
+    }
+
+    await this.waitForScreenWrites(state)
+
+    const activeBuffer = state.screen.buffer.active
+    const lines: TerminalScreenLine[] = []
+
+    for (let row = 0; row < state.screen.rows; row++) {
+      const line = activeBuffer.getLine(activeBuffer.viewportY + row)
+      lines.push({
+        row,
+        text: line?.translateToString(true) ?? '',
+        wrapped: line?.isWrapped ?? false
+      })
+    }
+
+    const visibleText = lines
+      .map((line) => line.text)
+      .join('\n')
+      .replace(/\n+$/g, '')
+
+    return {
+      sessionId,
+      hostId: state.session.hostId,
+      hostAlias: state.session.hostAlias,
+      cols: state.screen.cols,
+      rows: state.screen.rows,
+      cursorX: activeBuffer.cursorX,
+      cursorY: activeBuffer.cursorY,
+      bufferType: activeBuffer.type,
+      viewportY: activeBuffer.viewportY,
+      baseY: activeBuffer.baseY,
+      isLocked: state.isLocked,
+      lockedBy: state.lockedBy,
+      isCommandRunning: Boolean(state.currentCommand),
+      updatedAt: state.lastScreenUpdatedAt,
+      lines,
+      visibleText
+    }
+  }
+
+  async sendAgentInput(
+    sessionId: string,
+    data: string,
+    topicId: string,
+    recordedContent: string,
+    taskId?: string,
+    stepId?: string
+  ): Promise<void> {
+    const state = this.sessions.get(sessionId)
+    if (!state) {
+      throw new Error(`Session not found: ${sessionId}`)
+    }
+
+    if (state.isLocked && state.lockedBy === 'user') {
+      throw new Error('Session is locked by user, cannot send agent input')
+    }
+
+    const input: TerminalIO = {
+      id: uuidv4(),
+      sessionId,
+      topicId: topicId || state.session.topicId,
+      hostId: state.session.hostId,
+      type: 'input',
+      source: 'agent',
+      content: recordedContent,
+      taskId,
+      stepId,
+      timestamp: Date.now()
+    }
+    this.history.createIO(input)
+
+    const shouldUnlockAfterWrite = !state.isLocked
+    if (shouldUnlockAfterWrite) {
+      state.isLocked = true
+      state.lockedBy = 'agent'
+    }
+
+    try {
+      state.stream.write(data)
+    } finally {
+      if (shouldUnlockAfterWrite && !state.currentCommand) {
+        state.isLocked = false
+        state.lockedBy = null
+      }
+    }
+  }
+
+  async waitForTerminalText(
+    sessionId: string,
+    options: WaitTerminalTextOptions,
+    signal?: AbortSignal
+  ): Promise<WaitTerminalTextResult> {
+    const startedAt = Date.now()
+    const timeoutMs = Math.max(0, options.timeoutMs)
+    const stableMs = Math.max(0, options.stableMs ?? 0)
+    let lastSnapshot = await this.getTerminalSnapshot(sessionId)
+    let lastVisibleText = lastSnapshot.visibleText
+    let stableSince = Date.now()
+
+    while (Date.now() - startedAt <= timeoutMs) {
+      if (signal?.aborted) {
+        throw new Error('Terminal wait aborted')
+      }
+
+      const snapshot = await this.getTerminalSnapshot(sessionId)
+      const visibleText = snapshot.visibleText
+      const matched = options.text
+        ? visibleText.includes(options.text)
+        : Boolean(options.regex?.test(visibleText))
+
+      if (visibleText !== lastVisibleText) {
+        lastVisibleText = visibleText
+        stableSince = Date.now()
+      }
+
+      lastSnapshot = snapshot
+
+      if (matched && (stableMs === 0 || Date.now() - stableSince >= stableMs)) {
+        return {
+          matched: true,
+          timedOut: false,
+          elapsedMs: Date.now() - startedAt,
+          snapshot
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+
+    return {
+      matched: false,
+      timedOut: true,
+      elapsedMs: Date.now() - startedAt,
+      snapshot: lastSnapshot
+    }
   }
 
   private completeCommand(
@@ -623,6 +862,8 @@ class CommandExecutor {
       if (state.currentCommand) {
         state.currentCommand.reject(new Error('Session closed'))
       }
+
+      state.screen.dispose()
 
       const timer = this.streamingTimers.get(sessionId)
       if (timer) {

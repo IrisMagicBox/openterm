@@ -20,7 +20,7 @@ import {
   X
 } from 'lucide-react'
 import { useConfirm } from '../hooks/useConfirm'
-import { Badge, Button, IconButton, Tabs, TabsContent, TabsList, TabsTrigger } from './ui'
+import { Badge, Button, IconButton, Tabs, TabsContent, TabsList, TabsTrigger, Tooltip } from './ui'
 import { cn } from '../lib/utils'
 
 interface TopicHubProps {
@@ -77,7 +77,9 @@ function typeLabel(type: MemoryEntry['type']): string {
   return '任务经验'
 }
 
-function statusTone(status: AgentRun['status']): 'accent' | 'success' | 'danger' | 'warning' | 'neutral' {
+function statusTone(
+  status: AgentRun['status']
+): 'accent' | 'success' | 'danger' | 'warning' | 'neutral' {
   if (status === 'completed') return 'success'
   if (status === 'failed' || status === 'cancelled') return 'danger'
   if (status === 'waiting_approval' || status === 'retrying') return 'warning'
@@ -131,7 +133,12 @@ export function TopicHub({
       new Map(memoryLists.flat().map((memory) => [memory.id, memory] as const)).values()
     )
 
-    setRuns(runLists.flat().sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8))
+    setRuns(
+      runLists
+        .flat()
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, 8)
+    )
     setMemories(uniqueMemories.sort((a, b) => b.importance - a.importance).slice(0, 10))
     setMemoryDrafts((prev) => {
       const next = { ...prev }
@@ -266,9 +273,7 @@ export function TopicHub({
             <MemoryPane
               memories={memories}
               drafts={memoryDrafts}
-              onDraft={(id, content) =>
-                setMemoryDrafts((prev) => ({ ...prev, [id]: content }))
-              }
+              onDraft={(id, content) => setMemoryDrafts((prev) => ({ ...prev, [id]: content }))}
               onUpdate={updateMemory}
               onDelete={deleteMemory}
             />
@@ -371,7 +376,11 @@ function HostsPane({
                       : 'bg-accent-soft text-accent'
                   )}
                 >
-                  {host.id === 'local' ? <Monitor size={12} /> : host.alias.slice(0, 1).toUpperCase()}
+                  {host.id === 'local' ? (
+                    <Monitor size={12} />
+                  ) : (
+                    host.alias.slice(0, 1).toUpperCase()
+                  )}
                 </div>
                 <span className="truncate text-xs font-bold text-foreground">{host.alias}</span>
               </div>
@@ -383,14 +392,16 @@ function HostsPane({
                 >
                   <PlusCircle size={12} />
                 </IconButton>
-                {onOpenFileBrowser && (
-                  <IconButton
-                    aria-label={`打开 ${host.alias} 文件管理`}
-                    onClick={() => onOpenFileBrowser(host)}
-                    className="h-6 w-6"
-                  >
-                    <Folder size={12} />
-                  </IconButton>
+                {onOpenFileBrowser && host.id !== 'local' && (
+                  <Tooltip content="远程文件管理" side="top">
+                    <IconButton
+                      aria-label={`打开 ${host.alias} 文件管理`}
+                      onClick={() => onOpenFileBrowser(host)}
+                      className="h-6 w-6"
+                    >
+                      <Folder size={12} />
+                    </IconButton>
+                  </Tooltip>
                 )}
                 {onOpenPortForward && host.id !== 'local' && (
                   <IconButton
@@ -585,9 +596,7 @@ function MemoryPane({
   const [editingId, setEditingId] = React.useState<string | null>(null)
   const visibleMemories = React.useMemo(
     () =>
-      scopeFilter === 'all'
-        ? memories
-        : memories.filter((memory) => memory.scope === scopeFilter),
+      scopeFilter === 'all' ? memories : memories.filter((memory) => memory.scope === scopeFilter),
     [memories, scopeFilter]
   )
 
@@ -774,7 +783,10 @@ function TunnelsPane({
           {tunnels.map((tunnel) => {
             const host = hostsById.get(tunnel.hostId)
             return (
-              <div key={tunnel.id} className="rounded-lg border border-white/65 bg-white/55 px-2.5 py-2">
+              <div
+                key={tunnel.id}
+                className="rounded-lg border border-white/65 bg-white/55 px-2.5 py-2"
+              >
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-xs font-bold text-foreground">
                     {host?.alias || tunnel.hostId}

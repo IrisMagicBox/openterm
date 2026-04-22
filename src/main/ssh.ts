@@ -389,6 +389,7 @@ export function setupSSHHandlers() {
     const session = sessions.get(sessionId)
     if (session && session.stream) {
       session.stream.setWindow(rows, cols, 0, 0)
+      commandExecutor.resizeSession(sessionId, cols, rows)
     }
   })
 }
