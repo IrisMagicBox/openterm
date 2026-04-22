@@ -14,6 +14,7 @@ export class LegacyAgentEventAdapter {
   thinking(): void {
     eventBus.publish('agent:thinking', {
       topicId: this.run.topicId,
+      thinking: true,
       taskId: this.run.taskId
     })
   }

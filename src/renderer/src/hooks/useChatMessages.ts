@@ -1,19 +1,64 @@
-import { useState, useEffect, useCallback } from 'react'
-import type { Message } from '../../../shared/types'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import type { AgentPart, AgentRun, Message } from '../../../shared/types'
 
-export function useChatMessages(topicId: string, thinking?: boolean) {
+interface ChatMessageQueueItem {
+  id: string
+  content: string
+}
+
+interface UseChatMessagesResult {
+  messages: Message[]
+  activeSteps: Message[]
+  activeParts: AgentPart[]
+  messageQueue: ChatMessageQueueItem[]
+  expandedThoughts: Record<string, boolean>
+  sendMessage: (content: string) => Promise<void>
+  toggleThought: (msgId: string) => void
+  removeQueuedMessage: (id: string) => void
+  clearQueue: () => void
+}
+
+function sortParts(parts: AgentPart[]): AgentPart[] {
+  return [...parts].sort((a, b) => a.orderIndex - b.orderIndex || a.createdAt - b.createdAt)
+}
+
+export function useChatMessages(topicId: string, thinking?: boolean): UseChatMessagesResult {
   const [messages, setMessages] = useState<Message[]>([])
   const [activeSteps, setActiveSteps] = useState<Message[]>([])
-  const [messageQueue, setMessageQueue] = useState<{ id: string; content: string }[]>([])
+  const [activeParts, setActiveParts] = useState<AgentPart[]>([])
+  const [messageQueue, setMessageQueue] = useState<ChatMessageQueueItem[]>([])
   const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({})
+  const runCacheRef = useRef<Map<string, AgentRun | undefined>>(new Map())
 
   useEffect(() => {
-    const fetchHistory = async () => {
+    const fetchHistory = async (): Promise<void> => {
       const history = await window.api.getMessages(topicId)
       setMessages(history)
       setActiveSteps([])
+      setActiveParts([])
+      runCacheRef.current.clear()
     }
     fetchHistory()
+
+    let disposed = false
+
+    const getRun = async (runId: string): Promise<AgentRun | undefined> => {
+      if (runCacheRef.current.has(runId)) return runCacheRef.current.get(runId)
+      const run = await window.api.getAgentRun(runId)
+      runCacheRef.current.set(runId, run)
+      return run
+    }
+
+    const upsertPart = async (part: AgentPart): Promise<void> => {
+      const run = await getRun(part.runId)
+      if (disposed || run?.topicId !== topicId) return
+      setActiveParts((prev) => {
+        const next = prev.some((existing) => existing.id === part.id)
+          ? prev.map((existing) => (existing.id === part.id ? part : existing))
+          : [...prev, part]
+        return sortParts(next)
+      })
+    }
 
     const unlistenStep = window.api.onAgentStep((step) => {
       if (step.topicId === topicId) {
@@ -21,6 +66,9 @@ export function useChatMessages(topicId: string, thinking?: boolean) {
           setActiveSteps((prev) => [...prev, step])
         } else if (step.content && step.role === 'assistant') {
           setActiveSteps([])
+          if (step.runId) {
+            setActiveParts((prev) => prev.filter((part) => part.runId !== step.runId))
+          }
           setMessages((prev) => {
             const exists = prev.find((m) => m.id === step.id)
             if (exists) return prev.map((m) => (m.id === step.id ? step : m))
@@ -36,7 +84,19 @@ export function useChatMessages(topicId: string, thinking?: boolean) {
         }
       }
     })
-    return () => unlistenStep()
+    const unlistenPartCreated = window.api.onAgentPartCreated((part) => {
+      void upsertPart(part)
+    })
+    const unlistenPartUpdated = window.api.onAgentPartUpdated((part) => {
+      void upsertPart(part)
+    })
+
+    return () => {
+      disposed = true
+      unlistenStep()
+      unlistenPartCreated()
+      unlistenPartUpdated()
+    }
   }, [topicId])
 
   const sendMessage = useCallback(
@@ -86,6 +146,7 @@ export function useChatMessages(topicId: string, thinking?: boolean) {
   useEffect(() => {
     if (!thinking && messageQueue.length > 0) {
       const next = messageQueue[0]
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMessageQueue((prev) => prev.slice(1))
       const userMsg: Message = {
         id: next.id,
@@ -129,6 +190,7 @@ export function useChatMessages(topicId: string, thinking?: boolean) {
   return {
     messages,
     activeSteps,
+    activeParts,
     messageQueue,
     expandedThoughts,
     sendMessage,

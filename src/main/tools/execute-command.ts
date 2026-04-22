@@ -8,6 +8,20 @@ import { approvalDB, permissionDB, commandPatternDB, taskStepDB } from '../db'
 import { TRUST_APPROVAL_THRESHOLD } from '../constants'
 import { truncateOutput } from './truncation'
 
+const LIVE_TOOL_OUTPUT_LIMIT = 12000
+const LIVE_TOOL_OUTPUT_UPDATE_INTERVAL_MS = 150
+const LIVE_TOOL_OUTPUT_UPDATE_BYTES = 4096
+
+function liveOutputPreview(output: string): { output: string; truncated: boolean } {
+  if (output.length <= LIVE_TOOL_OUTPUT_LIMIT) return { output, truncated: false }
+  return {
+    output: `[live output truncated, showing last ${LIVE_TOOL_OUTPUT_LIMIT} chars]\n${output.slice(
+      -LIVE_TOOL_OUTPUT_LIMIT
+    )}`,
+    truncated: true
+  }
+}
+
 function recordPatternApproval(hostId: string, commandPattern: string, alwaysAllow: boolean): void {
   const existing = commandPatternDB.getPatternByHostAndPattern(hostId, commandPattern)
   if (existing) {
@@ -118,18 +132,55 @@ export default define('execute_command', {
 
     const sessionId = await ctx.ensureSession(host.id, host.alias, terminalName)
     ctx.updatePartMetadata?.({ sessionId })
+    let lastLiveUpdateAt = 0
+    let lastLiveUpdateBytes = 0
+    let lastLiveOutput = ''
+    const publishLiveOutput = (fullOutput: string, force = false): void => {
+      lastLiveOutput = fullOutput
+      const now = Date.now()
+      const byteDelta = fullOutput.length - lastLiveUpdateBytes
+      if (
+        !force &&
+        now - lastLiveUpdateAt < LIVE_TOOL_OUTPUT_UPDATE_INTERVAL_MS &&
+        byteDelta < LIVE_TOOL_OUTPUT_UPDATE_BYTES
+      ) {
+        return
+      }
+
+      const preview = liveOutputPreview(fullOutput)
+      lastLiveUpdateAt = now
+      lastLiveUpdateBytes = fullOutput.length
+      ctx.updatePart?.({
+        status: 'running',
+        output: preview.output,
+        metadata: {
+          sessionId,
+          live: true,
+          liveOutputBytes: fullOutput.length,
+          liveOutputTruncated: preview.truncated,
+          liveOutputPreview: preview.output,
+          liveUpdatedAt: now
+        }
+      })
+    }
+
     const result = await commandExecutor.execute(
       sessionId,
       command,
       ctx.topicId,
       ctx.taskId,
-      ctx.stepId!
+      ctx.stepId!,
+      {
+        onOutputChunk: (_chunk, fullOutput) => publishLiveOutput(fullOutput)
+      }
     )
+    publishLiveOutput(lastLiveOutput || result.content, true)
     ctx.updatePartMetadata?.({
       exitCode: result.exitCode,
       durationMs: result.durationMs,
       cwd: result.cwd,
-      isTruncated: result.isTruncated
+      isTruncated: result.isTruncated,
+      live: false
     })
 
     // Truncate large outputs to protect the context window budget

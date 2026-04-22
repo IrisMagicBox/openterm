@@ -135,16 +135,10 @@ export class AgentSessionManager {
   ): Promise<AgentSession> {
     const sessions = this.topicSessions.get(topicId)?.get(hostId)
 
-    if (name) {
-      const match = sessions?.find((s) => s.name === name)
-      if (match) {
-        if (showInUI) this.webContents?.send('agent:session-created', match)
-        return match
-      }
-    } else if (sessions && sessions.length > 0) {
-      const session = sessions[0]
-      if (showInUI) this.webContents?.send('agent:session-created', session)
-      return session
+    const reusableSession = this.findReusableSession(sessions, name)
+    if (reusableSession) {
+      if (showInUI) this.webContents?.send('agent:session-created', reusableSession)
+      return reusableSession
     }
 
     const session = await this.createNewSession(topicId, hostId, hostAlias, name, true)
@@ -201,6 +195,25 @@ export class AgentSessionManager {
 
     await this.registerSession(session)
     return session
+  }
+
+  private findReusableSession(
+    sessions: AgentSession[] | undefined,
+    preferredName?: string
+  ): AgentSession | undefined {
+    if (!sessions || sessions.length === 0) return undefined
+
+    const isReusable = (session: AgentSession): boolean =>
+      session.status === 'active' && !session.paused && commandExecutor.isSessionIdle(session.id)
+
+    if (preferredName) {
+      const namedSession = sessions.find(
+        (session) => session.name === preferredName && isReusable(session)
+      )
+      if (namedSession) return namedSession
+    }
+
+    return sessions.find(isReusable)
   }
 
   private findSession(id: string): AgentSession | undefined {

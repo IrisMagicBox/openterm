@@ -146,7 +146,8 @@ export const AgentEvents = {
 
   Thinking: z.object({
     topicId: z.string(),
-    taskId: z.string()
+    thinking: z.boolean(),
+    taskId: z.string().optional()
   }),
 
   ToolCall: z.object({

@@ -42,6 +42,7 @@ export class ToolContextFactory {
       updatePartMetadata: (metadata) => {
         agentRunStore.appendMetadata(partId, metadata)
       },
+      updatePart: (updates) => agentRunStore.updatePart(partId, updates),
       createChildPart: (input) =>
         agentRunStore.createPart({
           runId,
@@ -56,6 +57,7 @@ export class ToolContextFactory {
       },
       parts: {
         updateMetadata: (metadata) => agentRunStore.appendMetadata(partId, metadata),
+        update: (updates) => agentRunStore.updatePart(partId, updates),
         createChild: (input) =>
           agentRunStore.createPart({
             runId,

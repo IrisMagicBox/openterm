@@ -114,6 +114,7 @@ export interface AgentAuthRequestPayload {
 export interface AgentThinkingPayload {
   topicId: string
   thinking: boolean
+  taskId?: string
 }
 
 export interface TopicUpdatedPayload {

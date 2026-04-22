@@ -38,6 +38,9 @@ export namespace Tool {
     messages: Array<{ role: string; content: string }>
     agent: string
     updatePartMetadata?: (metadata: Record<string, unknown>) => void
+    updatePart?: (
+      updates: Partial<Omit<import('../../shared/types').AgentPart, 'id' | 'runId' | 'createdAt'>>
+    ) => import('../../shared/types').AgentPart | undefined
     createChildPart?: (input: {
       type: import('../../shared/types').AgentPartType
       status: import('../../shared/types').AgentPartStatus
@@ -66,6 +69,7 @@ export namespace Tool {
       updateMetadata: (
         metadata: Record<string, unknown>
       ) => import('../../shared/types').AgentPart | undefined
+      update: NonNullable<Context['updatePart']>
       createChild: NonNullable<Context['createChildPart']>
     }
     events?: {

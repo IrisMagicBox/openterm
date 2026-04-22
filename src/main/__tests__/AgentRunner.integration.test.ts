@@ -136,11 +136,13 @@ describe('AgentRunner Integration', () => {
       // We verify by publishing an event and checking webContents.send
       eventBus.publish('agent:thinking', {
         topicId: 'topic-1',
+        thinking: true,
         taskId: 'task-1'
       })
 
       expect(context.webContents.send).toHaveBeenCalledWith('agent:thinking', {
         topicId: 'topic-1',
+        thinking: true,
         taskId: 'task-1'
       })
     })
@@ -153,6 +155,7 @@ describe('AgentRunner Integration', () => {
       expect(() => {
         eventBus.publish('agent:thinking', {
           topicId: 123, // Should be string
+          thinking: true,
           taskId: 'task-1'
         } as any)
       }).not.toThrow()

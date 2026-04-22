@@ -3,6 +3,7 @@ import { Clock, Monitor, Cpu } from 'lucide-react'
 import { TopicHub } from '../TopicHub'
 import { Host, Topic, TerminalSession } from '../../../../shared/types'
 import { AgentStepStream } from '../AgentStepStream'
+import { AgentLiveStream } from '../AgentLiveStream'
 import { ModelSelector } from '../ModelSelector'
 import { ChatInput } from './ChatInput'
 import { MessageBubble, ThinkingIndicator, EmptyState } from './MessageBubble'
@@ -80,6 +81,7 @@ export function ChatPanel({
   const {
     messages,
     activeSteps,
+    activeParts,
     messageQueue,
     expandedThoughts,
     sendMessage,
@@ -106,7 +108,7 @@ export function ChatPanel({
   )
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [messages, thinking])
+  }, [messages, thinking, activeSteps, activeParts])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
     const value = e.target.value
@@ -219,8 +221,11 @@ export function ChatPanel({
               onToggleThought={toggleThought}
             />
           ))}
-          {thinking && activeSteps.length > 0 && <AgentStepStream steps={activeSteps} />}
-          {thinking && activeSteps.length === 0 && (
+          {thinking && activeParts.length > 0 && <AgentLiveStream parts={activeParts} />}
+          {thinking && activeParts.length === 0 && activeSteps.length > 0 && (
+            <AgentStepStream steps={activeSteps} />
+          )}
+          {thinking && activeParts.length === 0 && activeSteps.length === 0 && (
             <ThinkingIndicator animationKey={animationKey} />
           )}
         </div>

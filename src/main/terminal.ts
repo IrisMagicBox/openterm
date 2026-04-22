@@ -25,8 +25,14 @@ interface ActiveCommand {
   resolve: (result: CommandResult) => void
   reject: (error: Error) => void
   outputBuffer: string
+  liveOutputBuffer: string
   isStreaming: boolean
   remainingEcho?: string
+  onOutputChunk?: (chunk: string, fullOutput: string) => void
+}
+
+export interface CommandExecutionOptions {
+  onOutputChunk?: (chunk: string, fullOutput: string) => void
 }
 
 interface SessionState {
@@ -102,7 +108,8 @@ class CommandExecutor {
     command: string,
     topicId: string,
     taskId?: string,
-    stepId?: string
+    stepId?: string,
+    options: CommandExecutionOptions = {}
   ): Promise<CommandResult> {
     const state = this.sessions.get(sessionId)
     if (!state) {
@@ -111,7 +118,7 @@ class CommandExecutor {
     }
 
     return state.commandQueue.enqueue(() =>
-      this._doExecuteAgentCommand(sessionId, command, topicId, taskId, stepId)
+      this._doExecuteAgentCommand(sessionId, command, topicId, taskId, stepId, options)
     )
   }
 
@@ -120,7 +127,8 @@ class CommandExecutor {
     command: string,
     topicId: string,
     taskId?: string,
-    stepId?: string
+    stepId?: string,
+    options: CommandExecutionOptions = {}
   ): Promise<CommandResult> {
     logger.info('Terminal', `Executing agent command in session ${sessionId}`, { command })
     const state = this.sessions.get(sessionId)!
@@ -173,8 +181,10 @@ class CommandExecutor {
           reject(error)
         },
         outputBuffer: '',
+        liveOutputBuffer: '',
         isStreaming: this.isStreamingCommand(command),
-        remainingEcho: cmdWithNewline
+        remainingEcho: cmdWithNewline,
+        onOutputChunk: options.onOutputChunk
       }
 
       state.currentCommand = activeCommand
@@ -302,6 +312,7 @@ class CommandExecutor {
           resolve: () => {},
           reject: () => {},
           outputBuffer: '',
+          liveOutputBuffer: '',
           isStreaming: false
         }
       }
@@ -387,7 +398,12 @@ class CommandExecutor {
 
     if (state.currentCommand) {
       // Strip ANSI for the Agent's internal buffer (clean text)
-      state.currentCommand.outputBuffer += stripAnsi(cleanData)
+      const outputChunk = stripAnsi(cleanData)
+      state.currentCommand.outputBuffer += outputChunk
+      state.currentCommand.liveOutputBuffer += outputChunk
+      if (outputChunk.length > 0) {
+        state.currentCommand.onOutputChunk?.(outputChunk, state.currentCommand.liveOutputBuffer)
+      }
 
       if (parsed.isCommandEnd) {
         this.completeCommand(sessionId, parsed.exitCode, parsed.cwd)
@@ -579,6 +595,12 @@ class CommandExecutor {
     return { locked: state.isLocked, lockedBy: state.lockedBy }
   }
 
+  isSessionIdle(sessionId: string): boolean {
+    const state = this.sessions.get(sessionId)
+    if (!state) return false
+    return state.session.status === 'active' && !state.currentCommand && !state.isLocked
+  }
+
   attachSession(sessionId: string, webContents: WebContents): boolean {
     const state = this.sessions.get(sessionId)
     if (!state) return false
@@ -628,9 +650,10 @@ class CommandExecutor {
     command: string,
     topicId?: string,
     taskId?: string,
-    stepId?: string
+    stepId?: string,
+    options: CommandExecutionOptions = {}
   ): Promise<CommandResult> {
-    return this.executeAgentCommand(sessionId, command, topicId || '', taskId, stepId)
+    return this.executeAgentCommand(sessionId, command, topicId || '', taskId, stepId, options)
   }
 }
 
