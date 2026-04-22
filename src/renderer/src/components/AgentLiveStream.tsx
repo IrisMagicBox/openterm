@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { CheckCircle2, Circle, Loader2, TerminalSquare, XCircle } from 'lucide-react'
+import { CheckCircle2, Circle, Eye, Loader2, TerminalSquare, XCircle } from 'lucide-react'
 import type { AgentPart } from '../../../shared/types'
 import { MarkdownRenderer } from './MarkdownRenderer'
+import { agentPartSessionId } from '../lib/terminal-stage'
+import { cn } from '../lib/utils'
 
 interface AgentLiveStreamProps {
   parts: AgentPart[]
+  onRevealTerminal?: (sessionId: string, partId?: string) => void
+  focusedPartId?: string | null
 }
 
 function sortParts(parts: AgentPart[]): AgentPart[] {
@@ -75,7 +79,11 @@ function LiveToolOutput({
   )
 }
 
-export function AgentLiveStream({ parts }: AgentLiveStreamProps): React.ReactElement | null {
+export function AgentLiveStream({
+  parts,
+  onRevealTerminal,
+  focusedPartId
+}: AgentLiveStreamProps): React.ReactElement | null {
   const scrollRef = useRef<HTMLDivElement>(null)
   const visibleParts = useMemo(
     () => sortParts(parts).filter((part) => part.type !== 'usage'),
@@ -115,16 +123,20 @@ export function AgentLiveStream({ parts }: AgentLiveStreamProps): React.ReactEle
                 const output = toolOutput(part)
                 const input = parseToolInput(part)
                 const isLive = part.status === 'running' || part.metadata?.live === true
+                const sessionId = agentPartSessionId(part)
+                const isFocused = focusedPartId === part.id
                 return (
                   <div
                     key={part.id}
-                    className={`rounded-md border px-3 py-2 ${
+                    className={cn(
+                      'rounded-md border px-3 py-2 transition-all',
                       part.status === 'error'
                         ? 'border-danger/20 bg-danger-soft'
                         : isLive
                           ? 'border-accent/20 bg-accent-soft/60'
-                          : 'border-white/60 bg-white/60'
-                    }`}
+                          : 'border-white/60 bg-white/60',
+                      isFocused && 'ring-2 ring-accent/25'
+                    )}
                   >
                     <div className="flex items-center gap-2">
                       {statusIcon(part)}
@@ -132,6 +144,15 @@ export function AgentLiveStream({ parts }: AgentLiveStreamProps): React.ReactEle
                       <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">
                         {part.toolName || part.type}
                       </span>
+                      {sessionId && onRevealTerminal && (
+                        <button
+                          onClick={() => onRevealTerminal(sessionId, part.id)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-accent/20 bg-white/65 px-2 py-0.5 text-[11px] font-semibold text-accent transition hover:bg-accent-soft"
+                        >
+                          <Eye size={11} />
+                          查看终端
+                        </button>
+                      )}
                       <span className="text-xs font-semibold text-muted-foreground">
                         {statusLabel(part)}
                       </span>

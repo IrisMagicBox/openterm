@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Clock, Monitor, Cpu } from 'lucide-react'
 import { TopicHub } from '../TopicHub'
 import { Host, Topic, TerminalSession } from '../../../../shared/types'
@@ -8,11 +8,14 @@ import { ModelSelector } from '../ModelSelector'
 import { ChatInput } from './ChatInput'
 import { MessageBubble, ThinkingIndicator, EmptyState } from './MessageBubble'
 import { CommandPalette } from './CommandPalette'
-import { TerminalSessionGrid } from './TerminalSessionGrid'
+import { TerminalStage } from './TerminalStage'
 import { useProvider } from '../../hooks/useProvider'
 import { useVisibilityRestore } from '../../hooks/useVisibilityRestore'
 import { useChatMessages } from '../../hooks/useChatMessages'
 import { useCommandPalette } from '../../hooks/useCommandPalette'
+import { useTerminalPreviews } from '../../hooks/useTerminalPreviews'
+import { useTerminalStageState } from '../../hooks/useTerminalStageState'
+import { deriveTerminalActivities } from '../../lib/terminal-stage'
 import { Badge, PageHeader } from '../ui'
 
 import { LOCAL_HOST } from '../../constants'
@@ -90,16 +93,19 @@ export function ChatPanel({
     clearQueue
   } = useChatMessages(topic.id, thinking)
   const visibleSessions = agentSessions.filter((s) => s.visible)
+  const terminalPreviews = useTerminalPreviews(visibleSessions)
+  const terminalStage = useTerminalStageState(visibleSessions, activeParts)
+  const terminalActivities = useMemo(
+    () => deriveTerminalActivities(visibleSessions, activeParts, terminalPreviews),
+    [activeParts, terminalPreviews, visibleSessions]
+  )
   const {
     commandPaletteOpen,
     commandPaletteValue,
-    focusedSessionId,
-    focusedSession,
     setCommandPaletteOpen,
     setCommandPaletteValue,
-    setFocusedSessionId,
     openCommandPalette
-  } = useCommandPalette(visibleSessions)
+  } = useCommandPalette()
   const realHosts = hosts.filter((h) => topic.hostIds.includes(h.id))
   const topicHosts = topic.hostIds.includes('local') ? [LOCAL_HOST, ...realHosts] : realHosts
   const filteredHosts = topicHosts.filter(
@@ -133,13 +139,14 @@ export function ChatPanel({
   }
   const handleSubmitCommandPalette = async (): Promise<void> => {
     if (!commandPaletteValue.trim()) return
-    const prefix = focusedSession ? `@${focusedSession.hostAlias} ` : ''
+    const prefix = terminalStage.focusedSession ? `@${terminalStage.focusedSession.hostAlias} ` : ''
     setCommandPaletteOpen(false)
     setCommandPaletteValue('')
     setInputValue('')
     await sendMessage(`${prefix}${commandPaletteValue.trim()}`)
   }
-  const handleFocusSession = (id: string): void => setFocusedSessionId(id)
+  const handleFocusSession = (id: string): void =>
+    terminalStage.focusSession(id, { userInitiated: true })
 
   return (
     <div className="flex h-full flex-col bg-transparent">
@@ -158,8 +165,10 @@ export function ChatPanel({
               <Badge variant="neutral" className="hidden lg:flex">
                 <Monitor size={13} />
                 <span>共驾终端 {visibleSessions.length}</span>
-                {focusedSession && (
-                  <span className="text-accent">当前: {focusedSession.hostAlias}</span>
+                {terminalStage.focusedSession && (
+                  <span className="text-accent">
+                    当前: {terminalStage.focusedSession.hostAlias}
+                  </span>
                 )}
               </Badge>
             )}
@@ -221,7 +230,13 @@ export function ChatPanel({
               onToggleThought={toggleThought}
             />
           ))}
-          {thinking && activeParts.length > 0 && <AgentLiveStream parts={activeParts} />}
+          {thinking && activeParts.length > 0 && (
+            <AgentLiveStream
+              parts={activeParts}
+              onRevealTerminal={terminalStage.revealTerminal}
+              focusedPartId={terminalStage.focusedPartId}
+            />
+          )}
           {thinking && activeParts.length === 0 && activeSteps.length > 0 && (
             <AgentStepStream steps={activeSteps} />
           )}
@@ -231,10 +246,16 @@ export function ChatPanel({
         </div>
 
         {visibleSessions.length > 0 && (
-          <TerminalSessionGrid
+          <TerminalStage
             visibleSessions={visibleSessions}
-            focusedSession={focusedSession}
-            focusedSessionId={focusedSessionId}
+            focusedSession={terminalStage.focusedSession}
+            focusedSessionId={terminalStage.focusedSessionId}
+            activeParts={activeParts}
+            activities={terminalActivities}
+            previews={terminalPreviews}
+            mode={terminalStage.mode}
+            followAgent={terminalStage.followAgent}
+            focusedPartId={terminalStage.focusedPartId}
             terminalFontSize={terminalFontSize}
             terminalWidth={terminalWidth}
             isResizing={isResizing}
@@ -247,8 +268,10 @@ export function ChatPanel({
             onCreateTerminal={onCreateTerminal}
             onSetTerminalFontSize={setTerminalFontSize}
             onSetResizing={setIsResizing}
-            onSetFocusedSessionId={setFocusedSessionId}
+            onSetMode={terminalStage.setMode}
+            onSetFollowAgent={terminalStage.setFollowAgent}
             onFocusSession={handleFocusSession}
+            onRevealTerminal={terminalStage.revealTerminal}
           />
         )}
         <TopicHub
@@ -261,7 +284,7 @@ export function ChatPanel({
           onCloseTerminal={onCloseTerminal}
           onRenameTerminal={onRenameTerminal}
           onTogglePin={onToggleTerminalPin}
-          focusedSessionId={focusedSessionId}
+          focusedSessionId={terminalStage.focusedSessionId}
           onFocusSession={handleFocusSession}
         />
       </div>
@@ -280,7 +303,7 @@ export function ChatPanel({
       />
       {commandPaletteOpen && (
         <CommandPalette
-          hostAlias={focusedSession?.hostAlias}
+          hostAlias={terminalStage.focusedSession?.hostAlias}
           value={commandPaletteValue}
           onChange={setCommandPaletteValue}
           onClose={() => setCommandPaletteOpen(false)}
@@ -293,7 +316,7 @@ export function ChatPanel({
           onMouseDown={(e) => e.preventDefault()}
           onMouseMove={(e) => {
             const w = window.innerWidth - e.clientX - 256
-            setTerminalWidth(Math.max(300, Math.min(w, window.innerWidth - 700)))
+            setTerminalWidth(Math.max(360, Math.min(w, window.innerWidth - 700)))
           }}
           onMouseUp={() => setIsResizing(false)}
         />
