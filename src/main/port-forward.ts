@@ -8,7 +8,7 @@ import { buildSSHConfig } from './utils/ssh-config'
 import type { SSHConnectionConfig } from './utils/ssh-config'
 import type { Host } from '../shared/types'
 
-interface ForwardTunnel {
+export interface ForwardTunnel {
   id: string
   hostId: string
   client: Client

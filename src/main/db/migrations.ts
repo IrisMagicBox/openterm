@@ -53,6 +53,16 @@ const migrations: Migration[] = [
       addColumnIfMissing(db, 'hosts', 'agentNotes', 'TEXT')
       addColumnIfMissing(db, 'topics', 'selectedProviderId', 'TEXT')
       addColumnIfMissing(db, 'topics', 'selectedModelId', 'TEXT')
+
+      addColumnIfMissing(db, 'approvals', 'riskCategory', 'TEXT')
+      addColumnIfMissing(db, 'approvals', 'commandPattern', 'TEXT')
+      addColumnIfMissing(db, 'approvals', 'requiresVerification', 'INTEGER DEFAULT 0')
+
+      addColumnIfMissing(db, 'memories', 'scope', "TEXT DEFAULT 'global'")
+      addColumnIfMissing(db, 'memories', 'sourceTaskId', 'TEXT')
+      addColumnIfMissing(db, 'memories', 'confidence', 'REAL DEFAULT 0.7')
+      addColumnIfMissing(db, 'memories', 'lastUsedAt', 'INTEGER')
+      addColumnIfMissing(db, 'memories', 'disabled', 'INTEGER DEFAULT 0')
     }
   },
   {
@@ -124,6 +134,32 @@ const migrations: Migration[] = [
           model.createdAt || Date.now()
         )
       }
+    }
+  },
+  {
+    id: '005_memory_taxonomy',
+    run: (db) => {
+      addColumnIfMissing(db, 'memories', 'scope', "TEXT DEFAULT 'global'")
+      addColumnIfMissing(db, 'memories', 'sourceTaskId', 'TEXT')
+      addColumnIfMissing(db, 'memories', 'confidence', 'REAL DEFAULT 0.7')
+      addColumnIfMissing(db, 'memories', 'lastUsedAt', 'INTEGER')
+      addColumnIfMissing(db, 'memories', 'disabled', 'INTEGER DEFAULT 0')
+
+      db.prepare("UPDATE memories SET type = 'user_preference' WHERE type = 'habit'").run()
+      db.prepare("UPDATE memories SET type = 'task_experience' WHERE type = 'experience'").run()
+      db.prepare(
+        "UPDATE memories SET scope = CASE WHEN hostId IS NOT NULL THEN 'host' WHEN topicId IS NOT NULL THEN 'topic' ELSE 'global' END WHERE scope IS NULL OR scope = ''"
+      ).run()
+      db.prepare('UPDATE memories SET confidence = 0.7 WHERE confidence IS NULL').run()
+      db.prepare('UPDATE memories SET disabled = 0 WHERE disabled IS NULL').run()
+    }
+  },
+  {
+    id: '006_policy_metadata',
+    run: (db) => {
+      addColumnIfMissing(db, 'approvals', 'riskCategory', 'TEXT')
+      addColumnIfMissing(db, 'approvals', 'commandPattern', 'TEXT')
+      addColumnIfMissing(db, 'approvals', 'requiresVerification', 'INTEGER DEFAULT 0')
     }
   }
 ]

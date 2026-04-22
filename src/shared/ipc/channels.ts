@@ -14,7 +14,8 @@ import type {
   Model,
   PermissionSettings,
   TerminalSession,
-  TerminalSessionStatus
+  TerminalSessionStatus,
+  MemoryEntry
 } from '../types'
 
 export interface SSHAgentExecuteResult {
@@ -109,6 +110,7 @@ export interface AgentAuthRequestPayload {
   command: string
   riskLevel?: string
   reason?: string
+  metadata?: Record<string, unknown>
 }
 
 export interface AgentThinkingPayload {
@@ -188,6 +190,31 @@ export interface IpcInvokeChannels {
     ]
     result: Artifact
   }
+
+  'get-memories': {
+    payload: [filters?: { hostId?: string; topicId?: string; includeDisabled?: boolean }]
+    result: MemoryEntry[]
+  }
+  'create-memory': {
+    payload: [
+      memory: Omit<MemoryEntry, 'id' | 'timestamp' | 'scope'> &
+        Partial<Pick<MemoryEntry, 'scope'>>
+    ]
+    result: MemoryEntry
+  }
+  'update-memory': {
+    payload: [
+      id: string,
+      updates: Partial<
+        Pick<
+          MemoryEntry,
+          'type' | 'scope' | 'content' | 'importance' | 'confidence' | 'disabled' | 'lastUsedAt'
+        >
+      >
+    ]
+    result: MemoryEntry | undefined
+  }
+  'delete-memory': { payload: [id: string]; result: void }
 
   'agent:get-topic-hosts': { payload: [topicId: string]; result: Host[] }
   'agent:add-host': { payload: [topicId: string, hostId: string]; result: boolean }

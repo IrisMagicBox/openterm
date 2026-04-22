@@ -9,6 +9,11 @@ import { FileTab, useFilePaneManager } from '../../hooks/useFilePaneManager'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useFileTransfer } from '../../hooks/useFileTransfer'
 import { FileTransferToast } from '../FileTransferToast'
+import {
+  paneDropPreviewClass,
+  resolvePaneDropEdgeFromPoint,
+  type PaneDropEdge
+} from '../../lib/pane-drop'
 
 interface FilesViewProps {
   fileBrowserHostId: string
@@ -50,7 +55,7 @@ export function FilesView({
   const { transfers, startTransfer, removeTransfer } = useFileTransfer()
   const [showFileList, setShowFileList] = useState(false)
   const [dragOverPaneId, setDragOverPaneId] = useState<string | null>(null)
-  const [dragOverEdge, setDragOverEdge] = useState<'top' | 'bottom' | 'left' | 'right' | null>(null)
+  const [dragOverEdge, setDragOverEdge] = useState<PaneDropEdge | null>(null)
   const [showHostPicker, setShowHostPicker] = useState(false)
 
   const openedHostIdsRef = useRef<Set<string>>(new Set())
@@ -236,18 +241,7 @@ export function FilesView({
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-    const w = rect.width
-    const h = rect.height
-    const threshold = 40
-
-    if (y < threshold) setDragOverEdge('top')
-    else if (y > h - threshold) setDragOverEdge('bottom')
-    else if (x < threshold) setDragOverEdge('left')
-    else if (x > w - threshold) setDragOverEdge('right')
-    else setDragOverEdge(null)
-
+    setDragOverEdge(resolvePaneDropEdgeFromPoint(e.clientX, e.clientY, rect))
     setDragOverPaneId(paneId)
   }, [])
 
@@ -314,8 +308,10 @@ export function FilesView({
 
       return (
         <div
-          className={`flex h-full flex-col bg-workspace relative transition-colors ${
-            paneManager.focusedLeafId === leaf.id ? 'ring-1 ring-inset ring-accent/60' : ''
+          className={`relative flex h-full flex-col overflow-hidden rounded-xl border bg-workspace shadow-sm transition-colors ${
+            paneManager.focusedLeafId === leaf.id
+              ? 'border-accent/35 ring-2 ring-accent/15'
+              : 'border-workspace-border/75'
           }`}
           onMouseDown={() => paneManager.setFocusedLeafId(leaf.id)}
           onDragOver={(e) => handlePaneDragOver(e, leaf.id)}
@@ -323,14 +319,14 @@ export function FilesView({
           onDrop={(e) => handlePaneDrop(e, leaf.id)}
         >
           {showPaneTitle && (
-            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted px-1 pt-0.5 no-scrollbar">
+            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted/90 px-1.5 pt-1 no-scrollbar">
               {tabs.map((tab) => (
                 <div
                   key={tab.tabId}
                   draggable
                   onDragStart={(e) => handleTabDragStart(e, tab.tabId)}
                   onClick={() => focusFileTab(tab.tabId)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold cursor-grab transition-colors border-b-2 whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 rounded-t-lg px-3 py-1.5 text-xs font-bold cursor-grab transition-colors border-b-2 whitespace-nowrap ${
                     leaf.activeTabId === tab.tabId
                       ? 'text-workspace-foreground border-accent bg-workspace'
                       : 'text-workspace-muted-foreground border-transparent hover:text-workspace-foreground hover:bg-workspace/70'
@@ -361,19 +357,11 @@ export function FilesView({
 
           {dragOverPaneId === leaf.id && dragOverEdge && (
             <div
-              className={`absolute z-20 border-2 border-accent bg-accent/20 pointer-events-none ${
-                dragOverEdge === 'top'
-                  ? 'top-0 left-0 right-0 h-10'
-                  : dragOverEdge === 'bottom'
-                    ? 'bottom-0 left-0 right-0 h-10'
-                    : dragOverEdge === 'left'
-                      ? 'top-0 left-0 bottom-0 w-10'
-                      : 'top-0 right-0 bottom-0 w-10'
-              }`}
+              className={`absolute z-20 pointer-events-none border-2 border-accent bg-accent/20 ${paneDropPreviewClass(dragOverEdge)}`}
             />
           )}
 
-          <div className="flex-1 relative">
+          <div className="relative min-h-0 flex-1 overflow-hidden bg-workspace">
             {tabs.map((tab) => (
               <div
                 key={tab.tabId}
@@ -425,97 +413,99 @@ export function FilesView({
   const allTabs = paneManager.getAllTabs()
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-workspace">
-      <div className="flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/85 backdrop-blur-2xl">
-        <div className="h-11 text-workspace-foreground px-5 flex items-center justify-between flex-shrink-0 drag">
-          <div className="flex items-center gap-3 no-drag">
-            <div className="flex gap-1.5">
-              <div className="w-3 h-3 bg-red-500 rounded-full" />
-              <div className="w-3 h-3 bg-yellow-400 rounded-full" />
-              <div className="w-3 h-3 bg-emerald-400 rounded-full" />
-            </div>
-            <div className="w-px h-4 bg-workspace-border" />
-            <Folder size={13} className="text-accent" />
-            <span className="text-xs font-semibold font-mono text-workspace-foreground">
-              {activeTab?.title || activeTab?.hostAlias || '文件管理'}
-            </span>
-            <span className="text-xs text-workspace-muted-foreground font-mono">文件管理</span>
-          </div>
-          <div className="flex items-center gap-2 no-drag">
-            {allTabs.length > 0 && (
-              <div className="flex gap-1">
-                {(() => {
-                  const leafToSplit =
-                    paneManager.getLeaves().find((l) => l.id === paneManager.focusedLeafId) ||
-                    paneManager.getLeaves()[0]
-                  return leafToSplit ? (
-                    <>
-                      <button
-                        onClick={() => handleSplit(leafToSplit.id, 'horizontal')}
-                        className="flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
-                        title="水平分屏"
-                      >
-                        <Columns size={12} />
-                      </button>
-                      <button
-                        onClick={() => handleSplit(leafToSplit.id, 'vertical')}
-                        className="flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
-                        title="垂直分屏"
-                      >
-                        <Rows size={12} />
-                      </button>
-                    </>
-                  ) : null
-                })()}
+    <div className="relative flex flex-1 flex-col overflow-hidden bg-workspace-muted/45 p-3">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-workspace-border/75 bg-workspace shadow-sm">
+        <div className="flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/85 backdrop-blur-2xl">
+          <div className="h-11 text-workspace-foreground px-5 flex items-center justify-between flex-shrink-0 drag">
+            <div className="flex items-center gap-3 no-drag">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 bg-red-500 rounded-full" />
+                <div className="w-3 h-3 bg-yellow-400 rounded-full" />
+                <div className="w-3 h-3 bg-emerald-400 rounded-full" />
               </div>
-            )}
-            <button
-              onClick={() => setShowFileList(!showFileList)}
-              className="flex items-center gap-1 rounded-md bg-workspace px-2.5 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
-              title="文件列表"
-            >
-              <LayoutGrid size={12} />
-            </button>
-            <button
-              onClick={() => setShowHostPicker(true)}
-              className="flex items-center gap-1.5 rounded-md bg-workspace px-2.5 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
-              title="打开文件管理"
-            >
-              <Plus size={12} /> 新建
-            </button>
-            <button
-              onClick={handleDisconnectAll}
-              className="flex items-center gap-1.5 rounded-md bg-workspace px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-danger/15 hover:text-danger"
-            >
-              <X size={12} /> 关闭全部
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 flex flex-col relative overflow-hidden">
-        {paneManager.isEmpty ? (
-          <div className="flex-1 flex items-center justify-center bg-workspace h-full">
-            <div className="text-center">
-              <Folder size={40} className="text-workspace-border mx-auto mb-4" />
-              <p className="text-workspace-muted-foreground text-sm font-semibold mb-4">
-                无活跃文件管理
-              </p>
+              <div className="w-px h-4 bg-workspace-border" />
+              <Folder size={13} className="text-accent" />
+              <span className="text-xs font-semibold font-mono text-workspace-foreground">
+                {activeTab?.title || activeTab?.hostAlias || '文件管理'}
+              </span>
+              <span className="text-xs text-workspace-muted-foreground font-mono">文件管理</span>
+            </div>
+            <div className="flex items-center gap-2 no-drag">
+              {allTabs.length > 0 && (
+                <div className="flex gap-1">
+                  {(() => {
+                    const leafToSplit =
+                      paneManager.getLeaves().find((l) => l.id === paneManager.focusedLeafId) ||
+                      paneManager.getLeaves()[0]
+                    return leafToSplit ? (
+                      <>
+                        <button
+                          onClick={() => handleSplit(leafToSplit.id, 'horizontal')}
+                          className="flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
+                          title="水平分屏"
+                        >
+                          <Columns size={12} />
+                        </button>
+                        <button
+                          onClick={() => handleSplit(leafToSplit.id, 'vertical')}
+                          className="flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
+                          title="垂直分屏"
+                        >
+                          <Rows size={12} />
+                        </button>
+                      </>
+                    ) : null
+                  })()}
+                </div>
+              )}
+              <button
+                onClick={() => setShowFileList(!showFileList)}
+                className="flex items-center gap-1 rounded-md bg-workspace px-2.5 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
+                title="文件列表"
+              >
+                <LayoutGrid size={12} />
+              </button>
               <button
                 onClick={() => setShowHostPicker(true)}
-                className="mx-auto flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-xs font-semibold text-white transition hover:bg-accent-strong"
+                className="flex items-center gap-1.5 rounded-md bg-workspace px-2.5 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
+                title="打开文件管理"
               >
-                <Plus size={14} /> 打开文件管理
+                <Plus size={12} /> 新建
+              </button>
+              <button
+                onClick={handleDisconnectAll}
+                className="flex items-center gap-1.5 rounded-md bg-workspace px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-danger/15 hover:text-danger"
+              >
+                <X size={12} /> 关闭全部
               </button>
             </div>
           </div>
-        ) : (
-          <SplitPane
-            node={paneManager.root}
-            renderLeaf={renderLeaf}
-            onResizeSplit={paneManager.resizeSplit}
-          />
-        )}
+        </div>
+
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-workspace-muted/35 p-3">
+          {paneManager.isEmpty ? (
+            <div className="flex h-full flex-1 items-center justify-center rounded-xl border border-dashed border-workspace-border/80 bg-workspace">
+              <div className="text-center">
+                <Folder size={40} className="text-workspace-border mx-auto mb-4" />
+                <p className="text-workspace-muted-foreground text-sm font-semibold mb-4">
+                  无活跃文件管理
+                </p>
+                <button
+                  onClick={() => setShowHostPicker(true)}
+                  className="mx-auto flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-xs font-semibold text-white transition hover:bg-accent-strong"
+                >
+                  <Plus size={14} /> 打开文件管理
+                </button>
+              </div>
+            </div>
+          ) : (
+            <SplitPane
+              node={paneManager.root}
+              renderLeaf={renderLeaf}
+              onResizeSplit={paneManager.resizeSplit}
+            />
+          )}
+        </div>
       </div>
 
       {showFileList && allTabs.length > 0 && (

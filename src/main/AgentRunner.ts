@@ -36,7 +36,8 @@ export interface AgentContext {
   requestAuthorization: (
     command: string,
     riskLevel: 'low' | 'medium' | 'high' | 'critical',
-    reason: string
+    reason: string,
+    metadata?: Record<string, unknown>
   ) => Promise<AuthResponse>
   notifyStep: (message: Message) => void
   metadata: (input: { title?: string; metadata?: Record<string, unknown> }) => void
@@ -96,7 +97,7 @@ export class AgentRunner {
   private applyAgentRiskPolicy(): void {
     const config = getAgentConfig(this.agentName)
     const originalRequestAuth = this.context.requestAuthorization.bind(this.context)
-    this.context.requestAuthorization = async (command, riskLevel, reason) => {
+    this.context.requestAuthorization = async (command, riskLevel, reason, metadata) => {
       const permission = config.permissions.find(
         (p) => p.tool === '*' || p.tool === 'execute_command'
       )
@@ -108,7 +109,7 @@ export class AgentRunner {
           return { approved: false, alwaysAllow: false }
         }
       }
-      return originalRequestAuth(command, riskLevel, reason)
+      return originalRequestAuth(command, riskLevel, reason, metadata)
     }
   }
 }

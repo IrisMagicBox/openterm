@@ -146,12 +146,23 @@ export interface AgentPart {
   updatedAt: number
 }
 
+export type PolicyRiskCategory =
+  | 'read'
+  | 'write'
+  | 'network'
+  | 'package'
+  | 'privilege'
+  | 'destructive'
+
 export interface Approval {
   id: string
   taskId: string
   stepId?: string
   command: string
   riskLevel: ApprovalRiskLevel
+  riskCategory?: PolicyRiskCategory
+  commandPattern?: string
+  requiresVerification?: boolean
   reason?: string
   status: ApprovalStatus
   createdAt: number
@@ -448,14 +459,26 @@ export interface TerminalStream {
   removeListener(event: string, listener: (...args: unknown[]) => void): this
 }
 
-export type MemoryType = 'habit' | 'host_fact' | 'experience'
+export type MemoryType =
+  | 'user_preference'
+  | 'host_fact'
+  | 'topic_summary'
+  | 'task_experience'
+  | 'policy_hint'
+
+export type MemoryScope = 'global' | 'topic' | 'host'
 
 export interface MemoryEntry {
   id: string
   type: MemoryType
+  scope: MemoryScope
   content: string
   hostId?: string
   topicId?: string
+  sourceTaskId?: string
+  confidence?: number
   importance: number
+  lastUsedAt?: number
+  disabled?: boolean
   timestamp: number
 }

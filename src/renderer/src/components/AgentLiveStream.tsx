@@ -4,6 +4,11 @@ import type { AgentPart } from '../../../shared/types'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { agentPartSessionId } from '../lib/terminal-stage'
 import { cn } from '../lib/utils'
+import {
+  agentPartOutput,
+  parseAgentPartCommand,
+  sanitizeAgentText
+} from '../lib/agent-part-preview'
 
 interface AgentLiveStreamProps {
   parts: AgentPart[]
@@ -13,18 +18,6 @@ interface AgentLiveStreamProps {
 
 function sortParts(parts: AgentPart[]): AgentPart[] {
   return [...parts].sort((a, b) => a.orderIndex - b.orderIndex || a.createdAt - b.createdAt)
-}
-
-function parseToolInput(part: AgentPart): string {
-  if (!part.input) return ''
-  try {
-    const parsed = JSON.parse(part.input) as Record<string, unknown>
-    if (typeof parsed.command === 'string') return parsed.command
-    if (typeof parsed.path === 'string') return parsed.path
-    return JSON.stringify(parsed)
-  } catch {
-    return part.input
-  }
 }
 
 function statusLabel(part: AgentPart): string {
@@ -51,7 +44,7 @@ function metadataString(part: AgentPart, key: string): string | undefined {
 }
 
 function toolOutput(part: AgentPart): string {
-  return part.error || metadataString(part, 'liveOutputPreview') || part.output || ''
+  return sanitizeAgentText(metadataString(part, 'liveOutputPreview') || agentPartOutput(part))
 }
 
 function LiveToolOutput({
@@ -121,7 +114,7 @@ export function AgentLiveStream({
             <div className="mt-3 space-y-2">
               {activityParts.map((part) => {
                 const output = toolOutput(part)
-                const input = parseToolInput(part)
+                const input = parseAgentPartCommand(part)
                 const isLive = part.status === 'running' || part.metadata?.live === true
                 const sessionId = agentPartSessionId(part)
                 const isFocused = focusedPartId === part.id

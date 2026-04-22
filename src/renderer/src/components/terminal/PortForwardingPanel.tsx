@@ -1,6 +1,6 @@
 import { getErrorMessage } from '../../../../shared/errors'
 import { useState, useEffect, useCallback } from 'react'
-import { Globe, Plus, X, ArrowRight, Trash2 } from 'lucide-react'
+import { Globe, Plus, X, ArrowRight, Trash2, ExternalLink } from 'lucide-react'
 import { useConfirm } from '../../hooks/useConfirm'
 import { Button, IconButton, Input } from '../ui'
 
@@ -155,6 +155,13 @@ export function PortForwardingPanel({
                     {new Date(tunnel.createdAt).toLocaleString('zh-CN')}
                   </div>
                 </div>
+                <IconButton
+                  aria-label="在浏览器打开"
+                  onClick={() => window.open(`http://127.0.0.1:${tunnel.localPort}`, '_blank')}
+                  className="h-7 w-7"
+                >
+                  <ExternalLink size={12} />
+                </IconButton>
                 <IconButton
                   aria-label="关闭隧道"
                   onClick={() => handleClose(tunnel.id)}

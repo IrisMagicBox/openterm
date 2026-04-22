@@ -13,7 +13,8 @@ import {
   AgentPart,
   Approval,
   Artifact,
-  TerminalSession
+  TerminalSession,
+  MemoryEntry
 } from '../shared/types'
 import type {
   DebugLogEntry,
@@ -58,7 +59,8 @@ declare global {
             requestId: string,
             command: string,
             riskLevel?: string,
-            reason?: string
+            reason?: string,
+            metadata?: Record<string, unknown>
           ) => void
         ) => () => void
         onTaskComplete: (
@@ -144,6 +146,33 @@ declare global {
         transferBetweenHosts: Window['api']['sftpTransferBetweenHosts']
         onTransferProgress: Window['api']['onSftpTransferProgress']
       }
+      memories: {
+        list: (filters?: {
+          hostId?: string
+          topicId?: string
+          includeDisabled?: boolean
+        }) => Promise<MemoryEntry[]>
+        create: (
+          memory: Omit<MemoryEntry, 'id' | 'timestamp' | 'scope'> &
+            Partial<Pick<MemoryEntry, 'scope'>>
+        ) => Promise<MemoryEntry>
+        update: (
+          id: string,
+          updates: Partial<
+            Pick<
+              MemoryEntry,
+              | 'type'
+              | 'scope'
+              | 'content'
+              | 'importance'
+              | 'confidence'
+              | 'disabled'
+              | 'lastUsedAt'
+            >
+          >
+        ) => Promise<MemoryEntry | undefined>
+        delete: (id: string) => Promise<void>
+      }
       getHosts: () => Promise<Host[]>
       createHost: (host: Omit<Host, 'id' | 'createdAt'>) => Promise<Host>
       deleteHost: (id: string) => Promise<void>
@@ -186,6 +215,31 @@ declare global {
         artifact: Omit<Artifact, 'id' | 'createdAt' | 'updatedAt'> &
           Partial<Pick<Artifact, 'id' | 'createdAt' | 'updatedAt'>>
       ) => Promise<Artifact>
+      getMemories: (filters?: {
+        hostId?: string
+        topicId?: string
+        includeDisabled?: boolean
+      }) => Promise<MemoryEntry[]>
+      createMemory: (
+        memory: Omit<MemoryEntry, 'id' | 'timestamp' | 'scope'> &
+          Partial<Pick<MemoryEntry, 'scope'>>
+      ) => Promise<MemoryEntry>
+      updateMemory: (
+        id: string,
+        updates: Partial<
+          Pick<
+            MemoryEntry,
+            | 'type'
+            | 'scope'
+            | 'content'
+            | 'importance'
+            | 'confidence'
+            | 'disabled'
+            | 'lastUsedAt'
+          >
+        >
+      ) => Promise<MemoryEntry | undefined>
+      deleteMemory: (id: string) => Promise<void>
 
       // Host Pool Management
       getTopicHosts: (topicId: string) => Promise<Host[]>
@@ -210,7 +264,13 @@ declare global {
       resumeAgentRun: (runId: string) => Promise<Message>
 
       onAgentAuthRequest: (
-        callback: (requestId: string, command: string, riskLevel?: string, reason?: string) => void
+        callback: (
+          requestId: string,
+          command: string,
+          riskLevel?: string,
+          reason?: string,
+          metadata?: Record<string, unknown>
+        ) => void
       ) => () => void
       sendAgentAuthResponse: (
         requestId: string,

@@ -353,13 +353,13 @@ export function FileBrowser({
 
   return (
     <div
-      className="relative flex h-full flex-col bg-workspace text-sm text-workspace-foreground"
+      className="relative flex h-full flex-col overflow-hidden rounded-xl bg-workspace text-sm text-workspace-foreground"
       onDragOver={handleContainerDragOver}
       onDragLeave={handleContainerDragLeave}
       onDrop={handleContainerDrop}
     >
       {isDragOver && (
-        <div className="absolute inset-0 z-10 flex pointer-events-none items-center justify-center rounded-lg border-2 border-accent/45 bg-accent/10">
+        <div className="absolute inset-0 z-10 flex pointer-events-none items-center justify-center rounded-xl border-2 border-accent/45 bg-accent/10">
           <span className="rounded-full border border-white/75 bg-white/85 px-3 py-1.5 text-xs font-semibold text-accent shadow-sm backdrop-blur-xl">
             释放以传输文件
           </span>

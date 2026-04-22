@@ -1,4 +1,4 @@
-import { ApprovalRiskLevel, TrustLevel } from '../shared/types'
+import { ApprovalRiskLevel, PolicyRiskCategory, TrustLevel } from '../shared/types'
 import { commandPatternDB } from './db'
 import { TRUST_APPROVAL_THRESHOLD, TRUST_FAMILIAR_THRESHOLD } from './constants'
 import { ShellAnalyzer } from './utils/shell-analyzer'
@@ -8,6 +8,8 @@ export type PolicyAction = 'allow' | 'confirm' | 'deny'
 export interface PolicyResult {
   action: PolicyAction
   riskLevel: ApprovalRiskLevel
+  riskCategory: PolicyRiskCategory
+  requiresVerification: boolean
   reason: string
   trustLevel?: TrustLevel
   commandPattern?: string
@@ -81,6 +83,25 @@ export class PolicyEngine {
     'git push'
   ]
 
+  private static DESTRUCTIVE_COMMANDS = new Set([
+    'rm',
+    'mkfs',
+    'dd',
+    'shutdown',
+    'reboot',
+    'halt',
+    'init 0',
+    'init 6'
+  ])
+
+  private static PACKAGE_COMMANDS = new Set(['apt', 'yum', 'dnf', 'pacman'])
+
+  private static READ_ONLY_SYSTEM_PATTERNS = [
+    /^systemctl\s+(status|is-active|is-enabled|list-|show)\b/i,
+    /^service\s+\S+\s+status\b/i,
+    /^sudo\s+(systemctl\s+(status|is-active|is-enabled|list-|show)\b|journalctl\b)/i
+  ]
+
   private static NEVER_AUTO_APPROVE_PATTERNS = [
     /\brm\s+-rf\s+\//i,
     /\bmkfs\b/i,
@@ -117,7 +138,13 @@ export class PolicyEngine {
   static evaluate(command: string): PolicyResult {
     const trimmed = command.trim()
     if (!trimmed) {
-      return { action: 'allow', riskLevel: 'low', reason: '空命令。' }
+      return {
+        action: 'allow',
+        riskLevel: 'low',
+        riskCategory: 'read',
+        requiresVerification: false,
+        reason: '空命令。'
+      }
     }
 
     const segments = ShellAnalyzer.splitSegments(trimmed)
@@ -132,6 +159,8 @@ export class PolicyEngine {
         return {
           action: 'deny',
           riskLevel: 'critical',
+          riskCategory: 'destructive',
+          requiresVerification: true,
           reason: `片段 '${segment.raw}' 包含极度危险的操作，已拦截。`
         }
       }
@@ -152,7 +181,13 @@ export class PolicyEngine {
 
       for (const { pattern, reason } of dynamicExecPatterns) {
         if (pattern.test(lowerRaw)) {
-          results.push({ action: 'confirm', riskLevel: 'high', reason })
+          results.push({
+            action: 'confirm',
+            riskLevel: 'high',
+            riskCategory: 'privilege',
+            requiresVerification: true,
+            reason
+          })
         }
       }
 
@@ -161,6 +196,8 @@ export class PolicyEngine {
         results.push({
           action: 'confirm',
           riskLevel: 'critical',
+          riskCategory: 'destructive',
+          requiresVerification: true,
           reason: `警告：检测到试图通过重定向修改系统敏感路径: ${segment.raw}`
         })
       }
@@ -172,16 +209,23 @@ export class PolicyEngine {
       )
       if (foundModify) {
         const isCriticalPath = this.DANGEROUS_PATHS.some((path) => lowerRaw.includes(path))
+        const riskCategory: PolicyRiskCategory = this.DESTRUCTIVE_COMMANDS.has(foundModify)
+          ? 'destructive'
+          : 'write'
         if (isCriticalPath) {
           results.push({
             action: 'confirm',
             riskLevel: 'critical',
+            riskCategory: 'destructive',
+            requiresVerification: true,
             reason: `破坏性命令 '${foundModify}' 尝试操作关键路径: ${segment.raw}`
           })
         } else {
           results.push({
             action: 'confirm',
             riskLevel: 'high',
+            riskCategory,
+            requiresVerification: true,
             reason: `检测到修改或删除操作: ${foundModify}`
           })
         }
@@ -189,10 +233,15 @@ export class PolicyEngine {
 
       // System administration
       const foundSystem = this.SYSTEM_COMMANDS.find((cmd) => lowerRaw.includes(cmd))
-      if (foundSystem) {
+      if (foundSystem && !this.READ_ONLY_SYSTEM_PATTERNS.some((pattern) => pattern.test(segment.raw))) {
+        const riskCategory: PolicyRiskCategory = this.PACKAGE_COMMANDS.has(foundSystem)
+          ? 'package'
+          : 'privilege'
         results.push({
           action: 'confirm',
           riskLevel: 'high',
+          riskCategory,
+          requiresVerification: true,
           reason: `涉及系统配置或权限管理: ${foundSystem}`
         })
       }
@@ -202,9 +251,16 @@ export class PolicyEngine {
         (cmd) => lowerCmd === cmd || lowerRaw.startsWith(cmd + ' ')
       )
       if (foundNetwork) {
+        const writesNetworkArtifact =
+          foundNetwork !== 'curl' ||
+          /(\s-o\s|\s-o=|--output|>\s*[^&]|\bgit\s+clone\b|\bscp\b|\bftp\b|\bnc\b)/i.test(
+            lowerRaw
+          )
         results.push({
           action: 'confirm',
           riskLevel: 'medium',
+          riskCategory: 'network',
+          requiresVerification: writesNetworkArtifact,
           reason: `涉及外部网络访问: ${foundNetwork}`
         })
       }
@@ -227,6 +283,8 @@ export class PolicyEngine {
           results.push({
             action: 'confirm',
             riskLevel: 'medium',
+            riskCategory: 'read',
+            requiresVerification: false,
             reason: `正在访问系统敏感目录或文件: ${foundDangerousPath}`
           })
         }
@@ -238,6 +296,8 @@ export class PolicyEngine {
       return {
         action: 'allow',
         riskLevel: 'low',
+        riskCategory: 'read',
+        requiresVerification: false,
         reason: '命令符合基础安全策略，可以自动执行。'
       }
     }
@@ -253,6 +313,7 @@ export class PolicyEngine {
     const worstResult = results.sort((a, b) => riskPriority[b.riskLevel] - riskPriority[a.riskLevel])[0]
     return {
       ...worstResult,
+      requiresVerification: results.some((result) => result.requiresVerification),
       action: 'confirm' // Aggregate result that hit a policy is always confirm
     }
   }
@@ -273,6 +334,8 @@ export class PolicyEngine {
         ...baseResult,
         action: 'deny',
         riskLevel: 'critical',
+        riskCategory: 'destructive',
+        requiresVerification: true,
         reason: 'Command matches a never-auto-approve pattern (dangerous system operation).',
         trustLevel: 'untrusted'
       }
@@ -294,6 +357,8 @@ export class PolicyEngine {
       return {
         action: 'allow',
         riskLevel: baseResult.riskLevel,
+        riskCategory: baseResult.riskCategory,
+        requiresVerification: baseResult.requiresVerification,
         reason: `Trusted pattern (approved ${existing.approvalCount}x without rejection): ${commandPattern}`,
         trustLevel: 'trusted',
         commandPattern,

@@ -13,10 +13,17 @@ export class ApprovalBroker {
   async requestAuthorization(
     command: string,
     riskLevel: 'low' | 'medium' | 'high' | 'critical',
-    reason: string
+    reason: string,
+    metadata?: Record<string, unknown>
   ): Promise<AuthResponse> {
     const requestId = uuidv4()
-    this.webContents?.send('agent:auth-request', { requestId, command, riskLevel, reason })
+    this.webContents?.send('agent:auth-request', {
+      requestId,
+      command,
+      riskLevel,
+      reason,
+      metadata
+    })
     return new Promise((resolve) => {
       this.pendingRequests.set(requestId, resolve)
     })

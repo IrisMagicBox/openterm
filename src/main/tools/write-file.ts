@@ -17,18 +17,45 @@ export default define('write_file', {
   async execute(args: z.infer<typeof parameters>, ctx: Tool.Context): Promise<Tool.ExecuteResult> {
     const { hostId, path, content } = args
     const normalizedHostId = normalizeHostId(hostId)
+    const commandPattern = `write_file ${normalizedHostId}:${path}`
+    const policyMetadata = {
+      riskCategory: 'write',
+      commandPattern,
+      requiresVerification: true,
+      hostId: normalizedHostId,
+      command: commandPattern,
+      path
+    }
+
+    const approval = await ctx.requestAuthorization(
+      commandPattern,
+      'high',
+      `写入或覆盖远端文件 ${path}`,
+      policyMetadata
+    )
+    if (!approval.approved) {
+      return { output: 'Error: User rejected file write authorization', metadata: policyMetadata }
+    }
 
     const sessionId = await ctx.ensureSession(normalizedHostId, normalizedHostId)
+    ctx.updatePartMetadata?.({ ...policyMetadata, sessionId })
 
     const b64 = Buffer.from(content).toString('base64')
     const command = `printf %s ${shellQuote(b64)} | base64 -d > ${shellQuote(path)}`
 
     const result = await commandExecutor.execute(sessionId, command, ctx.topicId, ctx.taskId)
+    const metadata = {
+      ...policyMetadata,
+      sessionId,
+      exitCode: result.exitCode,
+      durationMs: result.durationMs
+    }
+    ctx.updatePartMetadata?.(metadata)
 
     if (result.exitCode !== 0) {
-      return { output: `Error: Failed to write file: ${result.content}` }
+      return { output: `Error: Failed to write file: ${result.content}`, metadata }
     }
 
-    return { output: 'File written successfully', metadata: { path } }
+    return { output: 'File written successfully', metadata }
   }
 })

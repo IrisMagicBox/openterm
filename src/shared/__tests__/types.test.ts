@@ -3,6 +3,7 @@ import type { Host, Topic, Message, TerminalSession, Provider, Task, CommandResu
 import type {
   TaskStatus,
   ApprovalRiskLevel,
+  PolicyRiskCategory,
   TerminalSessionStatus,
   TrustLevel,
   MemoryType
@@ -167,6 +168,18 @@ describe('Shared Types - Union types', () => {
     expect(levels).toHaveLength(4)
   })
 
+  it('should have correct PolicyRiskCategory values', () => {
+    const categories: PolicyRiskCategory[] = [
+      'read',
+      'write',
+      'network',
+      'package',
+      'privilege',
+      'destructive'
+    ]
+    expect(categories).toHaveLength(6)
+  })
+
   it('should have correct TerminalSessionStatus values', () => {
     const statuses: TerminalSessionStatus[] = ['active', 'streaming', 'closed', 'disconnected']
     expect(statuses).toHaveLength(4)
@@ -178,8 +191,14 @@ describe('Shared Types - Union types', () => {
   })
 
   it('should have correct MemoryType values', () => {
-    const types: MemoryType[] = ['habit', 'host_fact', 'experience']
-    expect(types).toHaveLength(3)
+    const types: MemoryType[] = [
+      'user_preference',
+      'host_fact',
+      'topic_summary',
+      'task_experience',
+      'policy_hint'
+    ]
+    expect(types).toHaveLength(5)
   })
 })
 

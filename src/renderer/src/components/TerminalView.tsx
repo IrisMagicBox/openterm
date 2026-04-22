@@ -261,13 +261,13 @@ export function TerminalView({
 
   return (
     <div
-      className="w-full h-full relative"
+      className="relative h-full w-full overflow-hidden rounded-xl bg-white"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {isDragOver && (
-        <div className="absolute inset-0 z-10 flex pointer-events-none items-center justify-center rounded-lg border-2 border-accent/45 bg-accent/10">
+        <div className="absolute inset-0 z-10 flex pointer-events-none items-center justify-center rounded-xl border-2 border-accent/45 bg-accent/10">
           <span className="rounded-full border border-white/75 bg-white/85 px-3 py-1.5 text-xs font-bold text-accent shadow-sm backdrop-blur-xl">
             释放以下载文件
           </span>
@@ -293,7 +293,7 @@ export function TerminalView({
       )}
       <div
         ref={terminalRef}
-        className="w-full h-full p-1"
+        className="h-full w-full overflow-hidden rounded-xl p-2"
         onMouseDown={() => xtermRef.current?.focus()}
       />
     </div>

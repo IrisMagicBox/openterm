@@ -6,6 +6,7 @@ interface PendingAuth {
   command: string
   riskLevel?: string
   reason?: string
+  metadata?: Record<string, unknown>
 }
 
 export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | null }) {
@@ -14,8 +15,9 @@ export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | nul
   const [pendingAuth, setPendingAuth] = useState<PendingAuth | null>(null)
 
   useEffect(() => {
-    const unlistenAuth = window.api.onAgentAuthRequest((requestId, command, riskLevel, reason) =>
-      setPendingAuth({ requestId, command, riskLevel, reason })
+    const unlistenAuth = window.api.onAgentAuthRequest(
+      (requestId, command, riskLevel, reason, metadata) =>
+        setPendingAuth({ requestId, command, riskLevel, reason, metadata })
     )
 
     const unlistenThinking = window.api.onAgentThinking(({ topicId, thinking }) => {

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Send, Clock, Hash, Server, ArrowRight, X } from 'lucide-react'
 import type { Host } from '../../../../shared/types'
 import { Badge, IconButton, Surface, Textarea } from '../ui'
@@ -27,96 +28,106 @@ export function ChatInput({
   filteredHosts,
   onInsertMention
 }: ChatInputProps): React.ReactElement {
-  return (
-    <div className="relative bg-transparent px-6 pb-5 pt-3">
-      <div className="relative mx-auto max-w-4xl">
-      {showMentions && filteredHosts.length > 0 && (
-        <div className="glass-menu absolute bottom-full left-0 z-10 mb-2 w-72 overflow-hidden rounded-xl">
-          <div className="flex items-center gap-1.5 border-b border-white/70 bg-white/55 px-3 py-2 text-xs font-semibold text-muted-foreground">
-            <Hash size={10} /> 提及主机
-          </div>
-          {filteredHosts.map((host) => (
-            <button
-              key={host.id}
-              className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-accent-soft/60"
-              onClick={() => onInsertMention(host)}
-            >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/70 bg-white/65 text-muted-foreground">
-                <Server size={15} />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-foreground">{host.alias}</div>
-                <div className="font-mono text-xs text-muted-foreground">
-                  {host.ip}:{host.port || 22}
-                </div>
-              </div>
-              <ArrowRight size={14} className="ml-auto text-muted-foreground" />
-            </button>
-          ))}
-        </div>
-      )}
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-      {messageQueue.length > 0 && (
-        <Surface
-          variant="subtle"
-          padding="sm"
-          className="mb-2 border-warning/20 bg-warning-soft"
-        >
-          <div className="mb-1.5 flex items-center gap-2">
-            <Clock size={12} className="text-warning" />
-            <span className="text-xs font-semibold text-warning">
-              {messageQueue.length} 条消息等待发送
-            </span>
-            <button
-              onClick={onClearQueue}
-              className="ml-auto text-xs font-semibold text-warning hover:text-foreground transition"
-            >
-              清空全部
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {messageQueue.map((msg) => (
-              <Badge key={msg.id} variant="warning" className="max-w-[180px] pr-1">
-                <span className="truncate">{msg.content}</span>
-                <button
-                  onClick={() => onRemoveFromQueue(msg.id)}
-                  className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded hover:bg-warning/10 transition"
-                >
-                  <X size={9} />
-                </button>
-              </Badge>
+  useEffect(() => {
+    const node = textareaRef.current
+    if (!node) return
+    node.style.height = '0px'
+    node.style.height = `${Math.min(node.scrollHeight, 144)}px`
+  }, [inputValue])
+
+  return (
+    <div className="relative border-t border-white/45 bg-surface/45 px-6 pb-5 pt-3 backdrop-blur-xl">
+      <div className="relative mx-auto w-full max-w-4xl">
+        {showMentions && filteredHosts.length > 0 && (
+          <div className="glass-menu absolute bottom-full left-0 z-10 mb-2 w-72 overflow-hidden rounded-xl">
+            <div className="flex items-center gap-1.5 border-b border-white/70 bg-white/55 px-3 py-2 text-xs font-semibold text-muted-foreground">
+              <Hash size={10} /> 提及主机
+            </div>
+            {filteredHosts.map((host) => (
+              <button
+                key={host.id}
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-accent-soft/60"
+                onClick={() => onInsertMention(host)}
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/70 bg-white/65 text-muted-foreground">
+                  <Server size={15} />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-foreground">{host.alias}</div>
+                  <div className="font-mono text-xs text-muted-foreground">
+                    {host.ip}:{host.port || 22}
+                  </div>
+                </div>
+                <ArrowRight size={14} className="ml-auto text-muted-foreground" />
+              </button>
             ))}
           </div>
-        </Surface>
-      )}
+        )}
 
-      <div className="composer-shell flex items-end gap-3 rounded-2xl p-2 transition-all focus-within:border-accent/30 focus-within:ring-2 focus-within:ring-accent/10">
-        <Textarea
-          value={inputValue}
-          onChange={onInputChange}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              onSend()
+        {messageQueue.length > 0 && (
+          <Surface variant="subtle" padding="sm" className="mb-2 border-warning/20 bg-warning-soft">
+            <div className="mb-1.5 flex items-center gap-2">
+              <Clock size={12} className="text-warning" />
+              <span className="text-xs font-semibold text-warning">
+                {messageQueue.length} 条消息等待发送
+              </span>
+              <button
+                onClick={onClearQueue}
+                className="ml-auto text-xs font-semibold text-warning transition hover:text-foreground"
+              >
+                清空全部
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {messageQueue.map((msg) => (
+                <Badge key={msg.id} variant="warning" className="max-w-[180px] pr-1">
+                  <span className="truncate">{msg.content}</span>
+                  <button
+                    onClick={() => onRemoveFromQueue(msg.id)}
+                    className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded transition hover:bg-warning/10"
+                  >
+                    <X size={9} />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          </Surface>
+        )}
+
+        <div className="composer-shell flex items-end gap-3 rounded-2xl p-2 transition-all focus-within:border-accent/30 focus-within:ring-2 focus-within:ring-accent/10">
+          <Textarea
+            ref={textareaRef}
+            value={inputValue}
+            onChange={onInputChange}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return
+              if (event.nativeEvent.isComposing) return
+              if (event.metaKey || event.ctrlKey) {
+                event.preventDefault()
+                onSend()
+              }
+            }}
+            placeholder={
+              messageQueue.length > 0
+                ? `继续输入或等待发送 (${messageQueue.length}条排队中)...`
+                : '给助手发送消息或输入 @ 来指定主机...'
             }
-          }}
-          placeholder={
-            messageQueue.length > 0
-              ? `继续输入或等待发送 (${messageQueue.length}条排队中)...`
-              : '给助手发送消息或输入 @ 来指定主机...'
-          }
-          rows={1}
-          className="max-h-36 min-h-9 flex-1 resize-none border-0 bg-transparent px-2 py-2 focus-visible:ring-0"
-        />
-        <IconButton
-          aria-label="发送消息"
-          onClick={onSend}
-          disabled={!inputValue.trim()}
-          variant="primary"
-        >
-          {thinking ? <Clock size={16} /> : <Send size={16} />}
-        </IconButton>
-      </div>
+            rows={1}
+            title="Enter 换行，Command/Ctrl + Enter 发送"
+            className="max-h-36 min-h-11 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-2 py-2.5 leading-6 focus-visible:ring-0"
+          />
+          <IconButton
+            aria-label="发送消息"
+            onClick={onSend}
+            disabled={!inputValue.trim()}
+            variant="primary"
+            className="mb-1 h-9 w-9"
+          >
+            {thinking ? <Clock size={16} /> : <Send size={16} />}
+          </IconButton>
+        </div>
       </div>
     </div>
   )

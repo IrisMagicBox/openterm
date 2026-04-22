@@ -5,6 +5,7 @@ import readFileTool from './read-file'
 import writeFileTool from './write-file'
 import listHostsTool from './list-hosts'
 import manageTerminalTool from './manage-terminal'
+import managePortForwardTool from './manage-port-forward'
 import listTerminalsTool from './list-terminals'
 import manageHostTool from './manage-host'
 import searchMemoryTool from './search-memory'
@@ -33,6 +34,7 @@ export function createDefaultRegistry(): ToolRegistry {
   registry.register(writeFileTool)
   registry.register(listHostsTool)
   registry.register(manageTerminalTool)
+  registry.register(managePortForwardTool)
   registry.register(listTerminalsTool)
   registry.register(manageHostTool)
   registry.register(searchMemoryTool)

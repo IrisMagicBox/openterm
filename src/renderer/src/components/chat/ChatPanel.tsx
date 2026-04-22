@@ -2,9 +2,11 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { Clock, Monitor, Cpu } from 'lucide-react'
 import { TopicHub } from '../TopicHub'
 import { Host, Topic, TerminalSession } from '../../../../shared/types'
+import { AgentRunDetailDrawer } from '../AgentRunDetailDrawer'
 import { AgentStepStream } from '../AgentStepStream'
 import { AgentLiveStream } from '../AgentLiveStream'
 import { ModelSelector } from '../ModelSelector'
+import { PortForwardingPanel } from '../terminal/PortForwardingPanel'
 import { ChatInput } from './ChatInput'
 import { MessageBubble, ThinkingIndicator, EmptyState } from './MessageBubble'
 import { CommandPalette } from './CommandPalette'
@@ -17,7 +19,7 @@ import { useCommandPalette } from '../../hooks/useCommandPalette'
 import { useTerminalPreviews } from '../../hooks/useTerminalPreviews'
 import { useTerminalStageState } from '../../hooks/useTerminalStageState'
 import { deriveTerminalActivities } from '../../lib/terminal-stage'
-import { Badge, PageHeader } from '../ui'
+import { Badge, Dialog, DialogContent, PageHeader } from '../ui'
 
 import { LOCAL_HOST } from '../../constants'
 
@@ -35,6 +37,7 @@ interface ChatPanelProps {
   terminalFontSize: number
   setTerminalFontSize: (s: number) => void
   onRemoveHostFromTopic: (id: string) => Promise<void>
+  onOpenFileBrowser: (host: Host) => void
   onCreateTerminal: (id: string) => Promise<void>
   onCloseTerminal: (id: string) => Promise<void>
   onRenameTerminal: (id: string, name: string) => Promise<void>
@@ -56,6 +59,7 @@ export function ChatPanel({
   terminalFontSize,
   setTerminalFontSize,
   onRemoveHostFromTopic,
+  onOpenFileBrowser,
   onCreateTerminal,
   onCloseTerminal,
   onRenameTerminal,
@@ -66,6 +70,8 @@ export function ChatPanel({
   const [showMentions, setShowMentions] = useState(false)
   const [mentionFilter, setMentionFilter] = useState('')
   const [isResizing, setIsResizing] = useState(false)
+  const [portForwardHost, setPortForwardHost] = useState<{ id: string; alias: string } | null>(null)
+  const [runDetailId, setRunDetailId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const { animationKey } = useVisibilityRestore()
   const { providers, models, defaultProviderId, defaultModelId } = useProvider()
@@ -228,34 +234,49 @@ export function ChatPanel({
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
-          {messages.length === 0 && (
-            <EmptyState
-              topicHosts={topicHosts}
-              onMentionHost={(alias) => setInputValue(`@${alias} `)}
-            />
-          )}
-          {messages.map((msg) => (
-            <MessageBubble
-              key={msg.id}
-              message={msg}
-              expandedThoughts={expandedThoughts}
-              onToggleThought={toggleThought}
-            />
-          ))}
-          {thinking && activeParts.length > 0 && (
-            <AgentLiveStream
-              parts={activeParts}
-              onRevealTerminal={terminalStage.revealTerminal}
-              focusedPartId={terminalStage.focusedPartId}
-            />
-          )}
-          {thinking && activeParts.length === 0 && activeSteps.length > 0 && (
-            <AgentStepStream steps={activeSteps} />
-          )}
-          {thinking && activeParts.length === 0 && activeSteps.length === 0 && (
-            <ThinkingIndicator animationKey={animationKey} />
-          )}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div ref={scrollRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+            {messages.length === 0 && (
+              <EmptyState
+                topicHosts={topicHosts}
+                onMentionHost={(alias) => setInputValue(`@${alias} `)}
+              />
+            )}
+            {messages.map((msg) => (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                expandedThoughts={expandedThoughts}
+                onToggleThought={toggleThought}
+              />
+            ))}
+            {thinking && activeParts.length > 0 && (
+              <AgentLiveStream
+                parts={activeParts}
+                onRevealTerminal={terminalStage.revealTerminal}
+                focusedPartId={terminalStage.focusedPartId}
+              />
+            )}
+            {thinking && activeParts.length === 0 && activeSteps.length > 0 && (
+              <AgentStepStream steps={activeSteps} />
+            )}
+            {thinking && activeParts.length === 0 && activeSteps.length === 0 && (
+              <ThinkingIndicator animationKey={animationKey} />
+            )}
+          </div>
+
+          <ChatInput
+            inputValue={inputValue}
+            onInputChange={handleInputChange}
+            onSend={handleSend}
+            thinking={!!thinking}
+            messageQueue={messageQueue}
+            onRemoveFromQueue={removeQueuedMessage}
+            onClearQueue={clearQueue}
+            showMentions={showMentions}
+            filteredHosts={filteredHosts}
+            onInsertMention={insertMention}
+          />
         </div>
 
         {visibleSessions.length > 0 && (
@@ -285,6 +306,9 @@ export function ChatPanel({
             onSetFollowAgent={terminalStage.setFollowAgent}
             onFocusSession={handleFocusSession}
             onRevealTerminal={terminalStage.revealTerminal}
+            onOpenPortForward={(session) =>
+              setPortForwardHost({ id: session.hostId, alias: session.hostAlias })
+            }
           />
         )}
         <TopicHub
@@ -299,21 +323,12 @@ export function ChatPanel({
           onTogglePin={onToggleTerminalPin}
           focusedSessionId={terminalStage.focusedSessionId}
           onFocusSession={handleFocusSession}
+          onOpenFileBrowser={onOpenFileBrowser}
+          onOpenPortForward={(host) => setPortForwardHost({ id: host.id, alias: host.alias })}
+          onOpenRunDetail={setRunDetailId}
         />
       </div>
 
-      <ChatInput
-        inputValue={inputValue}
-        onInputChange={handleInputChange}
-        onSend={handleSend}
-        thinking={!!thinking}
-        messageQueue={messageQueue}
-        onRemoveFromQueue={removeQueuedMessage}
-        onClearQueue={clearQueue}
-        showMentions={showMentions}
-        filteredHosts={filteredHosts}
-        onInsertMention={insertMention}
-      />
       {commandPaletteOpen && (
         <CommandPalette
           hostAlias={terminalStage.focusedSession?.hostAlias}
@@ -323,6 +338,23 @@ export function ChatPanel({
           onSubmit={handleSubmitCommandPalette}
         />
       )}
+      {portForwardHost && (
+        <Dialog open onOpenChange={(open) => !open && setPortForwardHost(null)}>
+          <DialogContent className="h-[520px] max-w-2xl overflow-hidden p-0">
+            <PortForwardingPanel
+              hostId={portForwardHost.id}
+              hostAlias={portForwardHost.alias}
+              onClose={() => setPortForwardHost(null)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+      <AgentRunDetailDrawer
+        runId={runDetailId}
+        open={!!runDetailId}
+        onClose={() => setRunDetailId(null)}
+        onRevealTerminal={terminalStage.revealTerminal}
+      />
       {isResizing && (
         <div
           className="fixed inset-0 z-[100] cursor-col-resize select-none pointer-events-auto bg-transparent"

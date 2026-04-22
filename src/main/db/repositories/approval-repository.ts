@@ -28,6 +28,9 @@ export class ApprovalRepository extends BaseRepository<ApprovalRow> {
       stepId: approval.stepId,
       command: approval.command,
       riskLevel: approval.riskLevel,
+      riskCategory: approval.riskCategory,
+      commandPattern: approval.commandPattern,
+      requiresVerification: approval.requiresVerification,
       reason: approval.reason,
       status: approval.status,
       createdAt,
@@ -36,8 +39,11 @@ export class ApprovalRepository extends BaseRepository<ApprovalRow> {
 
     this.stmt(
       `
-      INSERT INTO approvals (id, taskId, stepId, command, riskLevel, reason, status, createdAt, respondedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO approvals (
+        id, taskId, stepId, command, riskLevel, riskCategory, commandPattern,
+        requiresVerification, reason, status, createdAt, respondedAt
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
     ).run(
       createdApproval.id,
@@ -45,6 +51,9 @@ export class ApprovalRepository extends BaseRepository<ApprovalRow> {
       createdApproval.stepId || null,
       createdApproval.command,
       createdApproval.riskLevel,
+      createdApproval.riskCategory || null,
+      createdApproval.commandPattern || null,
+      createdApproval.requiresVerification ? 1 : 0,
       createdApproval.reason || null,
       createdApproval.status,
       createdApproval.createdAt,

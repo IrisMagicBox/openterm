@@ -16,7 +16,8 @@ import type {
   Provider,
   Model,
   PermissionSettings,
-  TerminalSession
+  TerminalSession,
+  MemoryEntry
 } from '../shared/types'
 import type {
   TopicUpdatedPayload,
@@ -71,6 +72,22 @@ const api: Record<string, unknown> = {
     artifact: Omit<Artifact, 'id' | 'createdAt' | 'updatedAt'> &
       Partial<Pick<Artifact, 'id' | 'createdAt' | 'updatedAt'>>
   ) => ipcRenderer.invoke('create-artifact', artifact),
+  getMemories: (filters?: { hostId?: string; topicId?: string; includeDisabled?: boolean }) =>
+    ipcRenderer.invoke('get-memories', filters),
+  createMemory: (
+    memory: Omit<MemoryEntry, 'id' | 'timestamp' | 'scope'> &
+      Partial<Pick<MemoryEntry, 'scope'>>
+  ) => ipcRenderer.invoke('create-memory', memory),
+  updateMemory: (
+    id: string,
+    updates: Partial<
+      Pick<
+        MemoryEntry,
+        'type' | 'scope' | 'content' | 'importance' | 'confidence' | 'disabled' | 'lastUsedAt'
+      >
+    >
+  ) => ipcRenderer.invoke('update-memory', id, updates),
+  deleteMemory: (id: string) => ipcRenderer.invoke('delete-memory', id),
 
   // Host Pool Management
   getTopicHosts: (topicId: string) => ipcRenderer.invoke('agent:get-topic-hosts', topicId),
@@ -121,15 +138,41 @@ const api: Record<string, unknown> = {
 
   // Agent Authorization (HITL)
   onAgentAuthRequest: (
-    callback: (requestId: string, command: string, riskLevel?: string, reason?: string) => void
-  ) => {
-    const listener = (
-      _event,
+    callback: (
       requestId: string,
       command: string,
       riskLevel?: string,
+      reason?: string,
+      metadata?: Record<string, unknown>
+    ) => void
+  ) => {
+    const listener = (
+      _event,
+      payloadOrRequestId:
+        | string
+        | {
+            requestId: string
+            command: string
+            riskLevel?: string
+            reason?: string
+            metadata?: Record<string, unknown>
+          },
+      command?: string,
+      riskLevel?: string,
       reason?: string
-    ) => callback(requestId, command, riskLevel, reason)
+    ) => {
+      if (typeof payloadOrRequestId === 'object') {
+        callback(
+          payloadOrRequestId.requestId,
+          payloadOrRequestId.command,
+          payloadOrRequestId.riskLevel,
+          payloadOrRequestId.reason,
+          payloadOrRequestId.metadata
+        )
+      } else {
+        callback(payloadOrRequestId, command || '', riskLevel, reason)
+      }
+    }
     ipcRenderer.on('agent:auth-request', listener)
     return () => ipcRenderer.removeListener('agent:auth-request', listener)
   },
@@ -495,6 +538,25 @@ flatApi.files = {
   startNativeDrag: flatApi.startNativeDrag,
   transferBetweenHosts: flatApi.sftpTransferBetweenHosts,
   onTransferProgress: flatApi.onSftpTransferProgress
+}
+
+flatApi.memories = {
+  list: (filters?: { hostId?: string; topicId?: string; includeDisabled?: boolean }) =>
+    typedIpc.invoke('get-memories', filters),
+  create: (
+    memory: Omit<MemoryEntry, 'id' | 'timestamp' | 'scope'> &
+      Partial<Pick<MemoryEntry, 'scope'>>
+  ) => typedIpc.invoke('create-memory', memory),
+  update: (
+    id: string,
+    updates: Partial<
+      Pick<
+        MemoryEntry,
+        'type' | 'scope' | 'content' | 'importance' | 'confidence' | 'disabled' | 'lastUsedAt'
+      >
+    >
+  ) => typedIpc.invoke('update-memory', id, updates),
+  delete: (id: string) => typedIpc.invoke('delete-memory', id)
 }
 
 if (process.contextIsolated) {

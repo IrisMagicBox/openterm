@@ -24,12 +24,13 @@ export class ToolContextFactory {
       agent: config.name,
       abort: context.abort ?? new AbortController().signal,
       messages: [],
-      requestAuthorization: async (command, riskLevel, reason) =>
+      requestAuthorization: async (command, riskLevel, reason, metadata) =>
         permissionEngine.ask({
           permission: 'command',
           pattern: command,
           riskLevel,
-          reason
+          reason,
+          metadata
         }),
       ask: async (request) => {
         await permissionEngine.ask({

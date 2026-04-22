@@ -116,7 +116,7 @@ function SplitContainer({
   return (
     <div
       ref={containerRef}
-      className={`flex ${isHorizontal ? 'flex-row' : 'flex-col'} h-full w-full min-h-0 min-w-0 flex-1 overflow-hidden`}
+      className={`flex ${isHorizontal ? 'flex-row' : 'flex-col'} h-full w-full min-h-0 min-w-0 flex-1 gap-2 overflow-hidden`}
     >
       {split.children.map((child, index) => (
         <div key={child.id} className="contents">
@@ -148,7 +148,7 @@ function SplitContainer({
                 isHorizontal
                   ? 'w-1.5 cursor-col-resize hover:bg-accent/35 active:bg-accent/50'
                   : 'h-1.5 cursor-row-resize hover:bg-accent/35 active:bg-accent/50'
-              } bg-workspace-border/75 transition-colors shrink-0`}
+              } shrink-0 rounded-full bg-workspace-border/70 transition-colors`}
             />
           )}
         </div>

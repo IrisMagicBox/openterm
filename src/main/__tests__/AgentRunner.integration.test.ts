@@ -110,7 +110,7 @@ describe('AgentRunner Integration', () => {
       const result = await context.requestAuthorization('ls -la', 'low', 'listing files')
 
       expect(result.approved).toBe(true)
-      expect(originalAuth).toHaveBeenCalledWith('ls -la', 'low', 'listing files')
+      expect(originalAuth).toHaveBeenCalledWith('ls -la', 'low', 'listing files', undefined)
     })
 
     it('build agent allows all risk levels', async () => {
@@ -123,7 +123,7 @@ describe('AgentRunner Integration', () => {
       const result = await context.requestAuthorization('rm -rf /', 'critical', 'testing')
 
       expect(result.approved).toBe(true)
-      expect(originalAuth).toHaveBeenCalledWith('rm -rf /', 'critical', 'testing')
+      expect(originalAuth).toHaveBeenCalledWith('rm -rf /', 'critical', 'testing', undefined)
     })
   })
 

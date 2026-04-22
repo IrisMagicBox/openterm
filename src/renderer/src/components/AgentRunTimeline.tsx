@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import type { JSX } from 'react'
 import { AgentPart } from '../../../shared/types'
+import { agentPartPreview } from '../lib/agent-part-preview'
 
 interface AgentRunTimelineProps {
   taskId: string
@@ -46,8 +47,7 @@ function titleFor(part: AgentPart): string {
 }
 
 function previewFor(part: AgentPart): string {
-  const value = part.error || part.output || part.input || ''
-  return value.length > 120 ? `${value.slice(0, 117)}...` : value
+  return agentPartPreview(part)
 }
 
 export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element | null {

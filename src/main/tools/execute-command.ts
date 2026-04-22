@@ -65,7 +65,7 @@ const parameters = z.object({
   terminalName: z
     .string()
     .optional()
-    .describe('终端名称（可选，默认为 default。指定新名称可开启并锁定新终端窗口实现并发）'),
+    .describe('终端名称（可选，默认为 default。用于命名或复用终端；同一主机仍按队列串行执行）'),
   command: z.string().describe('要执行的命令'),
   reason: z.string().describe('执行该命令的原因')
 })
@@ -90,9 +90,19 @@ export default define('execute_command', {
 
     const commandPattern = policyResult.commandPattern || PolicyEngine.normalizeCommand(command)
     const permissions = permissionDB.getPermissions()
+    const policyMetadata = {
+      riskCategory: policyResult.riskCategory,
+      commandPattern,
+      requiresVerification: policyResult.requiresVerification
+    }
 
     if (policyResult.action === 'confirm' && permissions.requireConfirmation) {
-      const authResult = await ctx.requestAuthorization(command, policyResult.riskLevel, reason)
+      const authResult = await ctx.requestAuthorization(
+        command,
+        policyResult.riskLevel,
+        reason,
+        policyMetadata
+      )
       if (!authResult.approved) {
         recordPatternRejection(host.id, commandPattern)
         if (!ctx.runId) {
@@ -102,6 +112,7 @@ export default define('execute_command', {
             stepId: ctx.stepId!,
             command,
             riskLevel: policyResult.riskLevel,
+            ...policyMetadata,
             reason,
             status: 'rejected',
             createdAt: Date.now()
@@ -119,6 +130,7 @@ export default define('execute_command', {
           stepId: ctx.stepId!,
           command,
           riskLevel: policyResult.riskLevel,
+          ...policyMetadata,
           reason,
           status: 'approved',
           createdAt: Date.now()
@@ -128,7 +140,7 @@ export default define('execute_command', {
 
     // Update the step with actual hostId for trace and memory reflection
     taskStepDB.updateStep(ctx.stepId!, { hostId: host.id })
-    ctx.updatePartMetadata?.({ hostId: host.id, hostAlias: host.alias, command })
+    ctx.updatePartMetadata?.({ hostId: host.id, hostAlias: host.alias, command, ...policyMetadata })
 
     const sessionId = await ctx.ensureSession(host.id, host.alias, terminalName)
     ctx.updatePartMetadata?.({ sessionId })
@@ -175,13 +187,19 @@ export default define('execute_command', {
       }
     )
     publishLiveOutput(lastLiveOutput || result.content, true)
-    ctx.updatePartMetadata?.({
+    const commandMetadata = {
+      ...policyMetadata,
+      hostId: host.id,
+      hostAlias: host.alias,
+      sessionId,
+      command,
       exitCode: result.exitCode,
       durationMs: result.durationMs,
       cwd: result.cwd,
       isTruncated: result.isTruncated,
       live: false
-    })
+    }
+    ctx.updatePartMetadata?.(commandMetadata)
 
     // Truncate large outputs to protect the context window budget
     const rawOutput = JSON.stringify(result)
@@ -195,11 +213,12 @@ export default define('execute_command', {
           originalLines: truncated.originalLines,
           originalBytes: truncated.originalBytes,
           diskPath: truncated.outputPath,
-          outputPath: truncated.outputPath
+          outputPath: truncated.outputPath,
+          ...commandMetadata
         }
       }
     }
 
-    return { output: truncated.content }
+    return { output: truncated.content, metadata: commandMetadata }
   }
 })

@@ -191,6 +191,9 @@ export const mapApprovalRow = (row: ApprovalRow): Approval => ({
   stepId: row.stepId ?? undefined,
   command: row.command,
   riskLevel: row.riskLevel as Approval['riskLevel'],
+  riskCategory: (row.riskCategory as Approval['riskCategory']) ?? undefined,
+  commandPattern: row.commandPattern ?? undefined,
+  requiresVerification: row.requiresVerification === 1,
   reason: row.reason ?? undefined,
   status: row.status as Approval['status'],
   createdAt: row.createdAt,
@@ -262,13 +265,39 @@ export const mapTerminalIORow = (row: TerminalIORow): TerminalIO => ({
  */
 export const mapMemoryRow = (row: MemoryRow): MemoryEntry => ({
   id: row.id,
-  type: row.type as MemoryEntry['type'],
+  type: normalizeMemoryType(row.type),
+  scope: (row.scope as MemoryEntry['scope']) ?? inferMemoryScope(row),
   content: row.content,
   hostId: row.hostId ?? undefined,
   topicId: row.topicId ?? undefined,
+  sourceTaskId: row.sourceTaskId ?? undefined,
+  confidence: row.confidence ?? undefined,
   importance: row.importance,
+  lastUsedAt: row.lastUsedAt ?? undefined,
+  disabled: row.disabled === 1,
   timestamp: row.timestamp
 })
+
+function normalizeMemoryType(type: string): MemoryEntry['type'] {
+  if (type === 'habit') return 'user_preference'
+  if (type === 'experience') return 'task_experience'
+  if (
+    type === 'user_preference' ||
+    type === 'host_fact' ||
+    type === 'topic_summary' ||
+    type === 'task_experience' ||
+    type === 'policy_hint'
+  ) {
+    return type
+  }
+  return 'task_experience'
+}
+
+function inferMemoryScope(row: MemoryRow): MemoryEntry['scope'] {
+  if (row.hostId) return 'host'
+  if (row.topicId) return 'topic'
+  return 'global'
+}
 
 /**
  * Map CommandPatternRow to CommandPattern

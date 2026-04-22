@@ -4,7 +4,7 @@ import type {
   ChatCompletionTool
 } from 'openai/resources/chat/completions/completions'
 import { getErrorMessage } from '../../shared/errors'
-import type { AgentPart, TaskStep, ToolResult } from '../../shared/types'
+import type { AgentPart, PolicyRiskCategory, TaskStep, ToolResult } from '../../shared/types'
 import { taskStepDB } from '../db'
 import { MemoryManager } from '../MemoryManager'
 import { executeGrouped } from './session-scheduler'
@@ -21,6 +21,7 @@ export class ToolCallExecutor {
   private readonly doomLoop = new DoomLoopDetector()
   private readonly legacyEvents: LegacyAgentEventAdapter
   private readonly contextFactory: ToolContextFactory
+  private readonly pendingVerifications = new Map<string, PendingVerification>()
 
   constructor(private readonly options: AgentProcessorOptions) {
     this.legacyEvents = new LegacyAgentEventAdapter(options.run, options.context)
@@ -34,13 +35,32 @@ export class ToolCallExecutor {
 
   reset(): void {
     this.doomLoop.reset()
+    this.pendingVerifications.clear()
   }
 
-  getTools(turnCount: number, maxTurns: number): ChatCompletionTool[] {
-    if (turnCount === maxTurns) return []
+  getTools(turnCount: number, maxTurns: number, allowFinalTurnTools = false): ChatCompletionTool[] {
+    if (turnCount === maxTurns && !allowFinalTurnTools) return []
     return this.options.toolRegistry
       .getFilteredDefinitions(this.options.config.name)
       .filter((tool) => this.options.permissionEngine.isToolAllowed(tool.function.name))
+  }
+
+  hasPendingVerification(): boolean {
+    return this.pendingVerifications.size > 0
+  }
+
+  getVerificationObservation(): string {
+    const pending = Array.from(this.pendingVerifications.values())
+    const lines = pending.map(
+      (item) =>
+        `- host=${item.hostId}, category=${item.riskCategory}, command=${item.command}`
+    )
+    return [
+      '[Runtime observation] 你刚才执行了会修改系统状态的操作，但还没有提供只读验证证据。',
+      '请继续使用 execute_command 执行只读验证命令，确认修改结果，再给出最终回答。',
+      '待验证操作：',
+      ...lines
+    ].join('\n')
   }
 
   async executeToolCalls(
@@ -153,6 +173,8 @@ export class ToolCallExecutor {
         this.options.provider.mergeChildUsage(metadata.usage as SessionUsage)
       }
 
+      this.trackVerification(call, result, metadata)
+
       return { toolCallId: call.id, content: output, metadata }
     } catch (error) {
       const message = `Error: ${getErrorMessage(error)}`
@@ -249,4 +271,90 @@ export class ToolCallExecutor {
 
     return result.content
   }
+
+  private trackVerification(
+    call: ChatCompletionMessageFunctionToolCall,
+    result: { output: string; metadata?: Record<string, unknown> },
+    metadata: Record<string, unknown>
+  ): void {
+    const args = this.safeParseArgs(call.function.arguments)
+    const hostId = this.stringValue(metadata.hostId) ?? this.stringValue(args.hostId)
+    if (!hostId) return
+
+    const riskCategory = this.riskCategoryValue(metadata.riskCategory)
+    const exitCode = this.numberValue(metadata.exitCode) ?? this.parseExitCode(result.output)
+    const command = this.stringValue(metadata.command) ?? this.stringValue(args.command) ?? ''
+
+    if (call.function.name !== 'execute_command') {
+      if (metadata.requiresVerification === true && (exitCode === undefined || exitCode === 0)) {
+        this.pendingVerifications.set(hostId, {
+          hostId,
+          command: command || call.function.name,
+          riskCategory: riskCategory ?? 'write',
+          createdAt: Date.now()
+        })
+      }
+      return
+    }
+
+    if (riskCategory === 'read' && exitCode === 0) {
+      this.pendingVerifications.delete(hostId)
+      return
+    }
+
+    if (metadata.requiresVerification === true && exitCode === 0) {
+      this.pendingVerifications.set(hostId, {
+        hostId,
+        command,
+        riskCategory: riskCategory ?? 'write',
+        createdAt: Date.now()
+      })
+    }
+  }
+
+  private safeParseArgs(raw: string): Record<string, unknown> {
+    try {
+      return JSON.parse(raw || '{}') as Record<string, unknown>
+    } catch {
+      return {}
+    }
+  }
+
+  private stringValue(value: unknown): string | undefined {
+    return typeof value === 'string' && value.length > 0 ? value : undefined
+  }
+
+  private numberValue(value: unknown): number | undefined {
+    return typeof value === 'number' ? value : undefined
+  }
+
+  private riskCategoryValue(value: unknown): PolicyRiskCategory | undefined {
+    if (
+      value === 'read' ||
+      value === 'write' ||
+      value === 'network' ||
+      value === 'package' ||
+      value === 'privilege' ||
+      value === 'destructive'
+    ) {
+      return value
+    }
+    return undefined
+  }
+
+  private parseExitCode(output: string): number | undefined {
+    try {
+      const parsed = JSON.parse(output) as { exitCode?: unknown }
+      return typeof parsed.exitCode === 'number' ? parsed.exitCode : undefined
+    } catch {
+      return undefined
+    }
+  }
+}
+
+interface PendingVerification {
+  hostId: string
+  command: string
+  riskCategory: PolicyRiskCategory
+  createdAt: number
 }

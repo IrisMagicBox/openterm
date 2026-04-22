@@ -18,6 +18,7 @@ interface AuthModalProps {
   command: string
   riskLevel?: string
   reason?: string
+  metadata?: Record<string, unknown>
   onResolve: (approved: boolean, alwaysAllow?: boolean) => void
 }
 
@@ -25,6 +26,7 @@ export function AuthModal({
   command,
   riskLevel,
   reason,
+  metadata,
   onResolve
 }: AuthModalProps): React.ReactElement {
   const [alwaysAllow, setAlwaysAllow] = useState(false)
@@ -70,6 +72,11 @@ export function AuthModal({
   }
 
   const risk = getRiskStyles(riskLevel)
+  const riskCategory =
+    typeof metadata?.riskCategory === 'string' ? metadata.riskCategory : undefined
+  const commandPattern =
+    typeof metadata?.commandPattern === 'string' ? metadata.commandPattern : undefined
+  const requiresVerification = metadata?.requiresVerification === true
 
   return (
     <Dialog open>
@@ -108,6 +115,30 @@ export function AuthModal({
             <code className="block break-all font-mono text-sm font-semibold leading-relaxed text-success">
               {command}
             </code>
+            {(riskCategory || commandPattern || requiresVerification) && (
+              <div className="mt-3 grid gap-2 border-t border-workspace-border pt-3 text-xs text-workspace-muted-foreground">
+                {riskCategory && (
+                  <div className="flex justify-between gap-3">
+                    <span>风险类别</span>
+                    <span className="font-mono text-workspace-foreground">{riskCategory}</span>
+                  </div>
+                )}
+                {commandPattern && (
+                  <div className="flex justify-between gap-3">
+                    <span>命令模式</span>
+                    <span className="min-w-0 truncate font-mono text-workspace-foreground">
+                      {commandPattern}
+                    </span>
+                  </div>
+                )}
+                {requiresVerification && (
+                  <div className="flex justify-between gap-3">
+                    <span>完成要求</span>
+                    <span className="font-semibold text-warning">执行后需要只读验证</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {!isCritical && (

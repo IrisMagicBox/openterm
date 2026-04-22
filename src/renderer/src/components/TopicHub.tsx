@@ -1,19 +1,26 @@
 import React from 'react'
-import { Host, TerminalSession } from '../../../shared/types'
+import type { AgentRun, Host, MemoryEntry, TerminalSession } from '../../../shared/types'
 import {
+  Brain,
+  Edit3,
+  ExternalLink,
+  FileText,
+  Folder,
+  Globe,
+  History,
+  Minus,
+  Monitor,
+  Pin,
+  Plus,
+  PlusCircle,
+  Save,
   Server,
   Terminal,
   Trash2,
-  Plus,
-  Edit3,
-  Pin,
-  Shield,
-  Monitor,
-  X,
-  PlusCircle
+  X
 } from 'lucide-react'
 import { useConfirm } from '../hooks/useConfirm'
-import { Badge, Button, IconButton } from './ui'
+import { Badge, Button, IconButton, Tabs, TabsContent, TabsList, TabsTrigger } from './ui'
 import { cn } from '../lib/utils'
 
 interface TopicHubProps {
@@ -28,6 +35,54 @@ interface TopicHubProps {
   onTogglePin: (sessionId: string, isPinned: boolean) => void
   focusedSessionId: string | null
   onFocusSession: (sessionId: string) => void
+  onOpenFileBrowser?: (host: Host) => void
+  onOpenPortForward?: (host: Host) => void
+  onOpenRunDetail?: (runId: string) => void
+}
+
+interface Tunnel {
+  id: string
+  hostId: string
+  localPort: number
+  remoteHost: string
+  remotePort: number
+  status: string
+  createdAt: number
+}
+
+type WorkspaceView = 'hosts' | 'runs' | 'memory' | 'tunnels'
+
+function runStatusLabel(status: AgentRun['status']): string {
+  if (status === 'completed') return '完成'
+  if (status === 'failed') return '失败'
+  if (status === 'cancelled') return '取消'
+  if (status === 'waiting_approval') return '审批'
+  if (status === 'running') return '运行'
+  if (status === 'compacting') return '压缩'
+  if (status === 'retrying') return '重试'
+  return '空闲'
+}
+
+function memoryScopeLabel(scope: MemoryEntry['scope']): string {
+  if (scope === 'global') return '全局'
+  if (scope === 'host') return '主机'
+  return 'Topic'
+}
+
+function typeLabel(type: MemoryEntry['type']): string {
+  if (type === 'user_preference') return '偏好'
+  if (type === 'host_fact') return '主机事实'
+  if (type === 'topic_summary') return '话题摘要'
+  if (type === 'policy_hint') return '策略提示'
+  return '任务经验'
+}
+
+function statusTone(status: AgentRun['status']): 'accent' | 'success' | 'danger' | 'warning' | 'neutral' {
+  if (status === 'completed') return 'success'
+  if (status === 'failed' || status === 'cancelled') return 'danger'
+  if (status === 'waiting_approval' || status === 'retrying') return 'warning'
+  if (status === 'running' || status === 'compacting') return 'accent'
+  return 'neutral'
 }
 
 export function TopicHub({
@@ -41,11 +96,68 @@ export function TopicHub({
   onRenameTerminal,
   onTogglePin,
   focusedSessionId,
-  onFocusSession
+  onFocusSession,
+  onOpenFileBrowser,
+  onOpenPortForward,
+  onOpenRunDetail
 }: TopicHubProps): React.ReactElement {
   const { confirm, ConfirmDialogComponent } = useConfirm()
+  const [view, setView] = React.useState<WorkspaceView>('hosts')
   const [editingSessionId, setEditingSessionId] = React.useState<string | null>(null)
   const [editName, setEditName] = React.useState('')
+  const [runs, setRuns] = React.useState<AgentRun[]>([])
+  const [memories, setMemories] = React.useState<MemoryEntry[]>([])
+  const [tunnels, setTunnels] = React.useState<Tunnel[]>([])
+  const [memoryDrafts, setMemoryDrafts] = React.useState<Record<string, string>>({})
+
+  const hostIds = React.useMemo(() => new Set(hosts.map((host) => host.id)), [hosts])
+  const hostsById = React.useMemo(
+    () => new Map(hosts.map((host) => [host.id, host] as const)),
+    [hosts]
+  )
+
+  const refreshWorkspace = React.useCallback(async (): Promise<void> => {
+    const tasks = await window.api.getTasks(topicId)
+    const recentTasks = [...tasks].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8)
+    const runLists = await Promise.all(
+      recentTasks.map((task) => window.api.getAgentRunsByTask(task.id))
+    )
+    const memoryLists = await Promise.all([
+      window.api.getMemories({ topicId, includeDisabled: true }),
+      ...hosts.map((host) => window.api.getMemories({ hostId: host.id, includeDisabled: true }))
+    ])
+    const allTunnels = await window.api.pfList()
+    const uniqueMemories = Array.from(
+      new Map(memoryLists.flat().map((memory) => [memory.id, memory] as const)).values()
+    )
+
+    setRuns(runLists.flat().sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8))
+    setMemories(uniqueMemories.sort((a, b) => b.importance - a.importance).slice(0, 10))
+    setMemoryDrafts((prev) => {
+      const next = { ...prev }
+      for (const memory of uniqueMemories) {
+        if (next[memory.id] === undefined) next[memory.id] = memory.content
+      }
+      return next
+    })
+    setTunnels(allTunnels.filter((tunnel) => hostIds.has(tunnel.hostId)))
+  }, [hostIds, hosts, topicId])
+
+  React.useEffect(() => {
+    void refreshWorkspace()
+    const unlistenRunCreated = window.api.onAgentRunCreated((run) => {
+      if (run.topicId === topicId) void refreshWorkspace()
+    })
+    const unlistenRunUpdated = window.api.onAgentRunUpdated((run) => {
+      if (run.topicId === topicId) void refreshWorkspace()
+    })
+    const interval = window.setInterval(() => void refreshWorkspace(), 10000)
+    return () => {
+      unlistenRunCreated()
+      unlistenRunUpdated()
+      window.clearInterval(interval)
+    }
+  }, [refreshWorkspace, topicId])
 
   const startEditing = (session: TerminalSession): void => {
     setEditingSessionId(session.id)
@@ -57,200 +169,632 @@ export function TopicHub({
     setEditingSessionId(null)
   }
 
+  const updateMemory = async (
+    memory: MemoryEntry,
+    updates: Parameters<typeof window.api.updateMemory>[1]
+  ): Promise<void> => {
+    await window.api.updateMemory(memory.id, updates)
+    void refreshWorkspace()
+  }
+
+  const deleteMemory = async (memory: MemoryEntry): Promise<void> => {
+    const ok = await confirm({
+      title: '删除记忆',
+      message: '确定删除这条记忆？',
+      confirmText: '删除',
+      variant: 'danger'
+    })
+    if (!ok) return
+    await window.api.deleteMemory(memory.id)
+    void refreshWorkspace()
+  }
+
   return (
-    <div className="glass-sidebar hidden h-full w-64 shrink-0 flex-col border-y-0 border-r-0 lg:flex">
-      <div className="flex items-center justify-between border-b border-white/55 bg-white/35 px-4 py-3 backdrop-blur-2xl">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
-          <Server size={13} className="text-accent" />
-          主机枢纽
-        </h3>
-        <IconButton aria-label="管理话题主机" onClick={onAddHost} className="h-7 w-7">
-          <Plus size={14} />
-        </IconButton>
+    <div className="glass-sidebar hidden h-full w-72 shrink-0 flex-col border-y-0 border-r-0 lg:flex">
+      <div className="border-b border-white/55 bg-white/35 px-4 py-3 backdrop-blur-2xl">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
+            <Server size={13} className="text-accent" />
+            作战中心
+          </h3>
+          <IconButton aria-label="管理话题主机" onClick={onAddHost} className="h-7 w-7">
+            <Plus size={14} />
+          </IconButton>
+        </div>
+        <div className="mt-3 grid grid-cols-4 gap-1.5 text-center">
+          <Metric label="主机" value={hosts.length} />
+          <Metric label="终端" value={sessions.length} />
+          <Metric label="Run" value={runs.length} />
+          <Metric label="转发" value={tunnels.length} />
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {hosts.length === 0 ? (
-          <div className="p-8 text-center">
-            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/65 text-muted-foreground">
-              <Shield size={18} />
-            </div>
-            <p className="text-xs font-medium leading-relaxed text-muted-foreground">
-              暂无主机。点击上方 + 号加入主机。
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-4 p-3">
-            {hosts.map((host) => {
-              const hostSessions = sessions.filter((s) => s.hostId === host.id)
+      <Tabs
+        value={view}
+        onValueChange={(next) => setView(next as WorkspaceView)}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <div className="border-b border-white/55 bg-white/25 px-3 py-2">
+          <TabsList className="grid h-9 w-full grid-cols-4 rounded-lg">
+            <TabsTrigger value="hosts" className="h-7 px-1 text-xs">
+              <Server size={12} />
+              主机
+            </TabsTrigger>
+            <TabsTrigger value="runs" className="h-7 px-1 text-xs">
+              <History size={12} />
+              Run
+            </TabsTrigger>
+            <TabsTrigger value="memory" className="h-7 px-1 text-xs">
+              <Brain size={12} />
+              记忆
+            </TabsTrigger>
+            <TabsTrigger value="tunnels" className="h-7 px-1 text-xs">
+              <Globe size={12} />
+              转发
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
-              return (
-                <div key={host.id} className="group/host">
-                  <div className="mb-2 flex items-center justify-between gap-2 px-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <div
-                        className={cn(
-                          'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
-                          host.id === 'local'
-                            ? 'bg-success-soft text-success'
-                            : 'bg-accent-soft text-accent'
-                        )}
-                      >
-                        {host.id === 'local' ? (
-                          <Monitor size={12} />
-                        ) : (
-                          host.alias.slice(0, 1).toUpperCase()
-                        )}
-                      </div>
-                      <span className="truncate text-xs font-bold text-foreground">
-                        {host.alias}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1 opacity-100 transition-opacity">
-                      <IconButton
-                        aria-label={`为 ${host.alias} 开启新终端`}
-                        onClick={() => onCreateTerminal(host.id)}
-                        className="h-6 w-6 text-success"
-                      >
-                        <PlusCircle size={12} />
-                      </IconButton>
-                      <IconButton
-                        aria-label={`从话题中移除 ${host.alias}`}
-                        onClick={async () => {
-                          const ok = await confirm({
-                            title: '移除主机',
-                            message: `确定从话题中移除主机"${host.alias}"？`,
-                            confirmText: '移除',
-                            variant: 'danger'
-                          })
-                          if (!ok) return
-                          onRemoveHost(host.id)
-                        }}
-                        className="h-6 w-6 text-danger"
-                      >
-                        <Trash2 size={12} />
-                      </IconButton>
-                    </div>
-                  </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <TabsContent value="hosts" className="mt-0">
+            <HostsPane
+              hosts={hosts}
+              sessions={sessions}
+              focusedSessionId={focusedSessionId}
+              editingSessionId={editingSessionId}
+              editName={editName}
+              onEditName={setEditName}
+              onStartEditing={startEditing}
+              onSaveEdit={saveEdit}
+              onAddHost={onAddHost}
+              onRemoveHost={onRemoveHost}
+              onCreateTerminal={onCreateTerminal}
+              onCloseTerminal={onCloseTerminal}
+              onTogglePin={onTogglePin}
+              onFocusSession={onFocusSession}
+              onOpenFileBrowser={onOpenFileBrowser}
+              onOpenPortForward={onOpenPortForward}
+              confirm={confirm}
+            />
+          </TabsContent>
 
-                  <div className="ml-3 space-y-1 border-l border-white/70 pl-3">
-                    {hostSessions.length === 0 ? (
-                      <Button
-                        onClick={() => onCreateTerminal(host.id)}
-                        variant="ghost"
-                        size="sm"
-                        className="w-full justify-start border border-dashed border-border text-xs text-muted-foreground"
-                      >
-                        <Plus size={12} /> 初始化终端
-                      </Button>
-                    ) : (
-                      hostSessions.map((session) => {
-                        const focused = focusedSessionId === session.id
-                        return (
-                          <div
-                            key={session.id}
-                            className={cn(
-                              'group/session relative flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors',
-                              focused
-                                ? 'border-white/65 bg-black/5 text-foreground shadow-sm'
-                                : 'border-white/65 bg-white/55 text-muted-foreground hover:border-accent/30 hover:bg-accent-soft/45'
-                            )}
-                            onClick={() => onFocusSession(session.id)}
-                          >
-                            <Terminal
-                              size={11}
-                              className={focused ? 'text-accent' : 'text-muted-foreground'}
-                            />
+          <TabsContent value="runs" className="mt-0">
+            <RunsPane runs={runs} onOpenRunDetail={onOpenRunDetail} />
+          </TabsContent>
 
-                            {editingSessionId === session.id ? (
-                              <input
-                                autoFocus
-                                className="w-full bg-transparent text-xs font-semibold outline-none"
-                                value={editName}
-                                onChange={(e) => setEditName(e.target.value)}
-                                onBlur={() => saveEdit(session.id)}
-                                onKeyDown={(e) => e.key === 'Enter' && saveEdit(session.id)}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            ) : (
-                              <span className="min-w-0 flex-1 truncate text-xs font-semibold leading-none">
-                                {session.name || '终端'}
-                              </span>
-                            )}
+          <TabsContent value="memory" className="mt-0">
+            <MemoryPane
+              memories={memories}
+              drafts={memoryDrafts}
+              onDraft={(id, content) =>
+                setMemoryDrafts((prev) => ({ ...prev, [id]: content }))
+              }
+              onUpdate={updateMemory}
+              onDelete={deleteMemory}
+            />
+          </TabsContent>
 
-                            <div
-                              className={cn(
-                                'flex items-center gap-0.5',
-                                focused
-                                  ? 'opacity-100'
-                                  : 'opacity-0 group-hover/session:opacity-100'
-                              )}
-                            >
-                              {editingSessionId !== session.id && (
-                                <button
-                                  aria-label="重命名终端"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    startEditing(session)
-                                  }}
-                                  className={cn(
-                                    'rounded p-0.5',
-                                    focused ? 'hover:bg-white/60' : 'hover:bg-border'
-                                  )}
-                                >
-                                  <Edit3 size={10} />
-                                </button>
-                              )}
-                              <button
-                                aria-label={session.isPinned ? '从前台卸载' : '调度至前台'}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  onTogglePin(session.id, !session.isPinned)
-                                }}
-                                className={cn(
-                                  'rounded p-0.5',
-                                  focused ? 'hover:bg-white/60' : 'hover:bg-border'
-                                )}
-                              >
-                                <Pin size={10} fill={session.isPinned ? 'currentColor' : 'none'} />
-                              </button>
-                              <button
-                                aria-label="关闭终端"
-                                onClick={async (e) => {
-                                  e.stopPropagation()
-                                  const ok = await confirm({
-                                    title: '关闭终端',
-                                    message: '确定关闭此终端？',
-                                    confirmText: '关闭',
-                                    variant: 'danger'
-                                  })
-                                  if (!ok) return
-                                  onCloseTerminal(session.id)
-                                }}
-                                className="rounded p-0.5 text-danger hover:bg-danger-soft"
-                              >
-                                <X size={10} />
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+          <TabsContent value="tunnels" className="mt-0">
+            <TunnelsPane
+              hosts={hosts}
+              hostsById={hostsById}
+              tunnels={tunnels}
+              onOpenPortForward={onOpenPortForward}
+            />
+          </TabsContent>
+        </div>
+      </Tabs>
 
       <div className="border-t border-white/55 bg-white/35 p-3 backdrop-blur-2xl">
         <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
           <span>TOPIC-{topicId.slice(0, 4)}</span>
-          <Badge variant="neutral">隔离环境</Badge>
+          <Badge variant="neutral">串行同主机</Badge>
         </div>
       </div>
       {ConfirmDialogComponent}
+    </div>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: number }): React.ReactElement {
+  return (
+    <div className="rounded-md border border-white/60 bg-white/45 px-1.5 py-1">
+      <div className="text-sm font-bold text-foreground">{value}</div>
+      <div className="text-[10px] font-semibold text-muted-foreground">{label}</div>
+    </div>
+  )
+}
+
+function HostsPane({
+  hosts,
+  sessions,
+  focusedSessionId,
+  editingSessionId,
+  editName,
+  onEditName,
+  onStartEditing,
+  onSaveEdit,
+  onAddHost,
+  onRemoveHost,
+  onCreateTerminal,
+  onCloseTerminal,
+  onTogglePin,
+  onFocusSession,
+  onOpenFileBrowser,
+  onOpenPortForward,
+  confirm
+}: {
+  hosts: Host[]
+  sessions: TerminalSession[]
+  focusedSessionId: string | null
+  editingSessionId: string | null
+  editName: string
+  onEditName: (value: string) => void
+  onStartEditing: (session: TerminalSession) => void
+  onSaveEdit: (sessionId: string) => void
+  onAddHost: () => void
+  onRemoveHost: (hostId: string) => void
+  onCreateTerminal: (hostId: string) => void
+  onCloseTerminal: (sessionId: string) => void
+  onTogglePin: (sessionId: string, isPinned: boolean) => void
+  onFocusSession: (sessionId: string) => void
+  onOpenFileBrowser?: (host: Host) => void
+  onOpenPortForward?: (host: Host) => void
+  confirm: ReturnType<typeof useConfirm>['confirm']
+}): React.ReactElement {
+  if (hosts.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-white/45 p-4 text-center">
+        <p className="text-xs font-medium leading-relaxed text-muted-foreground">暂无主机。</p>
+        <Button onClick={onAddHost} variant="secondary" size="sm" className="mt-3">
+          <Plus size={12} />
+          添加主机
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {hosts.map((host) => {
+        const hostSessions = sessions.filter((session) => session.hostId === host.id)
+
+        return (
+          <div key={host.id} className="group/host">
+            <div className="mb-2 flex items-center justify-between gap-2 px-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <div
+                  className={cn(
+                    'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
+                    host.id === 'local'
+                      ? 'bg-success-soft text-success'
+                      : 'bg-accent-soft text-accent'
+                  )}
+                >
+                  {host.id === 'local' ? <Monitor size={12} /> : host.alias.slice(0, 1).toUpperCase()}
+                </div>
+                <span className="truncate text-xs font-bold text-foreground">{host.alias}</span>
+              </div>
+              <div className="flex items-center gap-1 opacity-100 transition-opacity">
+                <IconButton
+                  aria-label={`为 ${host.alias} 开启新终端`}
+                  onClick={() => onCreateTerminal(host.id)}
+                  className="h-6 w-6 text-success"
+                >
+                  <PlusCircle size={12} />
+                </IconButton>
+                {onOpenFileBrowser && (
+                  <IconButton
+                    aria-label={`打开 ${host.alias} 文件管理`}
+                    onClick={() => onOpenFileBrowser(host)}
+                    className="h-6 w-6"
+                  >
+                    <Folder size={12} />
+                  </IconButton>
+                )}
+                {onOpenPortForward && host.id !== 'local' && (
+                  <IconButton
+                    aria-label={`打开 ${host.alias} 端口转发`}
+                    onClick={() => onOpenPortForward(host)}
+                    className="h-6 w-6"
+                  >
+                    <Globe size={12} />
+                  </IconButton>
+                )}
+                <IconButton
+                  aria-label={`从话题中移除 ${host.alias}`}
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: '移除主机',
+                      message: `确定从话题中移除主机"${host.alias}"？`,
+                      confirmText: '移除',
+                      variant: 'danger'
+                    })
+                    if (!ok) return
+                    onRemoveHost(host.id)
+                  }}
+                  className="h-6 w-6 text-danger"
+                >
+                  <Trash2 size={12} />
+                </IconButton>
+              </div>
+            </div>
+
+            <div className="ml-3 space-y-1 border-l border-white/70 pl-3">
+              {hostSessions.length === 0 ? (
+                <Button
+                  onClick={() => onCreateTerminal(host.id)}
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start border border-dashed border-border text-xs text-muted-foreground"
+                >
+                  <Plus size={12} /> 初始化终端
+                </Button>
+              ) : (
+                hostSessions.map((session) => {
+                  const focused = focusedSessionId === session.id
+                  return (
+                    <div
+                      key={session.id}
+                      className={cn(
+                        'group/session relative flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors',
+                        focused
+                          ? 'border-white/65 bg-black/5 text-foreground shadow-sm'
+                          : 'border-white/65 bg-white/55 text-muted-foreground hover:border-accent/30 hover:bg-accent-soft/45'
+                      )}
+                      onClick={() => onFocusSession(session.id)}
+                    >
+                      <Terminal
+                        size={11}
+                        className={focused ? 'text-accent' : 'text-muted-foreground'}
+                      />
+
+                      {editingSessionId === session.id ? (
+                        <input
+                          autoFocus
+                          className="w-full bg-transparent text-xs font-semibold outline-none"
+                          value={editName}
+                          onChange={(event) => onEditName(event.target.value)}
+                          onBlur={() => onSaveEdit(session.id)}
+                          onKeyDown={(event) => event.key === 'Enter' && onSaveEdit(session.id)}
+                          onClick={(event) => event.stopPropagation()}
+                        />
+                      ) : (
+                        <span className="min-w-0 flex-1 truncate text-xs font-semibold leading-none">
+                          {session.name || '终端'}
+                        </span>
+                      )}
+
+                      <div
+                        className={cn(
+                          'flex items-center gap-0.5',
+                          focused ? 'opacity-100' : 'opacity-0 group-hover/session:opacity-100'
+                        )}
+                      >
+                        {editingSessionId !== session.id && (
+                          <button
+                            aria-label="重命名终端"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onStartEditing(session)
+                            }}
+                            className={cn(
+                              'rounded p-0.5',
+                              focused ? 'hover:bg-white/60' : 'hover:bg-border'
+                            )}
+                          >
+                            <FileText size={10} />
+                          </button>
+                        )}
+                        <button
+                          aria-label={session.isPinned ? '从前台卸载' : '调度至前台'}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onTogglePin(session.id, !session.isPinned)
+                          }}
+                          className={cn(
+                            'rounded p-0.5',
+                            focused ? 'hover:bg-white/60' : 'hover:bg-border'
+                          )}
+                        >
+                          <Pin size={10} fill={session.isPinned ? 'currentColor' : 'none'} />
+                        </button>
+                        <button
+                          aria-label="关闭终端"
+                          onClick={async (event) => {
+                            event.stopPropagation()
+                            const ok = await confirm({
+                              title: '关闭终端',
+                              message: '确定关闭此终端？',
+                              confirmText: '关闭',
+                              variant: 'danger'
+                            })
+                            if (!ok) return
+                            onCloseTerminal(session.id)
+                          }}
+                          className="rounded p-0.5 text-danger hover:bg-danger-soft"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function RunsPane({
+  runs,
+  onOpenRunDetail
+}: {
+  runs: AgentRun[]
+  onOpenRunDetail?: (runId: string) => void
+}): React.ReactElement {
+  if (runs.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-white/45 p-4 text-center text-xs font-semibold text-muted-foreground">
+        暂无 Run。
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {runs.map((run) => (
+        <button
+          key={run.id}
+          onClick={() => onOpenRunDetail?.(run.id)}
+          className="w-full rounded-lg border border-white/65 bg-white/55 px-2.5 py-2 text-left transition hover:border-accent/25 hover:bg-white/75"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-xs font-bold text-foreground">{run.goal}</span>
+            <Badge variant={statusTone(run.status)}>{runStatusLabel(run.status)}</Badge>
+          </div>
+          <div className="mt-1 truncate text-[11px] font-semibold text-muted-foreground">
+            {run.agentName} / {new Date(run.updatedAt).toLocaleTimeString('zh-CN')}
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function MemoryPane({
+  memories,
+  drafts,
+  onDraft,
+  onUpdate,
+  onDelete
+}: {
+  memories: MemoryEntry[]
+  drafts: Record<string, string>
+  onDraft: (id: string, content: string) => void
+  onUpdate: (
+    memory: MemoryEntry,
+    updates: Parameters<typeof window.api.updateMemory>[1]
+  ) => Promise<void>
+  onDelete: (memory: MemoryEntry) => Promise<void>
+}): React.ReactElement {
+  const [scopeFilter, setScopeFilter] = React.useState<'all' | MemoryEntry['scope']>('all')
+  const [editingId, setEditingId] = React.useState<string | null>(null)
+  const visibleMemories = React.useMemo(
+    () =>
+      scopeFilter === 'all'
+        ? memories
+        : memories.filter((memory) => memory.scope === scopeFilter),
+    [memories, scopeFilter]
+  )
+
+  if (memories.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-white/45 p-4 text-center text-xs font-semibold text-muted-foreground">
+        暂无可见记忆。
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-1 rounded-lg border border-white/60 bg-white/40 p-1">
+        {[
+          { value: 'all' as const, label: '全部' },
+          { value: 'global' as const, label: '全局' },
+          { value: 'topic' as const, label: 'Topic' },
+          { value: 'host' as const, label: '主机' }
+        ].map((item) => (
+          <button
+            key={item.value}
+            onClick={() => setScopeFilter(item.value)}
+            className={cn(
+              'h-7 flex-1 rounded-md text-xs font-bold transition-colors',
+              scopeFilter === item.value
+                ? 'bg-white text-accent shadow-sm'
+                : 'text-muted-foreground hover:bg-white/65 hover:text-foreground'
+            )}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {visibleMemories.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border bg-white/45 p-4 text-center text-xs font-semibold text-muted-foreground">
+          当前范围暂无记忆。
+        </div>
+      ) : (
+        visibleMemories.map((memory) => {
+          const editing = editingId === memory.id
+          const draft = drafts[memory.id] ?? memory.content
+          return (
+            <article
+              key={memory.id}
+              className={cn(
+                'rounded-lg border px-3 py-3 transition-colors',
+                memory.disabled
+                  ? 'border-white/55 bg-white/35 opacity-65'
+                  : 'border-white/65 bg-white/60'
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <Badge variant="neutral">{memoryScopeLabel(memory.scope)}</Badge>
+                  <Badge variant="neutral">{typeLabel(memory.type)}</Badge>
+                  {memory.disabled && <Badge variant="warning">已禁用</Badge>}
+                </div>
+                <span className="shrink-0 text-xs font-bold text-muted-foreground">
+                  {Math.round((memory.confidence ?? 0.7) * 100)}%
+                </span>
+              </div>
+
+              {editing ? (
+                <textarea
+                  value={draft}
+                  onChange={(event) => onDraft(memory.id, event.target.value)}
+                  className="mt-3 min-h-32 w-full resize-y rounded-lg border border-accent/25 bg-white/80 px-3 py-2 text-sm leading-6 text-foreground outline-none focus:border-accent/45"
+                />
+              ) : (
+                <p className="mt-3 whitespace-pre-wrap break-words text-[13px] leading-6 text-foreground">
+                  {memory.content}
+                </p>
+              )}
+
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-white/55 pt-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+                  <span>重要性 {memory.importance}</span>
+                  <IconButton
+                    aria-label="降低重要性"
+                    className="h-6 w-6"
+                    onClick={() =>
+                      void onUpdate(memory, { importance: Math.max(0, memory.importance - 1) })
+                    }
+                  >
+                    <Minus size={11} />
+                  </IconButton>
+                  <IconButton
+                    aria-label="提升重要性"
+                    className="h-6 w-6"
+                    onClick={() =>
+                      void onUpdate(memory, { importance: Math.min(10, memory.importance + 1) })
+                    }
+                  >
+                    <Plus size={11} />
+                  </IconButton>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  {editing ? (
+                    <IconButton
+                      aria-label="保存记忆"
+                      className="h-7 w-7 text-success"
+                      onClick={() => {
+                        void onUpdate(memory, { content: draft })
+                        setEditingId(null)
+                      }}
+                    >
+                      <Save size={12} />
+                    </IconButton>
+                  ) : (
+                    <IconButton
+                      aria-label="编辑记忆"
+                      className="h-7 w-7"
+                      onClick={() => setEditingId(memory.id)}
+                    >
+                      <Edit3 size={12} />
+                    </IconButton>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => void onUpdate(memory, { disabled: !memory.disabled })}
+                  >
+                    {memory.disabled ? '启用' : '禁用'}
+                  </Button>
+                  <IconButton
+                    aria-label="删除记忆"
+                    className="h-7 w-7 text-danger"
+                    onClick={() => void onDelete(memory)}
+                  >
+                    <Trash2 size={12} />
+                  </IconButton>
+                </div>
+              </div>
+            </article>
+          )
+        })
+      )}
+    </div>
+  )
+}
+
+function TunnelsPane({
+  hosts,
+  hostsById,
+  tunnels,
+  onOpenPortForward
+}: {
+  hosts: Host[]
+  hostsById: Map<string, Host>
+  tunnels: Tunnel[]
+  onOpenPortForward?: (host: Host) => void
+}): React.ReactElement {
+  return (
+    <div className="space-y-3">
+      {onOpenPortForward && (
+        <div className="grid grid-cols-1 gap-1.5">
+          {hosts
+            .filter((host) => host.id !== 'local')
+            .map((host) => (
+              <Button
+                key={host.id}
+                onClick={() => onOpenPortForward(host)}
+                variant="secondary"
+                size="sm"
+                className="justify-start"
+              >
+                <Globe size={12} />
+                {host.alias}
+              </Button>
+            ))}
+        </div>
+      )}
+
+      {tunnels.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border bg-white/45 p-4 text-center text-xs font-semibold text-muted-foreground">
+          暂无活跃 tunnel。
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {tunnels.map((tunnel) => {
+            const host = hostsById.get(tunnel.hostId)
+            return (
+              <div key={tunnel.id} className="rounded-lg border border-white/65 bg-white/55 px-2.5 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-xs font-bold text-foreground">
+                    {host?.alias || tunnel.hostId}
+                  </span>
+                  <IconButton
+                    aria-label="打开 localhost 地址"
+                    className="h-6 w-6"
+                    onClick={() => window.open(`http://127.0.0.1:${tunnel.localPort}`, '_blank')}
+                  >
+                    <ExternalLink size={11} />
+                  </IconButton>
+                </div>
+                <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+                  localhost:{tunnel.localPort} {'->'} {tunnel.remoteHost}:{tunnel.remotePort}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

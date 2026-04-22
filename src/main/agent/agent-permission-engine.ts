@@ -3,7 +3,7 @@ import type { AgentConfig } from './agent-config'
 import type { AgentContext, AuthResponse } from '../AgentRunner'
 import { agentRunStore } from './agent-run-store'
 import { approvalDB } from '../db'
-import type { AgentPart, ApprovalRiskLevel } from '../../shared/types'
+import type { AgentPart, ApprovalRiskLevel, PolicyRiskCategory } from '../../shared/types'
 
 export interface AgentPermissionRequest {
   permission: string
@@ -36,7 +36,8 @@ export class AgentPermissionEngine {
       const response = await this.context.requestAuthorization(
         request.pattern,
         riskLevel,
-        request.reason ?? `Permission required: ${request.permission}`
+        request.reason ?? `Permission required: ${request.permission}`,
+        request.metadata
       )
 
       approvalDB.createApproval({
@@ -45,6 +46,15 @@ export class AgentPermissionEngine {
         stepId: this.context.stepId,
         command: request.pattern,
         riskLevel,
+        riskCategory:
+          typeof request.metadata?.riskCategory === 'string'
+            ? (request.metadata.riskCategory as PolicyRiskCategory)
+            : undefined,
+        commandPattern:
+          typeof request.metadata?.commandPattern === 'string'
+            ? request.metadata.commandPattern
+            : undefined,
+        requiresVerification: request.metadata?.requiresVerification === true,
         reason: request.reason,
         status: response.approved ? 'approved' : 'rejected',
         createdAt: Date.now(),

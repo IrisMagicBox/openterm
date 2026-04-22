@@ -130,6 +130,9 @@ export interface ApprovalRow {
   stepId: string | null
   command: string
   riskLevel: string
+  riskCategory: string | null
+  commandPattern: string | null
+  requiresVerification: number
   reason: string | null
   status: string
   createdAt: number
@@ -194,10 +197,15 @@ export interface TerminalIORow {
 export interface MemoryRow {
   id: string
   type: string
+  scope: string | null
   content: string
   hostId: string | null
   topicId: string | null
+  sourceTaskId: string | null
+  confidence: number | null
   importance: number
+  lastUsedAt: number | null
+  disabled: number
   timestamp: number
 }
 

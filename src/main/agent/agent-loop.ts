@@ -68,10 +68,11 @@ export class AgentLoop {
       this.legacyEvents.thinking()
       this.legacyEvents.status(turnCount > 1 ? 'verifying' : 'thinking')
 
+      const allowFinalTurnTools = this.toolExecutor.hasPendingVerification()
       const streamResult = await this.streamCollector.streamWithRetry(
         currentMessages,
-        this.toolExecutor.getTools(turnCount, maxTurns),
-        turnCount === maxTurns ? 'none' : 'auto'
+        this.toolExecutor.getTools(turnCount, maxTurns, allowFinalTurnTools),
+        turnCount === maxTurns && !allowFinalTurnTools ? 'none' : 'auto'
       )
 
       turnMessages.push({
@@ -84,6 +85,18 @@ export class AgentLoop {
       await this.compaction.maybeAutoCompact(workingHistory, turnMessages)
 
       if (streamResult.toolCalls.length === 0) {
+        if (this.toolExecutor.hasPendingVerification()) {
+          if (turnCount >= maxTurns) {
+            return this.lifecycle.failMaxTurns(maxTurns)
+          }
+
+          turnMessages.push({
+            role: 'user',
+            content: this.toolExecutor.getVerificationObservation()
+          })
+          continue
+        }
+
         return this.lifecycle.finish(
           run,
           streamResult.content,

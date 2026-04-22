@@ -150,8 +150,8 @@ export class AgentApplicationService {
         const session = await this.sessions.ensureSession(topicId, hostId, hostAlias, name, true)
         return session.id
       },
-      requestAuthorization: (command, riskLevel, reason) =>
-        this.approvals.requestAuthorization(command, riskLevel, reason),
+      requestAuthorization: (command, riskLevel, reason, metadata) =>
+        this.approvals.requestAuthorization(command, riskLevel, reason, metadata),
       notifyStep: (msg) => {
         this.webContents?.send('agent:step', msg)
       },

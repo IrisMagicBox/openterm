@@ -1,4 +1,4 @@
-import { Server, Trash2, Terminal as TerminalIcon, Folder, Zap } from 'lucide-react'
+import { Server, Trash2, Terminal as TerminalIcon, Folder, Zap, Globe } from 'lucide-react'
 import type { Host } from '../../../../shared/types'
 import { Badge, Button, IconButton, Surface } from '../ui'
 
@@ -8,6 +8,7 @@ interface HostCardProps {
   onDelete: () => void
   onAgentClick: () => void
   onFileBrowser: () => void
+  onPortForward: () => void
 }
 
 export function HostCard({
@@ -15,7 +16,8 @@ export function HostCard({
   onConnect,
   onDelete,
   onAgentClick,
-  onFileBrowser
+  onFileBrowser,
+  onPortForward
 }: HostCardProps): React.ReactElement {
   return (
     <Surface className="group flex min-h-[160px] flex-col gap-4 overflow-hidden transition-all hover:-translate-y-0.5 hover:border-accent/30 hover:bg-white/80">
@@ -59,6 +61,9 @@ export function HostCard({
         </Button>
         <IconButton aria-label={`打开 ${host.alias} 文件管理`} onClick={onFileBrowser}>
           <Folder size={13} />
+        </IconButton>
+        <IconButton aria-label={`打开 ${host.alias} 端口转发`} onClick={onPortForward}>
+          <Globe size={13} />
         </IconButton>
         <Button onClick={onAgentClick} variant="secondary" size="sm" className="flex-1">
           <Zap size={13} /> 助手

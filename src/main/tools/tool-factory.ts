@@ -29,7 +29,8 @@ export namespace Tool {
     requestAuthorization: (
       command: string,
       riskLevel: 'low' | 'medium' | 'high' | 'critical',
-      reason: string
+      reason: string,
+      metadata?: Record<string, unknown>
     ) => Promise<{ approved: boolean; alwaysAllow: boolean }>
     notifyStep: (message: Message) => void
     metadata: (input: { title?: string; metadata?: Record<string, unknown> }) => void

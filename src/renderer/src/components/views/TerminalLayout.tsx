@@ -10,6 +10,11 @@ import { useTerminalPaneManager, TerminalTab } from '../../hooks/useTerminalPane
 import { useConfirm } from '../../hooks/useConfirm'
 import { useFileTransfer } from '../../hooks/useFileTransfer'
 import { FileTransferToast } from '../FileTransferToast'
+import {
+  paneDropPreviewClass,
+  resolvePaneDropEdgeFromPoint,
+  type PaneDropEdge
+} from '../../lib/pane-drop'
 
 interface TerminalLayoutProps {
   terminalTabs: TerminalTab[]
@@ -54,7 +59,7 @@ export function TerminalLayout({
   const { transfers, startTransfer, removeTransfer } = useFileTransfer()
   const [showTerminalList, setShowTerminalList] = useState(false)
   const [dragOverPaneId, setDragOverPaneId] = useState<string | null>(null)
-  const [dragOverEdge, setDragOverEdge] = useState<'top' | 'bottom' | 'left' | 'right' | null>(null)
+  const [dragOverEdge, setDragOverEdge] = useState<PaneDropEdge | null>(null)
 
   const syncedSessionIds = useRef<Set<string>>(new Set())
   const openTerminalRef = useRef(paneManager.openTerminal)
@@ -210,18 +215,7 @@ export function TerminalLayout({
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-    const w = rect.width
-    const h = rect.height
-    const threshold = 40
-
-    if (y < threshold) setDragOverEdge('top')
-    else if (y > h - threshold) setDragOverEdge('bottom')
-    else if (x < threshold) setDragOverEdge('left')
-    else if (x > w - threshold) setDragOverEdge('right')
-    else setDragOverEdge(null)
-
+    setDragOverEdge(resolvePaneDropEdgeFromPoint(e.clientX, e.clientY, rect))
     setDragOverPaneId(paneId)
   }, [])
 
@@ -264,8 +258,10 @@ export function TerminalLayout({
 
       return (
         <div
-          className={`flex flex-col h-full bg-workspace transition-colors ${
-            paneManager.focusedLeafId === leaf.id ? 'ring-1 ring-inset ring-accent/70' : ''
+          className={`relative flex h-full flex-col overflow-hidden rounded-xl border bg-workspace shadow-sm transition-colors ${
+            paneManager.focusedLeafId === leaf.id
+              ? 'border-accent/35 ring-2 ring-accent/15'
+              : 'border-workspace-border/75'
           }`}
           onMouseDown={() => paneManager.setFocusedLeafId(leaf.id)}
           onDragOver={(e) => handlePaneDragOver(e, leaf.id)}
@@ -273,14 +269,14 @@ export function TerminalLayout({
           onDrop={(e) => handlePaneDrop(e, leaf.id)}
         >
           {showPaneTitle && (
-            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted px-1 pt-0.5 no-scrollbar">
+            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted/90 px-1.5 pt-1 no-scrollbar">
               {tabs.map((tab) => (
                 <div
                   key={tab.sessionId}
                   draggable
                   onDragStart={(e) => handleTabDragStart(e, tab.sessionId)}
                   onClick={() => focusTerminalTab(tab.sessionId)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold cursor-grab transition-colors border-b-2 whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 rounded-t-lg px-3 py-1.5 text-xs font-bold cursor-grab transition-colors border-b-2 whitespace-nowrap ${
                     leaf.activeTabId === tab.sessionId
                       ? 'text-workspace-foreground border-accent bg-workspace'
                       : 'text-workspace-muted-foreground border-transparent hover:text-workspace-foreground hover:bg-workspace/70'
@@ -304,19 +300,11 @@ export function TerminalLayout({
 
           {dragOverPaneId === leaf.id && dragOverEdge && (
             <div
-              className={`absolute z-20 border-2 border-accent bg-accent/20 pointer-events-none ${
-                dragOverEdge === 'top'
-                  ? 'top-0 left-0 right-0 h-10'
-                  : dragOverEdge === 'bottom'
-                    ? 'bottom-0 left-0 right-0 h-10'
-                    : dragOverEdge === 'left'
-                      ? 'top-0 left-0 bottom-0 w-10'
-                      : 'top-0 right-0 bottom-0 w-10'
-              }`}
+              className={`absolute z-20 pointer-events-none border-2 border-accent bg-accent/20 ${paneDropPreviewClass(dragOverEdge)}`}
             />
           )}
 
-          <div className="flex-1 relative">
+          <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
             {tabs.map((tab) => (
               <div
                 key={tab.sessionId}
@@ -372,8 +360,8 @@ export function TerminalLayout({
     .map((tab) => legacyTabs.find((legacyTab) => legacyTab.sessionId === tab.sessionId) ?? tab)
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-workspace">
-      <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="relative flex flex-1 gap-3 overflow-hidden bg-workspace-muted/45 p-3">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-workspace-border/75 bg-workspace shadow-sm">
         <div className="flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/85 backdrop-blur-2xl">
           <div className="h-11 px-5 flex items-center justify-between flex-shrink-0 drag text-workspace-foreground">
             <div className="flex items-center gap-3 no-drag">
@@ -466,9 +454,9 @@ export function TerminalLayout({
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col relative overflow-hidden">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-workspace-muted/35 p-3">
           {paneManager.isEmpty ? (
-            <div className="flex-1 flex items-center justify-center bg-workspace">
+            <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-workspace-border/80 bg-workspace">
               <div className="text-center">
                 <TerminalIcon size={40} className="text-workspace-border mx-auto mb-4" />
                 <p className="text-workspace-muted-foreground text-sm font-semibold">无活跃终端</p>
@@ -523,7 +511,7 @@ export function TerminalLayout({
       </div>
 
       {fileBrowserHostId && (
-        <div className="w-96 flex-shrink-0 border-l border-workspace-border bg-workspace">
+        <div className="w-96 flex-shrink-0 overflow-hidden rounded-2xl border border-workspace-border/75 bg-workspace shadow-sm">
           <FileBrowser
             hostId={fileBrowserHostId}
             hostAlias={fileBrowserHostAlias}

@@ -4,6 +4,7 @@ import {
   Circle,
   Command,
   Eye,
+  Globe,
   Grid2X2,
   ListTree,
   Loader2,
@@ -57,6 +58,7 @@ interface TerminalStageProps {
   onSetFollowAgent: (followAgent: boolean) => void
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
   onRevealTerminal: (sessionId: string, partId?: string) => void
+  onOpenPortForward?: (session: TerminalSession) => void
 }
 
 function statusTone(
@@ -130,7 +132,8 @@ function TerminalControls({
   onTogglePaused,
   onClose,
   onSetTerminalFontSize,
-  onOpenCommandPalette
+  onOpenCommandPalette,
+  onOpenPortForward
 }: {
   session: TerminalSession
   terminalFontSize: number
@@ -138,6 +141,7 @@ function TerminalControls({
   onClose: () => void
   onSetTerminalFontSize: (size: number) => void
   onOpenCommandPalette: () => void
+  onOpenPortForward?: () => void
 }): React.ReactElement {
   return (
     <div className="flex shrink-0 items-center gap-1.5">
@@ -174,6 +178,18 @@ function TerminalControls({
       >
         <Command size={13} />
       </IconButton>
+      {onOpenPortForward && session.hostId !== 'local' && (
+        <IconButton
+          aria-label="打开端口转发"
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpenPortForward()
+          }}
+          className="h-7 w-7"
+        >
+          <Globe size={13} />
+        </IconButton>
+      )}
       <IconButton
         aria-label={session.paused ? '恢复 Agent 控制' : '暂停 Agent，人工接管'}
         onClick={(event) => {
@@ -293,6 +309,7 @@ function StageTerminalPane({
   onCloseWithConfirm,
   onSetTerminalFontSize,
   onOpenCommandPalette,
+  onOpenPortForward,
   onFocusSession
 }: {
   session: TerminalSession | undefined
@@ -305,6 +322,7 @@ function StageTerminalPane({
   onCloseWithConfirm: (id: string) => void
   onSetTerminalFontSize: (size: number) => void
   onOpenCommandPalette: () => void
+  onOpenPortForward?: (session: TerminalSession) => void
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
 }): React.ReactElement {
   if (!session) {
@@ -351,6 +369,9 @@ function StageTerminalPane({
             onClose={() => onCloseWithConfirm(session.id)}
             onSetTerminalFontSize={onSetTerminalFontSize}
             onOpenCommandPalette={onOpenCommandPalette}
+            onOpenPortForward={
+              onOpenPortForward ? () => onOpenPortForward(session) : undefined
+            }
           />
         </div>
 
@@ -388,6 +409,7 @@ function GridMode({
   onCloseWithConfirm,
   onSetTerminalFontSize,
   onOpenCommandPalette,
+  onOpenPortForward,
   onFocusSession
 }: {
   sessions: TerminalSession[]
@@ -400,6 +422,7 @@ function GridMode({
   onCloseWithConfirm: (id: string) => void
   onSetTerminalFontSize: (size: number) => void
   onOpenCommandPalette: () => void
+  onOpenPortForward?: (session: TerminalSession) => void
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
 }): React.ReactElement {
   return (
@@ -444,6 +467,9 @@ function GridMode({
                   onFocusSession(session.id, { userInitiated: true })
                   onOpenCommandPalette()
                 }}
+                onOpenPortForward={
+                  onOpenPortForward ? () => onOpenPortForward(session) : undefined
+                }
               />
             </div>
             <div className="relative min-h-0 flex-1 bg-white">
@@ -484,7 +510,8 @@ function TimelineMode({
   onToggleAgentTerminalPaused,
   onCloseWithConfirm,
   onSetTerminalFontSize,
-  onOpenCommandPalette
+  onOpenCommandPalette,
+  onOpenPortForward
 }: {
   parts: AgentPart[]
   focusedPartId: string | null
@@ -500,6 +527,7 @@ function TimelineMode({
   onCloseWithConfirm: (id: string) => void
   onSetTerminalFontSize: (size: number) => void
   onOpenCommandPalette: () => void
+  onOpenPortForward?: (session: TerminalSession) => void
 }): React.ReactElement {
   const timelineParts = sortedParts(parts)
   const selectedPart =
@@ -600,6 +628,7 @@ function TimelineMode({
         onCloseWithConfirm={onCloseWithConfirm}
         onSetTerminalFontSize={onSetTerminalFontSize}
         onOpenCommandPalette={onOpenCommandPalette}
+        onOpenPortForward={onOpenPortForward}
         onFocusSession={onFocusSession}
       />
     </div>
@@ -630,7 +659,8 @@ export function TerminalStage({
   onSetMode,
   onSetFollowAgent,
   onFocusSession,
-  onRevealTerminal
+  onRevealTerminal,
+  onOpenPortForward
 }: TerminalStageProps): React.ReactElement {
   const { confirm, ConfirmDialogComponent } = useConfirm()
   const [highlightedSessionId, setHighlightedSessionId] = useState<string | null>(null)
@@ -778,6 +808,7 @@ export function TerminalStage({
               onCloseWithConfirm={closeWithConfirm}
               onSetTerminalFontSize={onSetTerminalFontSize}
               onOpenCommandPalette={onOpenCommandPalette}
+              onOpenPortForward={onOpenPortForward}
               onFocusSession={onFocusSession}
             />
           </>
@@ -795,6 +826,7 @@ export function TerminalStage({
             onCloseWithConfirm={closeWithConfirm}
             onSetTerminalFontSize={onSetTerminalFontSize}
             onOpenCommandPalette={onOpenCommandPalette}
+            onOpenPortForward={onOpenPortForward}
             onFocusSession={onFocusSession}
           />
         )}
@@ -815,6 +847,7 @@ export function TerminalStage({
             onCloseWithConfirm={closeWithConfirm}
             onSetTerminalFontSize={onSetTerminalFontSize}
             onOpenCommandPalette={onOpenCommandPalette}
+            onOpenPortForward={onOpenPortForward}
           />
         )}
       </div>

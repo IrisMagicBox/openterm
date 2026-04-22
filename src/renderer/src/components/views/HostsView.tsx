@@ -1,10 +1,12 @@
 import { Plus, Search, Server, Monitor } from 'lucide-react'
+import { useState } from 'react'
 import { HostCard } from '../hosts/HostCard'
 import { Host, Topic } from '../../../../shared/types'
 import { TerminalTab, View } from '../../types'
 import { LOCAL_HOST } from '../../constants'
 import { useConfirm } from '../../hooks/useConfirm'
-import { Button, IconButton, Input, PageHeader, Surface } from '../ui'
+import { PortForwardingPanel } from '../terminal/PortForwardingPanel'
+import { Button, Dialog, DialogContent, IconButton, Input, PageHeader, Surface } from '../ui'
 
 interface HostsViewProps {
   filteredHosts: Host[]
@@ -48,6 +50,7 @@ export function HostsView({
   onCreateLocalAgentTopic
 }: HostsViewProps): React.ReactElement {
   const { confirm, ConfirmDialogComponent } = useConfirm()
+  const [portForwardHost, setPortForwardHost] = useState<Host | null>(null)
 
   return (
     <div className="flex-1 overflow-y-auto bg-transparent">
@@ -180,11 +183,23 @@ export function HostsView({
                   setFileBrowserHostAlias(host.alias)
                   setActiveView('files')
                 }}
+                onPortForward={() => setPortForwardHost(host)}
               />
             ))}
           </div>
         )}
       </div>
+      {portForwardHost && (
+        <Dialog open onOpenChange={(open) => !open && setPortForwardHost(null)}>
+          <DialogContent className="h-[520px] max-w-2xl overflow-hidden p-0">
+            <PortForwardingPanel
+              hostId={portForwardHost.id}
+              hostAlias={portForwardHost.alias}
+              onClose={() => setPortForwardHost(null)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
       {ConfirmDialogComponent}
     </div>
   )

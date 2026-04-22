@@ -136,7 +136,10 @@ export class MemoryManager {
           content: entry.content,
           importance: entry.importance || 3,
           hostId: finalHostId,
-          topicId: task.topicId
+          topicId: finalHostId ? undefined : task.topicId,
+          scope: finalHostId ? 'host' : 'topic',
+          sourceTaskId: task.id,
+          confidence: typeof entry.confidence === 'number' ? entry.confidence : 0.7
         })
       }
 
@@ -157,21 +160,28 @@ export class MemoryManager {
     const hostId = topic?.hostIds[0]
 
     // 1. Topic-specific context (memories linked to this topic)
-    const topicMemories = topicId ? memoryDB.searchMemories(query, { topicId }) : []
+    const topicMemories = topicId
+      ? memoryDB.searchMemories(query, { topicId }).filter((m) => m.scope === 'topic')
+      : []
 
     // 2. Host-specific facts (memories linked to the primary host)
     const hostMemories = hostId
-      ? memoryDB.searchMemories('', { hostId }).filter((m) => m.type === 'host_fact')
+      ? memoryDB
+          .searchMemories('', { hostId })
+          .filter((m) => m.scope === 'host' && m.type === 'host_fact')
       : []
 
     // 3. Global habits and experiences (relevant to the query but not tied to a specific topic/host)
     const globalMemories = memoryDB
       .searchRelevantMemories(query)
-      .filter((m) => !m.topicId && !m.hostId)
+      .filter((m) => m.scope === 'global')
 
     if (topicMemories.length === 0 && hostMemories.length === 0 && globalMemories.length === 0) {
       return ''
     }
+
+    const usedMemoryIds = [...topicMemories, ...hostMemories, ...globalMemories].map((m) => m.id)
+    memoryDB.touchMemories(usedMemoryIds)
 
     let context = '\n### 记忆与背景知识 (Layered Context):\n'
 

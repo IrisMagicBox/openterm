@@ -283,6 +283,11 @@ export default function App(): JSX.Element {
               terminalFontSize={terminalFontSize}
               setTerminalFontSize={setTerminalFontSize}
               onRemoveHostFromTopic={handleRemoveHostFromTopic}
+              onOpenFileBrowser={(host) => {
+                setFileBrowserHostId(host.id)
+                setFileBrowserHostAlias(host.alias)
+                setActiveView('files')
+              }}
               onCreateTerminal={handleCreateTerminal}
               onCloseTerminal={handleCloseTerminal}
               onRenameTerminal={handleRenameTerminal}
@@ -307,6 +312,7 @@ export default function App(): JSX.Element {
             command={pendingAuth.command}
             riskLevel={pendingAuth.riskLevel}
             reason={pendingAuth.reason}
+            metadata={pendingAuth.metadata}
             onResolve={handleResolveAuth}
           />
         )}
