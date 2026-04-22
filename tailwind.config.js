@@ -27,10 +27,11 @@ module.exports = {
         'workspace-muted-foreground': 'rgb(var(--workspace-muted-foreground) / <alpha-value>)'
       },
       borderRadius: {
-        sm: '6px',
-        md: '8px',
-        lg: '12px',
-        xl: '16px'
+        sm: '7px',
+        md: '10px',
+        lg: '14px',
+        xl: '18px',
+        '2xl': '22px'
       },
       fontFamily: {
         sans: [

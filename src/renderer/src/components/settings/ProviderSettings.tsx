@@ -116,7 +116,7 @@ export function ProviderSettings({
   const modelFetchRequiresApiKey = !['ollama', 'lmstudio'].includes(provider.id)
 
   return (
-    <div className="p-6 max-w-2xl">
+    <div className="max-w-2xl p-6">
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
@@ -350,7 +350,7 @@ export function ProviderSettings({
 
           <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
             {models.length === 0 ? (
-              <div className="text-center py-8 bg-surface-muted rounded-lg border border-dashed border-border">
+              <div className="rounded-2xl border border-dashed border-white/70 bg-white/55 py-8 text-center backdrop-blur-xl">
                 <p className="text-sm text-muted-foreground">暂无模型，请添加模型</p>
               </div>
             ) : (

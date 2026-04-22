@@ -29,7 +29,7 @@ export function CommandPalette({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-md border border-accent/15 bg-accent-soft/70 text-accent shadow-sm backdrop-blur-xl">
+          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-xl border border-white/70 bg-white/60 text-accent shadow-sm backdrop-blur-xl">
             <Command size={18} />
           </div>
           <DialogTitle>自然语言执行</DialogTitle>

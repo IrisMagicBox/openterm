@@ -72,7 +72,7 @@ function LiveToolOutput({
     <pre
       ref={outputRef}
       aria-live={isLive ? 'polite' : undefined}
-      className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap rounded-md bg-workspace px-3 py-2 font-mono text-xs leading-relaxed text-workspace-foreground"
+      className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap rounded-lg border border-workspace-border bg-workspace/85 px-3 py-2 font-mono text-xs leading-relaxed text-workspace-foreground"
     >
       {output}
     </pre>
@@ -104,7 +104,7 @@ export function AgentLiveStream({
 
   return (
     <div className="flex justify-start">
-      <div className="glass-panel max-w-[82%] rounded-lg rounded-bl-sm px-4 py-3 text-sm">
+      <div className="glass-panel max-w-[82%] rounded-2xl rounded-bl-md px-4 py-3 text-sm">
         <div ref={scrollRef} className="max-h-[460px] overflow-y-auto pr-1">
           {textContent ? (
             <div className="prose-stream">
@@ -129,7 +129,7 @@ export function AgentLiveStream({
                   <div
                     key={part.id}
                     className={cn(
-                      'rounded-md border px-3 py-2 transition-all',
+                      'rounded-xl border px-3 py-2 transition-all',
                       part.status === 'error'
                         ? 'border-danger/20 bg-danger-soft'
                         : isLive
@@ -147,7 +147,7 @@ export function AgentLiveStream({
                       {sessionId && onRevealTerminal && (
                         <button
                           onClick={() => onRevealTerminal(sessionId, part.id)}
-                          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-accent/20 bg-white/65 px-2 py-0.5 text-[11px] font-semibold text-accent transition hover:bg-accent-soft"
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-accent/20 bg-white/65 px-2 py-0.5 text-[11px] font-semibold text-accent transition hover:bg-accent-soft"
                         >
                           <Eye size={11} />
                           查看终端

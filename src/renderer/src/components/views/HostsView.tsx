@@ -50,7 +50,7 @@ export function HostsView({
   const { confirm, ConfirmDialogComponent } = useConfirm()
 
   return (
-    <div className="flex-1 overflow-y-auto bg-app">
+    <div className="flex-1 overflow-y-auto bg-transparent">
       <PageHeader
         title="主机"
         description="管理远程 SSH 终点和本机工作区"
@@ -94,10 +94,10 @@ export function HostsView({
           }}
           role="button"
           tabIndex={0}
-          className="mb-5 cursor-pointer transition-colors hover:border-success/30"
+          className="mb-5 cursor-pointer transition-all hover:-translate-y-0.5 hover:border-success/30 hover:bg-white/80"
         >
           <div className="flex items-center gap-4">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-success-soft text-success">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-success-soft text-success shadow-sm shadow-success/10">
               <Monitor size={22} strokeWidth={2.2} />
             </div>
             <div className="min-w-0 flex-1">
@@ -124,7 +124,7 @@ export function HostsView({
 
         {filteredHosts.length === 0 ? (
           <div className="flex h-72 flex-col items-center justify-center text-center">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-lg bg-surface-muted text-muted-foreground">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/75 bg-white/70 text-muted-foreground shadow-sm backdrop-blur-xl">
               <Server size={28} />
             </div>
             <h3 className="text-lg font-bold text-foreground">暂无主机</h3>

@@ -275,7 +275,7 @@ export function TerminalLayout({
   return (
     <div className="flex-1 flex overflow-hidden bg-workspace">
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted">
+        <div className="flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/85 backdrop-blur-2xl">
           <div className="h-11 px-5 flex items-center justify-between flex-shrink-0 drag text-workspace-foreground">
             <div className="flex items-center gap-3 no-drag">
               <TerminalIcon size={13} className="text-accent" />
@@ -293,7 +293,7 @@ export function TerminalLayout({
               </span>
             </div>
             <div className="flex items-center gap-2 no-drag">
-              <div className="mr-1 flex overflow-hidden rounded-md border border-workspace-border bg-workspace">
+              <div className="mr-1 flex overflow-hidden rounded-lg border border-workspace-border bg-workspace/80 shadow-sm">
                 <button
                   onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
                   className="px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition-colors hover:bg-workspace-border hover:text-workspace-foreground"
@@ -369,7 +369,7 @@ export function TerminalLayout({
 
         <div className="flex-1 flex flex-col relative overflow-hidden">
           {paneManager.isEmpty ? (
-            <div className="flex-1 flex items-center justify-center bg-white">
+            <div className="flex-1 flex items-center justify-center bg-workspace">
               <div className="text-center">
                 <TerminalIcon size={40} className="text-workspace-border mx-auto mb-4" />
                 <p className="text-workspace-muted-foreground text-sm font-semibold">无活跃终端</p>
@@ -386,11 +386,11 @@ export function TerminalLayout({
 
         {showTerminalList && allTabs.length > 0 && (
           <div
-            className="absolute inset-0 z-30 bg-black/40 flex items-center justify-center"
+            className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/10 backdrop-blur-lg"
             onClick={() => setShowTerminalList(false)}
           >
             <div
-              className="bg-workspace rounded-lg p-5 max-w-2xl w-full mx-4 border border-workspace-border"
+              className="glass-menu mx-4 w-full max-w-2xl rounded-2xl p-5"
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="text-workspace-foreground font-bold text-sm mb-4 flex items-center gap-2">
@@ -404,7 +404,7 @@ export function TerminalLayout({
                       paneManager.focusTab(tab.sessionId)
                       setShowTerminalList(false)
                     }}
-                    className="flex cursor-pointer items-center gap-3 rounded-md bg-workspace-muted p-3 transition hover:bg-workspace-border"
+                    className="flex cursor-pointer items-center gap-3 rounded-xl border border-white/70 bg-white/60 p-3 transition hover:border-accent/25 hover:bg-accent-soft/45"
                   >
                     <TerminalIcon size={16} className="text-accent" />
                     <div className="flex-1 min-w-0">

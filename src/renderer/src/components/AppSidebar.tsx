@@ -64,7 +64,7 @@ export function AppSidebar({
   return (
     <aside
       className={cn(
-        'glass-panel relative flex flex-col border-y-0 border-l-0 no-drag transition-[width] duration-200',
+        'glass-sidebar relative flex flex-col border-y-0 border-l-0 no-drag transition-[width] duration-200',
         sidebarCollapsed ? 'w-16' : 'w-72'
       )}
     >
@@ -73,7 +73,7 @@ export function AppSidebar({
           aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
           className={cn(
-            'absolute -right-3 top-12 z-10 h-6 w-6 rounded-full border-white/70 bg-white/75 text-muted-foreground shadow-sm backdrop-blur-xl',
+            'absolute -right-3 top-12 z-10 h-6 w-6 rounded-full border-white/80 bg-white/85 text-muted-foreground shadow-sm backdrop-blur-xl hover:text-accent',
             sidebarCollapsed && 'rotate-180'
           )}
         >
@@ -81,11 +81,18 @@ export function AppSidebar({
         </IconButton>
       </Tooltip>
 
-      <div className={cn('drag px-4 pb-5 pt-6', sidebarCollapsed && 'px-3')}>
+      <div className={cn('drag px-4 pb-5 pt-4', sidebarCollapsed && 'px-3 pt-6')}>
+        {!sidebarCollapsed && (
+          <div className="mb-5 flex h-3 items-center gap-2">
+            <span className="h-3 w-3 rounded-full bg-[#ff5f57] shadow-sm ring-1 ring-black/5" />
+            <span className="h-3 w-3 rounded-full bg-[#ffbd2e] shadow-sm ring-1 ring-black/5" />
+            <span className="h-3 w-3 rounded-full bg-[#28c840] shadow-sm ring-1 ring-black/5" />
+          </div>
+        )}
         <div
           className={cn('flex items-center gap-3 no-drag', sidebarCollapsed && 'justify-center')}
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/70 bg-white/70 p-1 shadow-sm shadow-accent/10 backdrop-blur-xl">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/80 bg-white/75 p-1 shadow-sm shadow-accent/10 backdrop-blur-xl">
             <img src={logo} alt="OpenTerm" className="h-full w-full object-contain" />
           </div>
           {!sidebarCollapsed && (
@@ -174,17 +181,17 @@ export function AppSidebar({
                     }
                   }}
                   className={cn(
-                    'group flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-sm font-medium transition-all',
+                    'group flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-sm font-medium transition-all',
                     active
-                      ? 'border-white/75 bg-white/70 text-accent shadow-sm shadow-accent/10 backdrop-blur-xl'
-                      : 'border-transparent text-muted-foreground hover:border-white/60 hover:bg-white/50 hover:text-foreground',
+                      ? 'border-white/55 bg-black/5 text-foreground shadow-sm backdrop-blur-xl'
+                      : 'border-transparent text-muted-foreground hover:border-white/70 hover:bg-white/60 hover:text-foreground',
                     sidebarCollapsed && 'justify-center px-0'
                   )}
                 >
                   <div
                     className={cn(
                       'h-2 w-2 shrink-0 rounded-full',
-                      active ? 'bg-accent' : 'bg-border'
+                      active ? 'bg-foreground/55' : 'bg-border'
                     )}
                   />
                   {!sidebarCollapsed && (
@@ -264,7 +271,7 @@ export function AppSidebar({
       <div className={cn('mt-auto p-3', sidebarCollapsed && 'px-2')}>
         {sidebarCollapsed ? (
           <Tooltip content={`${statusText}：${statusDescription}`} side="right">
-            <div className="glass-control flex h-9 items-center justify-center rounded-md">
+            <div className="glass-control flex h-9 items-center justify-center rounded-lg">
               <ShieldAlert
                 size={16}
                 className={requireConfirmation ? 'text-success' : 'text-warning'}

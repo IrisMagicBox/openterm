@@ -3,13 +3,13 @@ import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '../../lib/utils'
 
-export const surfaceVariants = cva('rounded-lg border', {
+export const surfaceVariants = cva('rounded-lg border transition-colors', {
   variants: {
     variant: {
       plain: 'border-transparent bg-transparent',
-      subtle: 'border-white/60 bg-white/50 backdrop-blur-xl',
+      subtle: 'border-white/70 bg-white/55 backdrop-blur-xl',
       raised: 'glass-panel',
-      workspace: 'border-workspace-border bg-workspace text-workspace-foreground'
+      workspace: 'workspace-shell text-workspace-foreground'
     },
     padding: {
       none: 'p-0',

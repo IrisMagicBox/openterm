@@ -74,12 +74,12 @@ export function CommandHistorySearch({
       className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]"
       onClick={onClose}
     >
-      <div className="fixed inset-0 bg-black/35 backdrop-blur-sm" />
+      <div className="fixed inset-0 bg-slate-950/10 backdrop-blur-lg" />
       <div
-        className="relative w-full max-w-xl overflow-hidden rounded-lg border border-border bg-surface shadow-xl"
+        className="glass-menu relative w-full max-w-xl overflow-hidden rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+        <div className="flex items-center gap-3 border-b border-white/70 bg-white/45 px-4 py-3">
           <Search size={16} className="text-muted-foreground" />
           <Input
             ref={inputRef}
@@ -91,7 +91,7 @@ export function CommandHistorySearch({
             placeholder="搜索命令历史..."
             className="h-7 flex-1 border-0 bg-transparent px-0 focus-visible:ring-0"
           />
-          <span className="rounded bg-surface-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+          <span className="rounded-full border border-white/70 bg-white/65 px-2 py-0.5 text-xs font-semibold text-muted-foreground">
             Ctrl+R
           </span>
           <IconButton aria-label="关闭命令历史" onClick={onClose} className="h-7 w-7">
@@ -109,7 +109,7 @@ export function CommandHistorySearch({
               <button
                 key={`${entry.content}-${entry.timestamp}`}
                 className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition ${
-                  i === selectedIndex ? 'bg-accent-soft' : 'hover:bg-surface-muted'
+                  i === selectedIndex ? 'bg-accent-soft/70 text-accent' : 'hover:bg-white/55'
                 }`}
                 onClick={() => {
                   onSelect(entry.content)
@@ -127,7 +127,7 @@ export function CommandHistorySearch({
           )}
         </div>
 
-        <div className="flex items-center gap-4 border-t border-border bg-surface-muted px-4 py-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-4 border-t border-white/70 bg-white/45 px-4 py-2 text-xs text-muted-foreground">
           <span>↑↓ 导航</span>
           <span>↵ 选择</span>
           <span>Esc 关闭</span>

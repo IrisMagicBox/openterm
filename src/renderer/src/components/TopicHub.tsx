@@ -58,8 +58,8 @@ export function TopicHub({
   }
 
   return (
-    <div className="hidden h-full w-64 shrink-0 flex-col border-l border-border bg-surface lg:flex">
-      <div className="flex items-center justify-between border-b border-border bg-surface-muted px-4 py-3">
+    <div className="glass-sidebar hidden h-full w-64 shrink-0 flex-col border-y-0 border-r-0 lg:flex">
+      <div className="flex items-center justify-between border-b border-white/55 bg-white/35 px-4 py-3 backdrop-blur-2xl">
         <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
           <Server size={13} className="text-accent" />
           主机枢纽
@@ -72,7 +72,7 @@ export function TopicHub({
       <div className="flex-1 overflow-y-auto">
         {hosts.length === 0 ? (
           <div className="p-8 text-center">
-            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-muted text-muted-foreground">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/65 text-muted-foreground">
               <Shield size={18} />
             </div>
             <p className="text-xs font-medium leading-relaxed text-muted-foreground">
@@ -133,7 +133,7 @@ export function TopicHub({
                     </div>
                   </div>
 
-                  <div className="ml-3 space-y-1 border-l border-border pl-3">
+                  <div className="ml-3 space-y-1 border-l border-white/70 pl-3">
                     {hostSessions.length === 0 ? (
                       <Button
                         onClick={() => onCreateTerminal(host.id)}
@@ -150,16 +150,16 @@ export function TopicHub({
                           <div
                             key={session.id}
                             className={cn(
-                              'group/session relative flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 transition-colors',
+                              'group/session relative flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors',
                               focused
-                                ? 'border-accent bg-accent text-white'
-                                : 'border-border bg-surface text-muted-foreground hover:border-accent/30 hover:bg-accent-soft/40'
+                                ? 'border-white/65 bg-black/5 text-foreground shadow-sm'
+                                : 'border-white/65 bg-white/55 text-muted-foreground hover:border-accent/30 hover:bg-accent-soft/45'
                             )}
                             onClick={() => onFocusSession(session.id)}
                           >
                             <Terminal
                               size={11}
-                              className={focused ? 'text-white/80' : 'text-muted-foreground'}
+                              className={focused ? 'text-accent' : 'text-muted-foreground'}
                             />
 
                             {editingSessionId === session.id ? (
@@ -195,7 +195,7 @@ export function TopicHub({
                                   }}
                                   className={cn(
                                     'rounded p-0.5',
-                                    focused ? 'hover:bg-white/20' : 'hover:bg-border'
+                                    focused ? 'hover:bg-white/60' : 'hover:bg-border'
                                   )}
                                 >
                                   <Edit3 size={10} />
@@ -209,7 +209,7 @@ export function TopicHub({
                                 }}
                                 className={cn(
                                   'rounded p-0.5',
-                                  focused ? 'hover:bg-white/20' : 'hover:bg-border'
+                                  focused ? 'hover:bg-white/60' : 'hover:bg-border'
                                 )}
                               >
                                 <Pin size={10} fill={session.isPinned ? 'currentColor' : 'none'} />
@@ -227,10 +227,7 @@ export function TopicHub({
                                   if (!ok) return
                                   onCloseTerminal(session.id)
                                 }}
-                                className={cn(
-                                  'rounded p-0.5',
-                                  focused ? 'hover:bg-danger' : 'text-danger hover:bg-danger-soft'
-                                )}
+                                className="rounded p-0.5 text-danger hover:bg-danger-soft"
                               >
                                 <X size={10} />
                               </button>
@@ -247,7 +244,7 @@ export function TopicHub({
         )}
       </div>
 
-      <div className="border-t border-border bg-surface-muted p-3">
+      <div className="border-t border-white/55 bg-white/35 p-3 backdrop-blur-2xl">
         <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
           <span>TOPIC-{topicId.slice(0, 4)}</span>
           <Badge variant="neutral">隔离环境</Badge>

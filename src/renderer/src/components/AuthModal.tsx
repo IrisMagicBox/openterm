@@ -100,18 +100,18 @@ export function AuthModal({
             </p>
           </div>
 
-          <div className="mt-4 rounded-lg border border-workspace-border bg-workspace p-4">
+          <div className="mt-4 rounded-2xl border border-workspace-border bg-workspace/85 p-4">
             <div className="mb-2 flex items-center justify-between text-xs font-semibold text-workspace-muted-foreground">
               <span>拟执行命令</span>
               <span className="font-mono">ssh_execute_v1</span>
             </div>
-            <code className="block break-all font-mono text-sm font-semibold leading-relaxed text-emerald-400">
+            <code className="block break-all font-mono text-sm font-semibold leading-relaxed text-success">
               {command}
             </code>
           </div>
 
           {!isCritical && (
-            <label className="mt-4 flex cursor-pointer select-none items-center gap-3 rounded-lg border border-border bg-surface-muted p-3">
+            <label className="mt-4 flex cursor-pointer select-none items-center gap-3 rounded-2xl border border-white/70 bg-white/55 p-3 backdrop-blur-xl">
               <Switch checked={alwaysAllow} onCheckedChange={setAlwaysAllow} />
               <div>
                 <span className="text-sm font-semibold text-foreground">总是允许此类命令</span>
@@ -121,7 +121,7 @@ export function AuthModal({
           )}
         </div>
 
-        <DialogFooter className="border-t border-border bg-surface-muted p-4">
+        <DialogFooter className="border-t border-white/70 bg-white/45 p-4">
           <Button onClick={() => onResolve(false)} variant="secondary" className="flex-1">
             <X size={16} /> 拒绝执行
           </Button>

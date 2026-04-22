@@ -62,8 +62,8 @@ export function ProviderList({
   const enabledCount = providers.filter((p) => p.enabled).length
 
   return (
-    <div className="flex flex-col h-full bg-app border-r border-border w-72">
-      <div className="p-4 border-b border-border bg-surface">
+    <div className="glass-sidebar flex h-full w-72 flex-col border-y-0 border-l-0">
+      <div className="border-b border-white/55 bg-white/35 p-4 backdrop-blur-2xl">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-foreground">AI 提供商</h2>
           <Badge variant="neutral">
@@ -88,20 +88,20 @@ export function ProviderList({
         {filteredProviders.length === 0 ? (
           <div className="p-4 text-center text-muted-foreground text-sm">未找到提供商</div>
         ) : (
-          <div className="divide-y divide-border">
+          <div className="space-y-1 p-2">
             {filteredProviders.map((provider) => (
               <div
                 key={provider.id}
-                className={`group flex items-center gap-3 p-3 cursor-pointer border-l-2 transition-colors ${
+                className={`group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${
                   selectedProviderId === provider.id
-                    ? 'bg-accent-soft border-accent'
-                    : 'hover:bg-surface-muted border-transparent'
+                    ? 'border-white/65 bg-black/5 shadow-sm'
+                    : 'border-transparent hover:border-white/75 hover:bg-white/60'
                 }`}
                 onClick={() => onSelectProvider(provider)}
               >
                 <div
                   className={cn(
-                    'flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center',
+                    'flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center',
                     provider.enabled
                       ? 'bg-accent-soft text-accent'
                       : 'bg-surface-muted text-muted-foreground'
@@ -170,7 +170,7 @@ export function ProviderList({
         )}
       </div>
 
-      <div className="p-3 border-t border-border bg-surface text-xs text-muted-foreground">
+      <div className="border-t border-white/55 bg-white/35 p-3 text-xs text-muted-foreground backdrop-blur-2xl">
         点击提供商以配置其设置
       </div>
       {ConfirmDialogComponent}

@@ -110,9 +110,9 @@ function SplitContainer({ split, renderLeaf, onResizeSplit, minSize }: SplitCont
               onMouseDown={(e) => handleMouseDown(index, e)}
               className={`${
                 isHorizontal
-                  ? 'w-1.5 cursor-col-resize hover:bg-blue-400/60 active:bg-blue-500'
-                  : 'h-1.5 cursor-row-resize hover:bg-blue-400/60 active:bg-blue-500'
-              } bg-gray-200/80 transition-colors shrink-0`}
+                  ? 'w-1.5 cursor-col-resize hover:bg-accent/35 active:bg-accent/50'
+                  : 'h-1.5 cursor-row-resize hover:bg-accent/35 active:bg-accent/50'
+              } bg-workspace-border/75 transition-colors shrink-0`}
             />
           )}
         </div>

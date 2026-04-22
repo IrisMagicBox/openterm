@@ -28,10 +28,11 @@ export function ChatInput({
   onInsertMention
 }: ChatInputProps): React.ReactElement {
   return (
-    <div className="relative border-t border-white/60 bg-white/50 px-6 py-4 shadow-[0_-10px_35px_rgba(37,99,235,0.04)] backdrop-blur-xl backdrop-saturate-150">
+    <div className="relative bg-transparent px-6 pb-5 pt-3">
+      <div className="relative mx-auto max-w-4xl">
       {showMentions && filteredHosts.length > 0 && (
-        <div className="glass-menu absolute bottom-full left-6 z-10 mb-2 w-72 overflow-hidden rounded-lg">
-          <div className="flex items-center gap-1.5 border-b border-white/60 bg-white/50 px-3 py-2 text-xs font-semibold text-muted-foreground">
+        <div className="glass-menu absolute bottom-full left-0 z-10 mb-2 w-72 overflow-hidden rounded-xl">
+          <div className="flex items-center gap-1.5 border-b border-white/70 bg-white/55 px-3 py-2 text-xs font-semibold text-muted-foreground">
             <Hash size={10} /> 提及主机
           </div>
           {filteredHosts.map((host) => (
@@ -40,7 +41,7 @@ export function ChatInput({
               className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-accent-soft/60"
               onClick={() => onInsertMention(host)}
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white/60 text-muted-foreground">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/70 bg-white/65 text-muted-foreground">
                 <Server size={15} />
               </div>
               <div>
@@ -59,7 +60,7 @@ export function ChatInput({
         <Surface
           variant="subtle"
           padding="sm"
-          className="mx-2 mb-2 border-warning/20 bg-warning-soft"
+          className="mb-2 border-warning/20 bg-warning-soft"
         >
           <div className="mb-1.5 flex items-center gap-2">
             <Clock size={12} className="text-warning" />
@@ -89,7 +90,7 @@ export function ChatInput({
         </Surface>
       )}
 
-      <div className="glass-control flex items-end gap-3 rounded-lg p-2 transition-all focus-within:border-accent/30 focus-within:bg-white/80 focus-within:ring-2 focus-within:ring-accent/10">
+      <div className="composer-shell flex items-end gap-3 rounded-2xl p-2 transition-all focus-within:border-accent/30 focus-within:ring-2 focus-within:ring-accent/10">
         <Textarea
           value={inputValue}
           onChange={onInputChange}
@@ -115,6 +116,7 @@ export function ChatInput({
         >
           {thinking ? <Clock size={16} /> : <Send size={16} />}
         </IconButton>
+      </div>
       </div>
     </div>
   )

@@ -119,7 +119,7 @@ export default function App(): JSX.Element {
 
   return (
     <TooltipProvider>
-      <div className="flex h-screen w-screen overflow-hidden bg-app text-foreground select-none">
+      <div className="flex h-screen w-screen overflow-hidden bg-surface text-foreground select-none">
         <AppSidebar
           sidebarCollapsed={sidebarCollapsed}
           setSidebarCollapsed={setSidebarCollapsed}
@@ -141,7 +141,7 @@ export default function App(): JSX.Element {
           setPrefilledText={setPrefilledText}
         />
 
-        <main className="flex-1 flex flex-col overflow-hidden relative">
+        <main className="relative flex flex-1 flex-col overflow-hidden bg-surface">
           <div className={activeView === 'hosts' ? 'flex-1 flex flex-col' : 'hidden'}>
             <HostsView
               filteredHosts={filteredHosts}

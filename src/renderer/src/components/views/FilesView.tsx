@@ -302,7 +302,7 @@ export function FilesView({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-workspace">
-      <div className="flex flex-col flex-shrink-0 bg-workspace-muted border-b border-workspace-border">
+      <div className="flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/85 backdrop-blur-2xl">
         <div className="h-11 text-workspace-foreground px-5 flex items-center justify-between flex-shrink-0 drag">
           <div className="flex items-center gap-3 no-drag">
             <div className="flex gap-1.5">
@@ -396,11 +396,11 @@ export function FilesView({
 
       {showFileList && allTabs.length > 0 && (
         <div
-          className="absolute inset-0 z-30 bg-black/40 flex items-center justify-center"
+          className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/10 backdrop-blur-lg"
           onClick={() => setShowFileList(false)}
         >
           <div
-            className="bg-workspace rounded-lg p-5 max-w-2xl w-full mx-4 border border-workspace-border"
+            className="glass-menu mx-4 w-full max-w-2xl rounded-2xl p-5"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-workspace-foreground font-bold text-sm mb-4 flex items-center gap-2">
@@ -414,7 +414,7 @@ export function FilesView({
                     paneManager.focusTab(tab.tabId)
                     setShowFileList(false)
                   }}
-                  className="flex cursor-pointer items-center gap-3 rounded-md bg-workspace-muted p-3 transition hover:bg-workspace-border"
+                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-white/70 bg-white/60 p-3 transition hover:border-accent/25 hover:bg-accent-soft/45"
                 >
                   <Folder size={16} className="text-accent" />
                   <div className="flex-1 min-w-0">
@@ -434,11 +434,11 @@ export function FilesView({
 
       {showHostPicker && (
         <div
-          className="absolute inset-0 z-30 bg-black/40 flex items-center justify-center"
+          className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/10 backdrop-blur-lg"
           onClick={() => setShowHostPicker(false)}
         >
           <div
-            className="bg-workspace rounded-lg p-5 max-w-lg w-full mx-4 border border-workspace-border"
+            className="glass-menu mx-4 w-full max-w-lg rounded-2xl p-5"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-workspace-foreground font-bold text-sm mb-4 flex items-center gap-2">
@@ -454,10 +454,10 @@ export function FilesView({
                     <div
                       key={host.id}
                       onClick={() => handleOpenHost(host)}
-                      className={`p-3 rounded-xl cursor-pointer transition flex items-center gap-3 ${
+                      className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition ${
                         isOpen
-                          ? 'bg-workspace-muted/60 border border-workspace-border'
-                          : 'bg-workspace-muted hover:bg-workspace-border'
+                          ? 'border-accent/25 bg-accent-soft/60'
+                          : 'border-white/70 bg-white/60 hover:border-accent/25 hover:bg-accent-soft/45'
                       }`}
                     >
                       <Folder size={16} className="text-accent" />

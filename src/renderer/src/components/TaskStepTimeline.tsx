@@ -37,7 +37,7 @@ export function TaskStepTimeline({ taskId }: TaskStepTimelineProps): React.React
 
   if (loading && steps.length === 0) {
     return (
-      <div className="flex animate-pulse items-center gap-2 rounded-lg border border-dashed border-border bg-surface-muted px-3 py-2">
+      <div className="glass-control flex animate-pulse items-center gap-2 rounded-xl border-dashed px-3 py-2">
         <Loader2 size={12} className="animate-spin text-accent" />
         <span className="text-xs font-semibold text-muted-foreground">初始化任务流水线...</span>
       </div>
@@ -47,26 +47,26 @@ export function TaskStepTimeline({ taskId }: TaskStepTimelineProps): React.React
   if (steps.length === 0) return null
 
   return (
-    <div className="space-y-2 mt-1">
+    <div className="mt-1 space-y-2">
       <div className="flex items-center gap-2 px-1">
-        <div className="h-px bg-border flex-1" />
+        <div className="h-px flex-1 bg-border" />
         <span className="text-xs font-semibold text-muted-foreground">执行流水线</span>
-        <div className="h-px bg-border flex-1" />
+        <div className="h-px flex-1 bg-border" />
       </div>
 
       <div className="space-y-1.5">
         {steps.map((step, idx) => (
           <div
             key={step.id}
-            className={`group relative flex items-start gap-3 pl-4 border-l-2 transition-all ${
+            className={`group relative flex items-start gap-3 rounded-xl border px-3 py-2 pl-4 transition-all ${
               step.status === 'running'
-                ? 'border-accent bg-accent-soft/40'
+                ? 'border-accent/25 bg-accent-soft/55'
                 : step.status === 'completed'
-                  ? 'border-success/30'
+                  ? 'border-success/20 bg-white/55'
                   : step.status === 'failed'
-                    ? 'border-danger/30 bg-danger-soft/40'
-                    : 'border-border'
-            } py-2 px-3 rounded-r-lg`}
+                    ? 'border-danger/25 bg-danger-soft/50'
+                    : 'border-white/65 bg-white/45'
+            }`}
           >
             {/* Status Icon */}
             <div className="flex-shrink-0 mt-0.5">
@@ -82,14 +82,14 @@ export function TaskStepTimeline({ taskId }: TaskStepTimelineProps): React.React
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
                 <span
-                  className={`text-xs font-semibold truncate ${
+                  className={`truncate text-xs font-semibold ${
                     step.status === 'running' ? 'text-accent' : 'text-foreground'
                   }`}
                 >
                   {step.title || (step.type === 'command' ? '执行终端命令' : '思考中')}
                 </span>
                 {step.status === 'completed' && step.endedAt && (
-                  <span className="text-xs text-muted-foreground font-mono">
+                  <span className="font-mono text-xs text-muted-foreground">
                     {Math.max(0, step.endedAt - (step.startedAt || step.createdAt))}ms
                   </span>
                 )}
@@ -98,7 +98,7 @@ export function TaskStepTimeline({ taskId }: TaskStepTimelineProps): React.React
               {/* Show command if applicable */}
               {step.type === 'command' && step.content && (
                 <div className="mt-1 flex items-center gap-1.5">
-                  <div className="bg-surface-muted px-2 py-0.5 rounded font-mono text-xs text-muted-foreground truncate max-w-full shrink">
+                  <div className="max-w-full shrink truncate rounded-lg border border-white/65 bg-white/55 px-2 py-0.5 font-mono text-xs text-muted-foreground">
                     $ {step.content.length > 60 ? step.content.slice(0, 57) + '...' : step.content}
                   </div>
                 </div>
@@ -116,7 +116,7 @@ export function TaskStepTimeline({ taskId }: TaskStepTimelineProps): React.React
             </div>
 
             {/* Step Number Badge */}
-            <div className="absolute -left-[9px] top-2.5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-inherit bg-surface text-[11px] font-semibold text-muted-foreground transition group-hover:bg-surface-muted font-mono">
+            <div className="absolute -left-2 top-2.5 flex h-4 w-4 items-center justify-center rounded-full border border-white/70 bg-white/75 font-mono text-[10px] font-semibold text-muted-foreground shadow-sm transition group-hover:bg-white">
               {idx + 1}
             </div>
           </div>

@@ -86,14 +86,14 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
       />
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="w-64 border-r border-border bg-app">
+        <div className="glass-sidebar w-64 border-y-0 border-l-0">
           <nav className="p-4 space-y-1">
             <button
               onClick={() => setActiveTab('providers')}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-semibold transition ${
+              className={`w-full flex items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-sm font-semibold transition ${
                 activeTab === 'providers'
-                  ? 'bg-accent text-white'
-                  : 'text-muted-foreground hover:bg-surface hover:text-foreground'
+                  ? 'border border-white/55 bg-black/5 text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:bg-white/65 hover:text-foreground'
               }`}
             >
               <Server size={16} />
@@ -101,10 +101,10 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
             </button>
             <button
               onClick={() => setActiveTab('general')}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-semibold transition ${
+              className={`w-full flex items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-sm font-semibold transition ${
                 activeTab === 'general'
-                  ? 'bg-accent text-white'
-                  : 'text-muted-foreground hover:bg-surface hover:text-foreground'
+                  ? 'border border-white/55 bg-black/5 text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:bg-white/65 hover:text-foreground'
               }`}
             >
               <Bot size={16} />
@@ -112,10 +112,10 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
             </button>
             <button
               onClick={() => setActiveTab('permissions')}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-semibold transition ${
+              className={`w-full flex items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-sm font-semibold transition ${
                 activeTab === 'permissions'
-                  ? 'bg-accent text-white'
-                  : 'text-muted-foreground hover:bg-surface hover:text-foreground'
+                  ? 'border border-white/55 bg-black/5 text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:bg-white/65 hover:text-foreground'
               }`}
             >
               <Shield size={16} />
@@ -123,11 +123,11 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
             </button>
           </nav>
 
-          <div className="px-4 py-4 border-t border-border">
+          <div className="border-t border-white/55 px-4 py-4">
             <Surface padding="sm">
               <div className="flex items-center gap-3">
                 <div
-                  className={`w-8 h-8 rounded-md flex items-center justify-center ${
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                     requireConfirmation
                       ? 'bg-success-soft text-success'
                       : 'bg-warning-soft text-warning'

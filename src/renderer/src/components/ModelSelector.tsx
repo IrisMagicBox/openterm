@@ -82,7 +82,7 @@ export function ModelSelector({
       </Button>
 
       {isOpen && (
-        <div className="glass-menu absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-lg animate-in fade-in">
+        <div className="glass-menu absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-2xl animate-in fade-in">
           <div className="max-h-96 overflow-y-auto py-2">
             {enabledProviders.map((provider) => {
               const providerModels = getProviderModels(provider.id)
@@ -101,9 +101,9 @@ export function ModelSelector({
                           key={`${provider.id}-${model.id}`}
                           onClick={() => handleSelect(provider.id, model.id)}
                           className={cn(
-                            'flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-all',
+                            'flex w-full items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm transition-all',
                             selectedProviderId === provider.id && selectedModelId === model.id
-                              ? 'border-accent/25 bg-accent-soft/75 text-accent shadow-sm'
+                              ? 'border-white/65 bg-black/5 text-foreground shadow-sm'
                               : 'border-transparent text-muted-foreground hover:border-white/60 hover:bg-white/60 hover:text-foreground'
                           )}
                         >
@@ -119,7 +119,7 @@ export function ModelSelector({
                             <span
                               className={`text-xs font-semibold px-1.5 py-0.5 rounded-md ${
                                 selectedProviderId === provider.id && selectedModelId === model.id
-                                  ? 'bg-white/20 text-white'
+                                  ? 'border border-white/60 bg-white/65 text-accent'
                                   : 'bg-white/60 text-muted-foreground'
                               }`}
                             >
@@ -132,9 +132,9 @@ export function ModelSelector({
                       <button
                         onClick={() => handleSelect(provider.id, 'default')}
                         className={cn(
-                          'flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-all',
+                          'flex w-full items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm transition-all',
                           selectedProviderId === provider.id && selectedModelId === null
-                            ? 'border-accent/25 bg-accent-soft/75 text-accent shadow-sm'
+                            ? 'border-white/65 bg-black/5 text-foreground shadow-sm'
                             : 'border-transparent text-muted-foreground hover:border-white/60 hover:bg-white/60 hover:text-foreground'
                         )}
                       >

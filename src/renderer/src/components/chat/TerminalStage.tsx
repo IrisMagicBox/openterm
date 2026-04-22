@@ -321,7 +321,7 @@ function StageTerminalPane({
     <div className="min-h-0 flex-1 p-3">
       <div
         className={cn(
-          'flex h-full min-h-0 flex-col overflow-hidden rounded-lg border bg-white/75 shadow-[0_18px_55px_rgba(37,99,235,0.08)] backdrop-blur-2xl',
+          'flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border bg-white/80 shadow-[0_18px_55px_rgba(37,99,235,0.08)] backdrop-blur-2xl',
           highlighted ? 'border-accent/45 ring-2 ring-accent/20' : 'border-white/70'
         )}
       >
@@ -414,7 +414,7 @@ function GridMode({
             key={session.id}
             onClick={() => onFocusSession(session.id, { userInitiated: true })}
             className={cn(
-              'flex min-h-[270px] cursor-pointer flex-col overflow-hidden rounded-lg border bg-white/75 backdrop-blur-xl transition-all',
+              'flex min-h-[270px] cursor-pointer flex-col overflow-hidden rounded-2xl border bg-white/80 backdrop-blur-xl transition-all',
               focused
                 ? 'border-accent/45 ring-2 ring-accent/15'
                 : 'border-white/70 hover:border-accent/30'
@@ -512,7 +512,7 @@ function TimelineMode({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
       <div className="grid max-h-56 shrink-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <div className="glass-control overflow-y-auto rounded-lg p-2">
+        <div className="glass-control overflow-y-auto rounded-2xl p-2">
           {timelineParts.length === 0 ? (
             <div className="flex h-24 items-center justify-center text-xs font-semibold text-muted-foreground">
               暂无执行时间线。
@@ -565,7 +565,7 @@ function TimelineMode({
           )}
         </div>
 
-        <div className="glass-control min-h-0 overflow-hidden rounded-lg p-3">
+        <div className="glass-control min-h-0 overflow-hidden rounded-2xl p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="min-w-0 truncate text-xs font-bold text-foreground">
               {selectedPart ? selectedPart.toolName || selectedPart.type : '工具详情'}
@@ -578,7 +578,7 @@ function TimelineMode({
             </div>
           )}
           {selectedOutput ? (
-            <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md bg-workspace px-3 py-2 font-mono text-[11px] leading-relaxed text-workspace-foreground">
+            <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg border border-workspace-border bg-workspace/85 px-3 py-2 font-mono text-[11px] leading-relaxed text-workspace-foreground">
               {selectedOutput}
             </pre>
           ) : (
@@ -731,7 +731,7 @@ export function TerminalStage({
                     className={cn(
                       'flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-semibold transition',
                       mode === item.id
-                        ? 'bg-accent text-white shadow-sm'
+                        ? 'bg-white text-foreground shadow-sm'
                         : 'text-muted-foreground hover:bg-white/70 hover:text-foreground'
                     )}
                   >

@@ -32,13 +32,13 @@ export function MessageBubble({
         className={`max-w-[82%] flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end gap-2.5`}
       >
         <div
-          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md shadow-sm backdrop-blur-xl ${msg.role === 'user' ? 'bg-accent text-white shadow-accent/20' : 'border border-white/70 bg-white/60 text-muted-foreground'}`}
+          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl shadow-sm backdrop-blur-xl ${msg.role === 'user' ? 'bg-accent text-white shadow-accent/20' : 'border border-white/75 bg-white/70 text-muted-foreground'}`}
         >
           {msg.role === 'user' ? <User size={14} /> : <Bot size={14} />}
         </div>
         <div className="flex flex-col gap-2 min-w-0">
           {msg.thought && (
-            <div className="overflow-hidden rounded-lg border border-warning/20 bg-warning-soft">
+            <div className="overflow-hidden rounded-xl border border-warning/20 bg-warning-soft">
               <button
                 onClick={() => onToggleThought(msg.id)}
                 className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-warning transition hover:bg-warning/10"
@@ -81,12 +81,12 @@ export function MessageBubble({
           )}
 
           <div
-            className={`cursor-auto select-text rounded-lg px-4 py-3 text-sm leading-relaxed no-drag ${
+            className={`cursor-auto select-text rounded-2xl px-4 py-3 text-sm leading-relaxed no-drag ${
               msg.role === 'user'
-                ? 'rounded-br-sm bg-accent text-white shadow-sm shadow-accent/15'
+                ? 'rounded-br-md bg-accent text-white shadow-sm shadow-accent/15'
                 : msg.role === 'tool'
-                  ? 'max-w-full overflow-x-auto rounded-bl-sm border border-workspace-border bg-workspace'
-                  : 'glass-panel rounded-bl-sm text-foreground'
+                  ? 'max-w-full overflow-x-auto rounded-bl-md border border-workspace-border bg-workspace/85 text-workspace-foreground'
+                  : 'glass-panel rounded-bl-md text-foreground'
             } ${msg.metadata?.isVerifying ? 'ring-2 ring-success/20' : ''}`}
           >
             {msg.role === 'user' ? (
@@ -96,7 +96,7 @@ export function MessageBubble({
                 <div className="flex items-center justify-between">
                   <button
                     onClick={() => onToggleThought(msg.id)}
-                    className="flex items-center gap-2 text-xs font-semibold text-emerald-400/75 transition hover:text-emerald-400 no-drag"
+                    className="flex items-center gap-2 text-xs font-semibold text-success transition hover:text-success/80 no-drag"
                   >
                     {expandedThoughts[msg.id] ? (
                       <ChevronDown size={10} />
@@ -106,18 +106,18 @@ export function MessageBubble({
                     终端原始输出
                   </button>
                   {msg.metadata?.isVerifying && (
-                    <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-500">
+                    <span className="rounded-full bg-success-soft px-2 py-0.5 text-xs font-semibold text-success">
                       验证凭证
                     </span>
                   )}
                 </div>
                 {expandedThoughts[msg.id] && (
-                  <div className="mt-2 whitespace-pre-wrap break-all border-t border-workspace-border pt-2 font-mono text-xs text-emerald-400">
+                  <div className="mt-2 whitespace-pre-wrap break-all border-t border-workspace-border pt-2 font-mono text-xs text-success">
                     {msg.content}
                   </div>
                 )}
                 {!expandedThoughts[msg.id] && (
-                  <div className="text-xs text-emerald-400/50">
+                  <div className="text-xs text-success/65">
                     输出内容已提纯并同步至终端视图。点击查看原始文本...
                   </div>
                 )}
@@ -148,14 +148,14 @@ export function ThinkingIndicator({ animationKey }: { animationKey: number }): R
   return (
     <div key={`thinking-${animationKey}`} className="flex justify-start">
       <div className="flex items-end gap-2.5">
-        <div className="flex h-8 w-8 animate-pulse items-center justify-center rounded-md border border-white/70 bg-white/70 text-accent shadow-sm backdrop-blur-xl">
+        <div className="flex h-8 w-8 animate-pulse items-center justify-center rounded-xl border border-white/75 bg-white/70 text-accent shadow-sm backdrop-blur-xl">
           <Bot size={14} />
         </div>
-        <div className="glass-panel flex items-center gap-2 rounded-lg rounded-bl-sm px-4 py-3">
+        <div className="glass-panel flex items-center gap-2 rounded-2xl rounded-bl-md px-4 py-3">
           <div className="flex gap-1">
-            <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce [animation-delay:0ms]" />
-            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:150ms]" />
-            <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:300ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent/55 [animation-delay:0ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent/75 [animation-delay:150ms]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:300ms]" />
           </div>
           <span className="ml-1 text-xs font-semibold text-accent/60">思考并分析中...</span>
         </div>
@@ -173,7 +173,7 @@ export function EmptyState({
 }): React.ReactElement {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center max-w-xs mx-auto space-y-5">
-      <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg">
+      <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border border-white/75 bg-white/70 p-1 shadow-sm backdrop-blur-xl">
         <img src={logo} alt="OpenTerm" className="w-full h-full object-contain" />
       </div>
       <div>

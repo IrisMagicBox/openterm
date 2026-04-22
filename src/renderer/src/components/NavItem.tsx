@@ -26,15 +26,15 @@ export function NavItem({
       className={cn(
         'group relative h-9 w-full justify-start gap-3 border px-3',
         active
-          ? 'border-white/75 bg-white/70 text-accent shadow-sm shadow-accent/10'
-          : 'border-transparent text-muted-foreground hover:border-white/60 hover:bg-white/50 hover:text-foreground',
+          ? 'border-white/55 bg-black/5 text-foreground shadow-sm'
+          : 'border-transparent text-muted-foreground hover:border-white/70 hover:bg-white/60 hover:text-foreground',
         !label && 'justify-center px-0'
       )}
     >
       <span
         className={cn(
           'transition-colors',
-          active ? 'text-accent' : 'text-muted-foreground group-hover:text-accent'
+          active ? 'text-foreground' : 'text-muted-foreground group-hover:text-foreground'
         )}
       >
         {icon}
@@ -43,7 +43,7 @@ export function NavItem({
       {count !== undefined && label && (
         <Badge
           variant={active ? 'accent' : 'neutral'}
-          className={active ? 'border-accent/15 bg-accent-soft/70 text-accent' : ''}
+          className={active ? 'border-white/60 bg-white/55 text-muted-foreground' : ''}
         >
           {count}
         </Badge>

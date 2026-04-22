@@ -359,13 +359,13 @@ export function FileBrowser({
       onDrop={handleContainerDrop}
     >
       {isDragOver && (
-        <div className="absolute inset-0 z-10 bg-blue-500/10 border-2 border-blue-400/50 rounded pointer-events-none flex items-center justify-center">
-          <span className="rounded-md bg-workspace/90 px-3 py-1.5 text-xs font-semibold text-accent">
+        <div className="absolute inset-0 z-10 flex pointer-events-none items-center justify-center rounded-lg border-2 border-accent/45 bg-accent/10">
+          <span className="rounded-full border border-white/75 bg-white/85 px-3 py-1.5 text-xs font-semibold text-accent shadow-sm backdrop-blur-xl">
             释放以传输文件
           </span>
         </div>
       )}
-      <div className="flex items-center justify-between border-b border-workspace-border bg-workspace-muted px-3 py-2">
+      <div className="flex items-center justify-between border-b border-workspace-border bg-workspace-muted/85 px-3 py-2 backdrop-blur-xl">
         <div className="flex items-center gap-2 min-w-0">
           <Folder className="h-4 w-4 shrink-0 text-accent" />
           <span className="font-medium truncate">{hostAlias}</span>
@@ -373,7 +373,7 @@ export function FileBrowser({
         </div>
         <button
           onClick={onClose}
-          className="rounded p-1 text-workspace-muted-foreground hover:bg-workspace-border hover:text-workspace-foreground"
+          className="rounded-lg p-1 text-workspace-muted-foreground hover:bg-white/70 hover:text-workspace-foreground"
         >
           <X className="w-4 h-4" />
         </button>
@@ -382,7 +382,7 @@ export function FileBrowser({
       <div className="flex items-center gap-1 overflow-x-auto border-b border-workspace-border px-3 py-1.5 text-xs">
         <button
           onClick={() => navigateTo('/')}
-          className="shrink-0 rounded px-1.5 py-0.5 text-accent hover:bg-workspace-border"
+          className="shrink-0 rounded-md px-1.5 py-0.5 text-accent hover:bg-accent-soft"
         >
           /
         </button>
@@ -391,7 +391,7 @@ export function FileBrowser({
             <ChevronRight className="h-3 w-3 text-workspace-muted-foreground" />
             <button
               onClick={() => handleBreadcrumb(i)}
-              className="rounded px-1.5 py-0.5 text-accent hover:bg-workspace-border"
+              className="rounded-md px-1.5 py-0.5 text-accent hover:bg-accent-soft"
             >
               {part}
             </button>
@@ -403,13 +403,13 @@ export function FileBrowser({
         <button
           onClick={goUp}
           disabled={currentPath === '/'}
-          className="rounded bg-workspace-muted px-2 py-1 text-xs hover:bg-workspace-border disabled:cursor-not-allowed disabled:opacity-30"
+          className="rounded-lg border border-workspace-border bg-white/70 px-2 py-1 text-xs hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-30"
         >
           ..
         </button>
         <button
           onClick={() => loadDirectory(currentPath)}
-          className="rounded p-1.5 text-workspace-muted-foreground hover:bg-workspace-border hover:text-workspace-foreground"
+          className="rounded-lg p-1.5 text-workspace-muted-foreground hover:bg-white/70 hover:text-workspace-foreground"
           title="刷新"
         >
           <RefreshCw className="w-3.5 h-3.5" />
@@ -417,7 +417,7 @@ export function FileBrowser({
         <div className="flex-1" />
         <button
           onClick={() => setShowMkdir(true)}
-          className="rounded p-1.5 text-workspace-muted-foreground hover:bg-workspace-border hover:text-workspace-foreground"
+          className="rounded-lg p-1.5 text-workspace-muted-foreground hover:bg-white/70 hover:text-workspace-foreground"
           title="新建目录"
         >
           <FolderPlus className="w-3.5 h-3.5" />
@@ -425,7 +425,7 @@ export function FileBrowser({
         <button
           onClick={handleUpload}
           disabled={uploading}
-          className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs text-white hover:bg-accent-strong disabled:opacity-50"
+          className="flex items-center gap-1 rounded-lg bg-accent px-2 py-1 text-xs font-semibold text-white shadow-sm shadow-accent/15 hover:bg-accent-strong disabled:opacity-50"
         >
           {uploading ? (
             <Loader2 className="w-3 h-3 animate-spin" />
@@ -437,7 +437,7 @@ export function FileBrowser({
         <button
           onClick={handleDownload}
           disabled={!selectedItem}
-          className="flex items-center gap-1 rounded bg-success px-2 py-1 text-xs text-white hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-30"
+          className="flex items-center gap-1 rounded-lg bg-success px-2 py-1 text-xs font-semibold text-white shadow-sm shadow-success/10 hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-30"
         >
           <Download className="w-3 h-3" />
           下载
@@ -445,7 +445,7 @@ export function FileBrowser({
         <button
           onClick={handleDelete}
           disabled={!selectedItem}
-          className="rounded p-1.5 text-workspace-muted-foreground hover:bg-danger/20 hover:text-danger disabled:cursor-not-allowed disabled:opacity-30"
+          className="rounded-lg p-1.5 text-workspace-muted-foreground hover:bg-danger/15 hover:text-danger disabled:cursor-not-allowed disabled:opacity-30"
           title="删除"
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -454,18 +454,18 @@ export function FileBrowser({
       </div>
 
       {showMkdir && (
-        <div className="flex items-center gap-2 border-b border-workspace-border bg-workspace-muted px-3 py-2">
+        <div className="flex items-center gap-2 border-b border-workspace-border bg-workspace-muted/85 px-3 py-2">
           <input
             value={mkdirName}
             onChange={(e) => setMkdirName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleMkdir()}
             placeholder="目录名称"
-            className="flex-1 rounded border border-workspace-border bg-workspace px-2 py-1 text-sm outline-none focus:border-accent/60"
+            className="flex-1 rounded-lg border border-workspace-border bg-white/70 px-2 py-1 text-sm outline-none focus:border-accent/60"
             autoFocus
           />
           <button
             onClick={handleMkdir}
-            className="rounded bg-accent px-2 py-1 text-xs text-white hover:bg-accent-strong"
+            className="rounded-lg bg-accent px-2 py-1 text-xs font-semibold text-white hover:bg-accent-strong"
           >
             创建
           </button>
@@ -474,7 +474,7 @@ export function FileBrowser({
               setShowMkdir(false)
               setMkdirName('')
             }}
-            className="rounded bg-workspace-border px-2 py-1 text-xs hover:bg-workspace-border/80"
+            className="rounded-lg border border-workspace-border bg-white/70 px-2 py-1 text-xs hover:bg-white"
           >
             取消
           </button>
@@ -513,8 +513,8 @@ export function FileBrowser({
                   onClick={() => handleItemClick(item)}
                   draggable
                   onDragStart={(e) => handleRowDragStart(e, item)}
-                  className={`cursor-pointer border-b border-workspace-border/60 hover:bg-workspace-muted ${
-                    selectedItem === item.name ? 'bg-accent/15' : ''
+                  className={`cursor-pointer border-b border-workspace-border/60 hover:bg-accent-soft/35 ${
+                    selectedItem === item.name ? 'bg-accent-soft/70' : ''
                   }`}
                 >
                   <td className="px-3 py-1.5 flex items-center gap-2">

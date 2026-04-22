@@ -7,8 +7,8 @@ interface ChatEmptyStateProps {
 
 export function ChatEmptyState({ onCreateTopic }: ChatEmptyStateProps): React.ReactElement {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center text-center bg-app">
-      <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-lg bg-accent-soft text-accent">
+    <div className="flex-1 flex flex-col items-center justify-center bg-transparent text-center">
+      <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/75 bg-white/70 text-accent shadow-sm backdrop-blur-xl">
         <MessageSquare size={36} />
       </div>
       <h2 className="text-xl font-bold text-foreground">Agent助手</h2>

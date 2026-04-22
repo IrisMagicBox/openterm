@@ -23,8 +23,8 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        'flex shrink-0 items-center justify-between gap-4 border-b border-white/60 bg-white/50 shadow-[0_8px_30px_rgba(37,99,235,0.05)] backdrop-blur-xl backdrop-saturate-150',
-        dense ? 'px-5 py-3' : 'px-6 py-4',
+        'flex shrink-0 items-center justify-between gap-4 border-b border-white/55 bg-white/45 backdrop-blur-2xl backdrop-saturate-150',
+        dense ? 'px-5 py-2.5' : 'px-6 py-3.5',
         drag && 'drag',
         className
       )}
@@ -33,7 +33,7 @@ export function PageHeader({
       <div className="flex min-w-0 items-center gap-3 no-drag">
         {leading}
         <div className="min-w-0">
-          <h2 className={cn('truncate font-bold text-foreground', dense ? 'text-base' : 'text-xl')}>
+          <h2 className={cn('truncate font-semibold text-foreground', dense ? 'text-base' : 'text-lg')}>
             {title}
           </h2>
           {description && (

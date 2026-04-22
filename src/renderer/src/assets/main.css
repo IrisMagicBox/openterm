@@ -4,16 +4,16 @@
 
 @layer base {
   :root {
-    --app: 246 249 253;
+    --app: 250 250 248;
     --surface: 255 255 255;
-    --surface-muted: 248 250 252;
-    --border: 218 228 240;
-    --foreground: 17 24 39;
-    --muted-foreground: 100 116 139;
+    --surface-muted: 246 247 245;
+    --border: 226 228 224;
+    --foreground: 33 37 43;
+    --muted-foreground: 119 124 128;
 
-    --accent: 37 99 235;
-    --accent-strong: 30 64 175;
-    --accent-soft: 226 239 255;
+    --accent: 41 120 245;
+    --accent-strong: 27 88 214;
+    --accent-soft: 232 241 255;
 
     --success: 5 150 105;
     --success-soft: 209 250 229;
@@ -23,11 +23,11 @@
     --danger-strong: 185 28 28;
     --danger-soft: 254 226 226;
 
-    --workspace: 24 26 30;
-    --workspace-muted: 31 34 40;
-    --workspace-border: 55 65 81;
-    --workspace-foreground: 229 231 235;
-    --workspace-muted-foreground: 156 163 175;
+    --workspace: 255 255 255;
+    --workspace-muted: 248 249 247;
+    --workspace-border: 226 228 224;
+    --workspace-foreground: 33 37 43;
+    --workspace-muted-foreground: 119 124 128;
   }
 
   * {
@@ -37,7 +37,7 @@
   body {
     @apply h-screen overflow-hidden bg-app text-foreground;
     background:
-      linear-gradient(180deg, rgb(250 253 255) 0%, rgb(246 249 253) 58%, rgb(239 246 255) 100%);
+      linear-gradient(180deg, rgb(253 253 252) 0%, rgb(250 250 248) 56%, rgb(245 246 244) 100%);
     font-family:
       'Inter',
       -apple-system,
@@ -64,16 +64,88 @@
 }
 
 @layer components {
+  .glass-sidebar {
+    @apply border;
+    background:
+      linear-gradient(180deg, rgb(246 246 242 / 0.78), rgb(231 232 225 / 0.7)),
+      linear-gradient(90deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.18));
+    border-color: rgb(255 255 255 / 0.6);
+    box-shadow:
+      inset 1px 0 0 rgb(255 255 255 / 0.65),
+      inset -1px 0 0 rgb(0 0 0 / 0.055),
+      18px 0 50px rgb(15 23 42 / 0.06);
+    backdrop-filter: blur(34px) saturate(150%);
+    -webkit-backdrop-filter: blur(34px) saturate(150%);
+  }
+
   .glass-panel {
-    @apply border border-white/70 bg-white/70 shadow-[0_18px_55px_rgba(37,99,235,0.08)] backdrop-blur-xl backdrop-saturate-150;
+    @apply border border-white/75 bg-white/70 shadow-[0_18px_50px_rgba(33,96,185,0.08)] backdrop-blur-2xl backdrop-saturate-150;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.85),
+      0 18px 50px rgb(33 96 185 / 0.08);
+    backdrop-filter: blur(26px) saturate(150%);
+    -webkit-backdrop-filter: blur(26px) saturate(150%);
   }
 
   .glass-control {
-    @apply border border-white/70 bg-white/60 shadow-[0_8px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl backdrop-saturate-150;
+    @apply border border-white/75 bg-white/70 shadow-[0_8px_22px_rgba(15,23,42,0.05)] backdrop-blur-xl backdrop-saturate-150;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.8),
+      0 8px 22px rgb(15 23 42 / 0.05);
+    backdrop-filter: blur(22px) saturate(145%);
+    -webkit-backdrop-filter: blur(22px) saturate(145%);
   }
 
   .glass-menu {
-    @apply border border-white/75 bg-white/80 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl backdrop-saturate-150;
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.9), rgb(246 247 245 / 0.82)),
+      rgb(255 255 255 / 0.72);
+    border: 1px solid rgb(255 255 255 / 0.82);
+    color: rgb(var(--foreground));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.9),
+      0 1px 2px rgb(15 23 42 / 0.08),
+      0 24px 70px rgb(15 23 42 / 0.17);
+    backdrop-filter: blur(34px) saturate(155%);
+    -webkit-backdrop-filter: blur(34px) saturate(155%);
+  }
+
+  .material-row {
+    @apply border border-transparent bg-transparent transition-colors;
+  }
+
+  .material-row:hover {
+    @apply border-white/65 bg-white/50;
+  }
+
+  .material-row-active {
+    @apply border-white/60 bg-black/5 shadow-sm;
+  }
+
+  .composer-shell {
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.92), rgb(249 250 248 / 0.86)),
+      rgb(255 255 255 / 0.76);
+    border: 1px solid rgb(255 255 255 / 0.86);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.92),
+      0 1px 2px rgb(15 23 42 / 0.08),
+      0 18px 48px rgb(15 23 42 / 0.12);
+    backdrop-filter: blur(34px) saturate(155%);
+    -webkit-backdrop-filter: blur(34px) saturate(155%);
+  }
+
+  .code-panel {
+    @apply border border-workspace-border bg-workspace/85 text-workspace-foreground;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.75);
+  }
+
+  .workspace-shell {
+    @apply border border-workspace-border bg-workspace/85 shadow-[0_18px_50px_rgba(30,64,175,0.07)] backdrop-blur-2xl;
+  }
+
+  .soft-divider {
+    @apply border-white/70;
   }
 
   .blue-ring {

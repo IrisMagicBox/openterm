@@ -267,20 +267,20 @@ export function TerminalView({
       onDrop={handleDrop}
     >
       {isDragOver && (
-        <div className="absolute inset-0 z-10 bg-blue-500/10 border-2 border-blue-400/50 rounded pointer-events-none flex items-center justify-center">
-          <span className="text-blue-400 text-xs font-bold bg-gray-900/80 px-3 py-1.5 rounded-lg">
+        <div className="absolute inset-0 z-10 flex pointer-events-none items-center justify-center rounded-lg border-2 border-accent/45 bg-accent/10">
+          <span className="rounded-full border border-white/75 bg-white/85 px-3 py-1.5 text-xs font-bold text-accent shadow-sm backdrop-blur-xl">
             释放以下载文件
           </span>
         </div>
       )}
       {isAgentExecuting && !isUserTakeover && (
-        <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 bg-blue-500 text-white text-xs font-medium px-2 py-1 rounded shadow-sm">
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-white shadow-sm shadow-accent/20">
           <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
           Agent 执行中...
         </div>
       )}
       {isUserTakeover && (
-        <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 bg-amber-500 text-white text-xs font-medium px-2 py-1 rounded shadow-sm">
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 rounded-full bg-warning px-2.5 py-1 text-xs font-semibold text-white shadow-sm shadow-warning/20">
           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
             <path
               fillRule="evenodd"

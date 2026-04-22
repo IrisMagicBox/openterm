@@ -37,10 +37,14 @@ export function ManageHostsModal({
     mode: 'add' | 'remove',
     isLocal = false
   ): React.ReactElement => (
-    <Surface key={`${mode}-${host.id}`} padding="sm" className="flex items-center justify-between">
+    <Surface
+      key={`${mode}-${host.id}`}
+      padding="sm"
+      className="flex items-center justify-between rounded-xl hover:border-white/80 hover:bg-white/75"
+    >
       <div className="flex min-w-0 items-center gap-3">
         <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${isLocal ? 'bg-success-soft text-success' : 'bg-accent-soft text-accent'}`}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/70 shadow-sm ${isLocal ? 'bg-success-soft text-success' : 'bg-white/60 text-accent'}`}
         >
           {isLocal ? <Monitor size={17} /> : <Server size={17} />}
         </div>
@@ -88,7 +92,7 @@ export function ManageHostsModal({
           <section>
             <h3 className="mb-2 text-xs font-semibold text-muted-foreground">已连接主机</h3>
             {topicHosts.length === 0 && !hasLocal ? (
-              <p className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+              <p className="rounded-xl border border-dashed border-white/70 bg-white/45 p-4 text-center text-sm text-muted-foreground">
                 暂无主机
               </p>
             ) : (

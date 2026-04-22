@@ -54,7 +54,7 @@ export function AddHostModal({ onClose, onSave }: AddHostModalProps): React.Reac
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-md bg-accent-soft text-accent">
+          <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-xl border border-white/70 bg-white/60 text-accent shadow-sm backdrop-blur-xl">
             <Server size={18} />
           </div>
           <DialogTitle>添加新主机</DialogTitle>
@@ -62,7 +62,7 @@ export function AddHostModal({ onClose, onSave }: AddHostModalProps): React.Reac
         </DialogHeader>
 
         {error && (
-          <div className="rounded-md border border-danger/20 bg-danger-soft px-3 py-2 text-sm font-medium text-danger">
+          <div className="rounded-xl border border-danger/20 bg-danger-soft px-3 py-2 text-sm font-medium text-danger">
             {error}
           </div>
         )}
