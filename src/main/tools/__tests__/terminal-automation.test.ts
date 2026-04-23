@@ -29,7 +29,7 @@ vi.mock('../../logger', () => ({
   }
 }))
 
-import { encodeTerminalInput } from '../terminal-automation'
+import { encodeTerminalInput, waitTerminalTextTool } from '../terminal-automation'
 
 describe('terminal automation tools', () => {
   it('encodes text and special keys for TUI automation', () => {
@@ -43,6 +43,27 @@ describe('terminal automation tools', () => {
     expect(encoded.data).toBe('sudo tasksel\r')
     expect(encoded.recordedContent).toContain('text "sudo tasksel"')
     expect(encoded.recordedContent).toContain('key Enter')
+  })
+
+  it('appends Enter once when submit is true', () => {
+    const encoded = encodeTerminalInput({
+      sessionId: 'session-1',
+      text: 'Analyze the project structure',
+      submit: true,
+      reason: 'submit prompt'
+    })
+
+    expect(encoded.data).toBe('Analyze the project structure\r')
+    expect(encoded.recordedContent).toContain('key Enter')
+
+    const withExplicitEnter = encodeTerminalInput({
+      sessionId: 'session-1',
+      text: 'Analyze the project structure',
+      submit: true,
+      keys: ['Enter'],
+      reason: 'submit prompt'
+    })
+    expect(withExplicitEnter.data).toBe('Analyze the project structure\r')
   })
 
   it('preserves ordered text/key sequences', () => {
@@ -65,5 +86,22 @@ describe('terminal automation tools', () => {
         reason: 'bad raw escape'
       })
     ).toThrow(/control characters/i)
+  })
+
+  it('accepts long waits up to 300000ms for terminal text waits', async () => {
+    const tool = await waitTerminalTextTool.init()
+
+    await expect(
+      tool.execute(
+        {
+          sessionId: 'missing-session',
+          text: 'Research Report',
+          timeoutMs: 180000,
+          stableMs: 0,
+          reason: 'long TUI task'
+        },
+        { abort: new AbortController().signal, topicId: 'topic-1' } as never
+      )
+    ).rejects.toThrow(/Session not found/)
   })
 })

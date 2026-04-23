@@ -198,6 +198,7 @@ export const BASE_SCHEMA_SQL = `
     topicId TEXT NOT NULL,
     hostId TEXT NOT NULL,
     hostAlias TEXT NOT NULL,
+    role TEXT DEFAULT 'user',
     status TEXT NOT NULL DEFAULT 'active',
     shellType TEXT,
     shellIntegrationReady INTEGER DEFAULT 0,

@@ -22,7 +22,9 @@ export default define('glob', {
       return { output: `Error: Host ${hostId} not found` }
     }
 
-    const sessionId = await ctx.ensureSession(host.id, host.alias, undefined)
+    const sessionId = await ctx.ensureSession(host.id, host.alias, undefined, {
+      role: 'agent_command'
+    })
 
     const typeFlag = includeDirs ? '' : ' -type f'
     const findCmd = `find "${path}"${typeFlag} -name "${pattern.replace(/"/g, '\\"')}" 2>/dev/null | head -n ${maxResults}`

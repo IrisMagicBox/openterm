@@ -19,7 +19,8 @@ import {
 import type {
   DebugLogEntry,
   SessionRecoveredPayload,
-  RecoverableSession
+  RecoverableSession,
+  TerminalControlStatePayload
 } from '../shared/ipc/channels'
 
 declare global {
@@ -324,6 +325,10 @@ declare global {
       // Local Terminal Agent State
       onTerminalAgentExecuting: (id: string, callback: (executing: boolean) => void) => () => void
       onTerminalUserTakeover: (id: string, callback: () => void) => () => void
+      onTerminalControlState: (
+        id: string,
+        callback: (state: TerminalControlStatePayload) => void
+      ) => () => void
 
       // Multi-Terminal Management
       createAgentTerminal: (

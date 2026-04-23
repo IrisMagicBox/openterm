@@ -52,5 +52,14 @@ export class AgentIpcController {
     ipcMain.handle('agent:toggle-terminal-pin', (_, id: string, isPinned: boolean) =>
       this.service.toggleTerminalPin(id, isPinned)
     )
+
+    ipcMain.removeHandler('agent:set-session-paused')
+    ipcMain.handle('agent:set-session-paused', async (_, id: string, paused: boolean) => {
+      await this.service.setPaused(id, paused)
+      return true
+    })
+
+    ipcMain.removeHandler('agent:is-session-paused')
+    ipcMain.handle('agent:is-session-paused', (_, id: string) => this.service.isPaused(id))
   }
 }

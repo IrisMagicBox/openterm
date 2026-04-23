@@ -22,6 +22,8 @@ export class ToolCallExecutor {
   private readonly legacyEvents: LegacyAgentEventAdapter
   private readonly contextFactory: ToolContextFactory
   private readonly pendingVerifications = new Map<string, PendingVerification>()
+  private lastWaitActivityKey: string | null = null
+  private repeatedWaitActivityCount = 0
 
   constructor(private readonly options: AgentProcessorOptions) {
     this.legacyEvents = new LegacyAgentEventAdapter(options.run, options.context)
@@ -36,6 +38,8 @@ export class ToolCallExecutor {
   reset(): void {
     this.doomLoop.reset()
     this.pendingVerifications.clear()
+    this.lastWaitActivityKey = null
+    this.repeatedWaitActivityCount = 0
   }
 
   getTools(turnCount: number, maxTurns: number, allowFinalTurnTools = false): ChatCompletionTool[] {
@@ -70,10 +74,31 @@ export class ToolCallExecutor {
     const observations: ChatCompletionMessageParam[] = []
 
     for (const call of toolCalls) {
+      this.repairToolCallName(call)
       const part = this.ensureToolPart(call)
       const parsed = this.parseToolArguments(call, part)
       if (!parsed.ok) {
         observations.push({ role: 'tool', tool_call_id: call.id, content: parsed.error })
+        continue
+      }
+
+      const repeatedWaitObservation = this.checkRepeatedWaitActivity(call, parsed.args, part)
+      if (repeatedWaitObservation) {
+        observations.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: repeatedWaitObservation
+        })
+        continue
+      }
+
+      if (call.function.name === 'invalid_tool') {
+        const error =
+          typeof parsed.args.error === 'string'
+            ? `Error: ${parsed.args.error}`
+            : `Error: Unknown tool "${String(parsed.args.tool ?? 'unknown')}".`
+        agentRunStore.updatePart(part.id, { status: 'error', error, endedAt: Date.now() })
+        observations.push({ role: 'tool', tool_call_id: call.id, content: error })
         continue
       }
 
@@ -118,6 +143,7 @@ export class ToolCallExecutor {
   }
 
   private async executeTool(call: ChatCompletionMessageFunctionToolCall): Promise<ToolResult> {
+    this.repairToolCallName(call)
     const part = this.ensureToolPart(call)
     const parsed = this.parseToolArguments(call, part)
     if (!parsed.ok) return { toolCallId: call.id, content: parsed.error }
@@ -199,6 +225,67 @@ export class ToolCallExecutor {
     }
   }
 
+  private repairToolCallName(call: ChatCompletionMessageFunctionToolCall): void {
+    const name = call.function.name
+    const lower = name.toLowerCase()
+    if (name === lower) return
+    const available = this.options.toolRegistry
+      .getFilteredDefinitions(this.options.config.name)
+      .some((tool) => tool.function.name === lower)
+    if (available && this.options.permissionEngine.isToolAllowed(lower)) {
+      call.function.name = lower
+    }
+  }
+
+  private checkRepeatedWaitActivity(
+    call: ChatCompletionMessageFunctionToolCall,
+    args: Record<string, unknown>,
+    part: AgentPart
+  ): string | undefined {
+    if (call.function.name === 'send_terminal_keys' || call.function.name === 'manage_terminal') {
+      this.lastWaitActivityKey = null
+      this.repeatedWaitActivityCount = 0
+      return undefined
+    }
+
+    if (call.function.name !== 'wait_terminal_activity') {
+      this.lastWaitActivityKey = null
+      this.repeatedWaitActivityCount = 0
+      return undefined
+    }
+
+    const key = [
+      this.stringValue(args.sessionId) ?? 'unknown-session',
+      this.stringValue(args.stopText) ?? '',
+      this.stringValue(args.stopRegex) ?? ''
+    ].join('|')
+
+    if (this.lastWaitActivityKey === key) {
+      this.repeatedWaitActivityCount += 1
+    } else {
+      this.lastWaitActivityKey = key
+      this.repeatedWaitActivityCount = 1
+    }
+
+    if (this.repeatedWaitActivityCount < 3) return undefined
+
+    const message = [
+      '[Runtime observation] 已连续多次等待同一个终端活动，但没有新的输入动作。',
+      '不要继续盲目调用 wait_terminal_activity。请基于最近一次终端屏幕和变化摘要总结当前结果；如果仍无法确认完成，请说明仍在运行/等待用户输入/需要用户接管。'
+    ].join('\n')
+    agentRunStore.updatePart(part.id, {
+      status: 'blocked',
+      output: message,
+      endedAt: Date.now(),
+      metadata: {
+        repeatedWaitActivity: true,
+        waitKey: key,
+        count: this.repeatedWaitActivityCount
+      }
+    })
+    return message
+  }
+
   private ensureToolPart(call: ChatCompletionMessageFunctionToolCall): AgentPart {
     const existing = agentRunStore
       .getParts(this.options.run.id)
@@ -251,7 +338,8 @@ export class ToolCallExecutor {
       const parsed = JSON.parse(result.content)
       const args = JSON.parse(call.function.arguments || '{}') as Record<string, unknown>
       const hostId = typeof args.hostId === 'string' ? args.hostId : 'unknown'
-      const terminalName = typeof args.terminalName === 'string' ? args.terminalName : 'default'
+      const terminalName =
+        typeof args.terminalName === 'string' ? args.terminalName : 'detached-command'
 
       if (parsed.content !== undefined && parsed.exitCode !== undefined) {
         const observation = fromCommandResult(parsed, hostId, terminalName)

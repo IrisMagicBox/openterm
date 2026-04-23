@@ -59,13 +59,73 @@ export class RunLifecycleService {
       role: 'assistant',
       content: `对不起，我已达到多轮推理上限 (${maxTurns}步)，未能完全解决任务。请根据当前进度给出进一步指令。`,
       timestamp: Date.now(),
-      metadata: { taskId: run.taskId, agentStatus: 'thinking' }
+      metadata: { taskId: run.taskId, agentStatus: 'error' }
     }
     if (this.options.persistFinalMessage) messageDB.createMessage(timeoutMsg)
     agentRunStore.createAssistantMessagePart(run, timeoutMsg)
     this.options.context.notifyStep(timeoutMsg)
     this.legacyEvents.taskComplete('failed', failedSummary)
     return timeoutMsg
+  }
+
+  failRuntimeBlocked(
+    summary: string,
+    details?: string,
+    assistantPartId?: string
+  ): Message {
+    const { run } = this.options
+    const failedSummary = summary || 'Agent runtime 未能完成任务。'
+    const finalContent = [failedSummary, details ? `\n${details}` : ''].join('').trim()
+
+    agentRunStore.completeRun(run.id, {
+      error: failedSummary,
+      usage: { ...this.options.provider.getSessionUsage() }
+    })
+    if (this.options.updateTaskStatus) {
+      taskDB.updateTask(run.taskId, {
+        status: 'failed',
+        summary: finalContent.slice(0, TASK_SUMMARY_MAX_LENGTH)
+      })
+    }
+
+    const msg: Message = {
+      id: uuidv4(),
+      topicId: run.topicId,
+      runId: run.id,
+      role: 'assistant',
+      content: finalContent,
+      timestamp: Date.now(),
+      metadata: { taskId: run.taskId, agentStatus: 'error' }
+    }
+
+    if (this.options.persistFinalMessage) messageDB.createMessage(msg)
+    if (assistantPartId) {
+      agentRunStore.updatePart(assistantPartId, {
+        messageId: msg.id,
+        status: 'error',
+        role: 'assistant',
+        output: msg.content,
+        error: failedSummary,
+        metadata: { taskId: run.taskId },
+        endedAt: Date.now()
+      })
+    } else {
+      agentRunStore.createPart({
+        runId: run.id,
+        messageId: msg.id,
+        type: 'error',
+        status: 'error',
+        role: 'assistant',
+        output: msg.content,
+        error: failedSummary,
+        metadata: { taskId: run.taskId },
+        startedAt: msg.timestamp,
+        endedAt: msg.timestamp
+      })
+    }
+    this.options.context.notifyStep(msg)
+    this.legacyEvents.taskComplete('failed', finalContent.slice(0, TASK_SUMMARY_MAX_LENGTH))
+    return msg
   }
 
   finish(
@@ -86,7 +146,7 @@ export class RunLifecycleService {
       timestamp: Date.now(),
       metadata: {
         taskId: run.taskId,
-        agentStatus: 'thinking',
+        agentStatus: providerError ? 'error' : 'done',
         memoryRecalled,
         isVerifying
       }

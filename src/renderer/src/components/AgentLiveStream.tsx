@@ -9,6 +9,7 @@ import {
   parseAgentPartCommand,
   sanitizeAgentText
 } from '../lib/agent-part-preview'
+import { shouldShowAgentLivePart } from '../lib/agent-live-stream'
 
 interface AgentLiveStreamProps {
   parts: AgentPart[]
@@ -79,7 +80,7 @@ export function AgentLiveStream({
 }: AgentLiveStreamProps): React.ReactElement | null {
   const scrollRef = useRef<HTMLDivElement>(null)
   const visibleParts = useMemo(
-    () => sortParts(parts).filter((part) => part.type !== 'usage'),
+    () => sortParts(parts).filter(shouldShowAgentLivePart),
     [parts]
   )
   const textContent = visibleParts
@@ -93,11 +94,9 @@ export function AgentLiveStream({
     if (node) node.scrollTop = node.scrollHeight
   }, [visibleParts])
 
-  if (visibleParts.length === 0) return null
-
   return (
     <div className="flex justify-start">
-      <div className="glass-panel max-w-[82%] rounded-2xl rounded-bl-md px-4 py-3 text-sm">
+      <div className="max-w-[82%] rounded-2xl rounded-bl-md border border-black/[0.06] bg-white px-4 py-3 text-sm shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
         <div ref={scrollRef} className="max-h-[460px] overflow-y-auto pr-1">
           {textContent ? (
             <div className="prose-stream">
@@ -127,7 +126,7 @@ export function AgentLiveStream({
                         ? 'border-danger/20 bg-danger-soft'
                         : isLive
                           ? 'border-accent/20 bg-accent-soft/60'
-                          : 'border-white/60 bg-white/60',
+                          : 'border-black/[0.06] bg-black/[0.015]',
                       isFocused && 'ring-2 ring-accent/25'
                     )}
                   >
@@ -140,7 +139,7 @@ export function AgentLiveStream({
                       {sessionId && onRevealTerminal && (
                         <button
                           onClick={() => onRevealTerminal(sessionId, part.id)}
-                          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-accent/20 bg-white/65 px-2 py-0.5 text-[11px] font-semibold text-accent transition hover:bg-accent-soft"
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-black/[0.06] bg-white px-2 py-0.5 text-[11px] font-semibold text-foreground transition hover:bg-black/[0.02]"
                         >
                           <Eye size={11} />
                           查看终端

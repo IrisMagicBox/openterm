@@ -83,6 +83,32 @@ describe('terminal stage helpers', () => {
     })
   })
 
+  it('treats automatic takeover as non-paused activity while keeping manual pause distinct', () => {
+    const activities = deriveTerminalActivities(
+      [
+        session('s-auto', {
+          lockedBy: 'user',
+          takeoverMode: 'auto',
+          paused: false
+        }),
+        session('s-manual', {
+          lockedBy: 'user',
+          takeoverMode: 'manual',
+          paused: true
+        })
+      ],
+      [],
+      {}
+    )
+
+    expect(activities.find((activity) => activity.sessionId === 's-auto')).toMatchObject({
+      status: 'idle'
+    })
+    expect(activities.find((activity) => activity.sessionId === 's-manual')).toMatchObject({
+      status: 'paused'
+    })
+  })
+
   it('sorts running, failed, and focused terminals before other activity', () => {
     const activities: TerminalActivity[] = [
       { sessionId: 'idle', hostAlias: 'idle', status: 'idle', updatedAt: 400 },

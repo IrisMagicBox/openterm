@@ -13,10 +13,13 @@ export default define('list_terminals', {
     const formattedSessions = sessions.map((s: AgentSession) => ({
       id: s.id,
       name: s.name,
+      role: s.role,
       hostId: s.hostId,
       hostAlias: s.hostAlias,
       status: s.status,
       paused: s.paused,
+      lockedBy: s.lockedBy,
+      takeoverMode: s.takeoverMode,
       isPinned: s.isPinned,
       createdAt: s.createdAt
     }))

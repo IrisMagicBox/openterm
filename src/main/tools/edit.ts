@@ -23,7 +23,9 @@ export default define('edit', {
       return { output: `Error: Host ${hostId} not found` }
     }
 
-    const sessionId = await ctx.ensureSession(host.id, host.alias, undefined)
+    const sessionId = await ctx.ensureSession(host.id, host.alias, undefined, {
+      role: 'agent_command'
+    })
 
     // First read the file to verify it exists and check match count
     const readResult = await commandExecutor.execute(

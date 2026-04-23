@@ -4,7 +4,7 @@ import { hostDB } from './db'
 import { commandExecutor } from './terminal'
 import { TERMINAL_BUFFER_SIZE, SSH_RAW_BUFFER_MAX, SSH_RAW_BUFFER_TRIM } from './constants'
 import { buildSSHConfig } from './utils/ssh-config'
-import type { TerminalStream } from '../shared/types'
+import type { TerminalSessionRole, TerminalStream } from '../shared/types'
 
 interface SSHSession {
   client: Client
@@ -14,8 +14,6 @@ interface SSHSession {
   isAgentSession?: boolean
   commandResolve?: (value: string) => void
   currentOutput: string
-  agentPaused?: boolean
-  agentPauseWaiters?: Array<() => void>
 }
 
 const sessions = new Map<string, SSHSession>()
@@ -76,40 +74,12 @@ export const getTerminalBuffer = (sessionId: string): string => {
   return session ? session.buffer.slice(-TERMINAL_BUFFER_SIZE) : ''
 }
 
-const waitForAgentResume = (session: SSHSession): Promise<void> => {
-  if (!session.agentPaused) return Promise.resolve()
-
-  return new Promise((resolve) => {
-    if (!session.agentPauseWaiters) {
-      session.agentPauseWaiters = []
-    }
-    session.agentPauseWaiters.push(resolve)
-  })
-}
-
 export const setAgentSessionPaused = (sessionId: string, paused: boolean): boolean => {
-  const session = sessions.get(sessionId)
-  if (!session || !session.isAgentSession) return false
-
-  session.agentPaused = paused
-  commandExecutor.setSessionLock(sessionId, paused, paused ? 'user' : null)
-
-  if (paused && session.stream) {
-    // Interrupt the current foreground command so the user can take over immediately.
-    session.stream.write('\x03')
-  }
-
-  if (!paused && session.agentPauseWaiters?.length) {
-    const waiters = [...session.agentPauseWaiters]
-    session.agentPauseWaiters = []
-    waiters.forEach((resolve) => resolve())
-  }
-  return true
+  return commandExecutor.setSessionPaused(sessionId, paused)
 }
 
 export const isAgentSessionPaused = (sessionId: string): boolean => {
-  const session = sessions.get(sessionId)
-  return Boolean(session?.agentPaused)
+  return commandExecutor.getSessionControlState(sessionId)?.paused ?? false
 }
 
 export const executeAgentCommand = async (
@@ -124,8 +94,6 @@ export const executeAgentCommand = async (
   if (!session) {
     throw new Error('Session not found')
   }
-
-  await waitForAgentResume(session)
 
   const effectiveTopicId = topicId || 'unknown'
 
@@ -147,7 +115,8 @@ export const executeAgentCommand = async (
 export const createAgentSession = (
   hostId: string,
   webContents: WebContents,
-  topicId?: string
+  topicId?: string,
+  role: TerminalSessionRole = 'agent_command'
 ): Promise<string> => {
   const { host, config } = getHostAndConfig(hostId)
 
@@ -169,9 +138,7 @@ export const createAgentSession = (
             hostId,
             buffer: '',
             isAgentSession: true,
-            currentOutput: '',
-            agentPaused: false,
-            agentPauseWaiters: []
+            currentOutput: ''
           }
           sessions.set(sessionId, session)
 
@@ -182,7 +149,9 @@ export const createAgentSession = (
               hostId,
               host.alias,
               stream,
-              webContents
+              webContents,
+              true,
+              role
             )
           }
 
@@ -270,7 +239,9 @@ export function setupSSHHandlers() {
                 hostId,
                 host.alias,
                 stream,
-                webContents
+                webContents,
+                true,
+                'user'
               )
 
               if (agentServiceRef) {
@@ -279,6 +250,7 @@ export function setupSSHHandlers() {
                   topicId,
                   hostId,
                   hostAlias: host.alias,
+                  role: 'user',
                   name: `${host.alias} Terminal`,
                   status: 'active',
                   shellIntegrationReady: false,
@@ -322,9 +294,12 @@ export function setupSSHHandlers() {
   })
 
   ipcMain.removeHandler('ssh:agent:create')
-  ipcMain.handle('ssh:agent:create', async (event, hostId: string, topicId?: string) => {
-    return createAgentSession(hostId, event.sender, topicId)
-  })
+  ipcMain.handle(
+    'ssh:agent:create',
+    async (event, hostId: string, topicId?: string, role?: TerminalSessionRole) => {
+      return createAgentSession(hostId, event.sender, topicId, role)
+    }
+  )
 
   ipcMain.removeHandler('ssh:agent:execute')
   ipcMain.handle(

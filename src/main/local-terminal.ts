@@ -2,7 +2,7 @@ import { ipcMain, WebContents } from 'electron'
 import { commandExecutor } from './terminal'
 import { logger } from './logger'
 import { terminalSessionDB } from './db'
-import { TerminalSession } from '../shared/types'
+import { TerminalSession, TerminalSessionRole } from '../shared/types'
 import { getErrorMessage } from '../shared/errors'
 import { v4 as uuidv4 } from 'uuid'
 import {
@@ -47,7 +47,8 @@ export function createLocalSession(
   sessionId: string,
   topicId: string,
   webContents?: WebContents,
-  isAgentSession?: boolean
+  isAgentSession?: boolean,
+  role: TerminalSessionRole = isAgentSession ? 'agent_command' : 'user'
 ): Promise<TerminalSession> {
   return new Promise(async (resolve, reject) => {
     try {
@@ -68,6 +69,7 @@ export function createLocalSession(
         topicId,
         hostId: 'local',
         hostAlias: '本地终端',
+        role,
         status: 'active',
         shellIntegrationReady: false,
         createdAt: Date.now()
@@ -115,7 +117,8 @@ export function createLocalSession(
         '本地终端',
         ptyProcess,
         webContents,
-        true
+        true,
+        role
       )
 
       sessions.set(sessionId, localSession)
@@ -148,21 +151,9 @@ export function sendLocalInput(sessionId: string, data: string, fromUser = true)
     return
   }
 
-  // Detect user input during agent execution
-  if (fromUser && session.isAgentExecuting && !session.agentPaused) {
-    logger.warn(
-      'LocalTerminal',
-      `User input detected while agent is executing in session ${sessionId}`
-    )
-
-    // Pause the agent session
-    session.agentPaused = true
-    commandExecutor.setSessionLock(sessionId, true, 'user')
-
-    // Notify the renderer that user has taken over
-    if (session.webContents) {
-      session.webContents.send(`terminal:user-takeover:${sessionId}`)
-    }
+  if (fromUser) {
+    commandExecutor.handleUserInput(sessionId, data, session.topicId)
+    return
   }
 
   try {

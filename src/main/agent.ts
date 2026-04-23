@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron'
-import type { AgentRun, Host, Message } from '../shared/types'
+import type { AgentRun, Host, Message, TerminalSessionRole } from '../shared/types'
 import type { IAgentService } from './AgentRunner'
 import { AgentApplicationService } from './agent/agent-application-service'
 import { AgentIpcController } from './agent/agent-ipc-controller'
@@ -47,8 +47,13 @@ export class AgentService implements IAgentService {
     return true
   }
 
-  createTerminal(topicId: string, hostId: string, name?: string): Promise<AgentSession> {
-    return this.sessions.createTerminal(topicId, hostId, name)
+  createTerminal(
+    topicId: string,
+    hostId: string,
+    name?: string,
+    options?: { role?: TerminalSessionRole }
+  ): Promise<AgentSession> {
+    return this.sessions.createTerminal(topicId, hostId, name, options)
   }
 
   closeTerminal(id: string): Promise<void> {

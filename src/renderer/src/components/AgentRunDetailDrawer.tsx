@@ -73,6 +73,60 @@ function metadataSessionId(part: AgentPart): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
+interface CommandPartDetails {
+  stdout: string
+  stderr: string
+  exitCode?: number | null
+  durationMs?: number
+  timedOut?: boolean
+  workdir?: string
+  outputPath?: string
+}
+
+function parseCommandDetails(part: AgentPart): CommandPartDetails | undefined {
+  if (part.toolName !== 'execute_command') return undefined
+  let parsed: Record<string, unknown> = {}
+  if (part.output?.trim().startsWith('{')) {
+    try {
+      parsed = JSON.parse(part.output) as Record<string, unknown>
+    } catch {
+      parsed = {}
+    }
+  }
+  const metadata = part.metadata ?? {}
+  const stdout = String(parsed.stdout ?? metadata.stdout ?? parsed.content ?? part.output ?? '')
+  const stderr = String(parsed.stderr ?? metadata.stderr ?? '')
+  return {
+    stdout,
+    stderr,
+    exitCode:
+      typeof parsed.exitCode === 'number' || parsed.exitCode === null
+        ? parsed.exitCode
+        : typeof metadata.exitCode === 'number' || metadata.exitCode === null
+          ? metadata.exitCode
+          : undefined,
+    durationMs:
+      typeof parsed.durationMs === 'number'
+        ? parsed.durationMs
+        : typeof metadata.durationMs === 'number'
+          ? metadata.durationMs
+          : undefined,
+    timedOut: Boolean(parsed.timedOut ?? metadata.timedOut),
+    workdir: typeof parsed.workdir === 'string' ? parsed.workdir : String(metadata.workdir ?? ''),
+    outputPath:
+      typeof metadata.outputPath === 'string'
+        ? metadata.outputPath
+        : typeof metadata.diskPath === 'string'
+          ? metadata.diskPath
+          : undefined
+  }
+}
+
+function tuiPhase(part: AgentPart): string | undefined {
+  const phase = part.metadata?.screenPhase
+  return typeof phase === 'string' ? phase : undefined
+}
+
 export function AgentRunDetailDrawer({
   runId,
   open,
@@ -263,6 +317,8 @@ export function AgentRunDetailDrawer({
                 {sortedParts.map((part) => {
                   const command = parseCommand(part)
                   const sessionId = metadataSessionId(part)
+                  const commandDetails = parseCommandDetails(part)
+                  const phase = tuiPhase(part)
                   return (
                     <div
                       key={part.id}
@@ -295,6 +351,31 @@ export function AgentRunDetailDrawer({
                               {command}
                             </div>
                           )}
+                          {commandDetails && (
+                            <div className="mt-2 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
+                              {commandDetails.workdir && <Badge variant="neutral">{commandDetails.workdir}</Badge>}
+                              {commandDetails.exitCode !== undefined && (
+                                <Badge
+                                  variant={commandDetails.exitCode === 0 ? 'success' : 'warning'}
+                                >
+                                  exit {commandDetails.exitCode ?? '?'}
+                                </Badge>
+                              )}
+                              {commandDetails.durationMs !== undefined && (
+                                <Badge variant="neutral">{commandDetails.durationMs}ms</Badge>
+                              )}
+                              {commandDetails.timedOut && <Badge variant="danger">timeout</Badge>}
+                              {commandDetails.outputPath && <Badge variant="neutral">已截断</Badge>}
+                            </div>
+                          )}
+                          {phase && (
+                            <div className="mt-2 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
+                              <Badge variant="neutral">screen {phase}</Badge>
+                              {typeof part.metadata?.status === 'string' && (
+                                <Badge variant="neutral">{part.metadata.status}</Badge>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
                           {command && (
@@ -317,7 +398,20 @@ export function AgentRunDetailDrawer({
                           )}
                         </div>
                       </div>
-                      {(part.output || part.error || part.input) && (
+                      {commandDetails ? (
+                        <div className="mt-2 space-y-2">
+                          {commandDetails.stdout && (
+                            <pre className="max-h-52 overflow-y-auto whitespace-pre-wrap rounded-md border border-workspace-border bg-workspace/85 px-3 py-2 font-mono text-[11px] leading-relaxed text-workspace-foreground">
+                              {textPreview(commandDetails.stdout)}
+                            </pre>
+                          )}
+                          {commandDetails.stderr && (
+                            <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border border-danger/20 bg-danger-soft/30 px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground">
+                              {textPreview(commandDetails.stderr)}
+                            </pre>
+                          )}
+                        </div>
+                      ) : (part.output || part.error || part.input) && (
                         <pre className="mt-2 max-h-52 overflow-y-auto whitespace-pre-wrap rounded-md border border-workspace-border bg-workspace/85 px-3 py-2 font-mono text-[11px] leading-relaxed text-workspace-foreground">
                           {textPreview(part.error || part.output || part.input)}
                         </pre>

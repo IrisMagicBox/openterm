@@ -79,6 +79,18 @@ function statusLabel(status: TerminalActivity['status']): string {
   return '空闲'
 }
 
+function takeoverBadge(
+  session: TerminalSession
+): { label: string; variant: 'warning' } | null {
+  if (session.paused && session.takeoverMode === 'manual') {
+    return { label: '人工接管', variant: 'warning' }
+  }
+  if (session.lockedBy === 'user' && session.takeoverMode === 'auto') {
+    return { label: '用户接管', variant: 'warning' }
+  }
+  return null
+}
+
 function formatDuration(durationMs?: number): string {
   if (durationMs == null) return ''
   if (durationMs < 1000) return `${durationMs}ms`
@@ -334,6 +346,7 @@ function StageTerminalPane({
   }
 
   const tone = activity ? statusTone(activity.status) : 'neutral'
+  const controlBadge = takeoverBadge(session)
 
   return (
     <div className="min-h-0 flex-1 p-3">
@@ -350,6 +363,9 @@ function StageTerminalPane({
               <span className="truncate text-sm font-bold text-foreground">
                 {session.name || session.hostAlias}
               </span>
+              {session.role === 'agent_command' && <Badge variant="accent">Agent</Badge>}
+              {session.commandSource === 'user' && <Badge variant="neutral">用户</Badge>}
+              {controlBadge && <Badge variant={controlBadge.variant}>{controlBadge.label}</Badge>}
               <Badge variant={tone}>{activity ? statusLabel(activity.status) : '空闲'}</Badge>
             </div>
             <div className="mt-1 flex min-w-0 items-center gap-2 text-xs font-semibold text-muted-foreground">
@@ -386,12 +402,11 @@ function StageTerminalPane({
             onClose={() => onCloseTerminal(session.id)}
             command={session.command}
             commandStatus={session.commandStatus}
+            commandSource={session.commandSource}
+            paused={session.paused}
+            lockedBy={session.lockedBy}
+            takeoverMode={session.takeoverMode}
           />
-          {session.paused && (
-            <div className="absolute right-3 top-3 rounded-md bg-warning px-2 py-1 text-xs font-semibold text-white shadow-sm">
-              人工接管中
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -431,6 +446,7 @@ function GridMode({
         const focused = focusedSessionId === session.id
         const activity = activitiesById.get(session.id)
         const tone = activity ? statusTone(activity.status) : 'neutral'
+        const controlBadge = takeoverBadge(session)
 
         return (
           <div
@@ -450,6 +466,9 @@ function GridMode({
                   <span className="truncate text-xs font-bold text-foreground">
                     {session.name || session.hostAlias}
                   </span>
+                  {session.role === 'agent_command' && <Badge variant="accent">Agent</Badge>}
+                  {session.commandSource === 'user' && <Badge variant="neutral">用户</Badge>}
+                  {controlBadge && <Badge variant={controlBadge.variant}>{controlBadge.label}</Badge>}
                   {focused && <Badge variant="accent">当前</Badge>}
                   {activity && <Badge variant={tone}>{statusLabel(activity.status)}</Badge>}
                 </div>
@@ -482,12 +501,11 @@ function GridMode({
                 onClose={() => onCloseTerminal(session.id)}
                 command={session.command}
                 commandStatus={session.commandStatus}
+                commandSource={session.commandSource}
+                paused={session.paused}
+                lockedBy={session.lockedBy}
+                takeoverMode={session.takeoverMode}
               />
-              {session.paused && (
-                <div className="absolute right-3 top-3 rounded-md bg-warning px-2 py-1 text-xs font-semibold text-white shadow-sm">
-                  人工接管中
-                </div>
-              )}
             </div>
           </div>
         )

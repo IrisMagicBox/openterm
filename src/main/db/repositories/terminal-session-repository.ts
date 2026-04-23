@@ -11,13 +11,14 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
 
   createSession(session: TerminalSession): void {
     this.stmt(
-      `INSERT INTO terminal_sessions (id, topicId, hostId, hostAlias, status, shellType, shellIntegrationReady, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO terminal_sessions (id, topicId, hostId, hostAlias, role, status, shellType, shellIntegrationReady, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       session.id,
       session.topicId,
       session.hostId,
       session.hostAlias,
+      session.role || 'user',
       session.status,
       session.shellType || null,
       session.shellIntegrationReady ? 1 : 0,
@@ -35,6 +36,7 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
       topicId: row.topicId,
       hostId: row.hostId,
       hostAlias: row.hostAlias,
+      role: (row.role as TerminalSession['role']) ?? 'user',
       status: row.status as TerminalSessionStatus,
       shellType: row.shellType ?? undefined,
       shellIntegrationReady: row.shellIntegrationReady === 1,
@@ -76,6 +78,7 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
       topicId: row.topicId,
       hostId: row.hostId,
       hostAlias: row.hostAlias,
+      role: (row.role as TerminalSession['role']) ?? 'user',
       status: row.status as TerminalSessionStatus,
       shellType: row.shellType ?? undefined,
       shellIntegrationReady: row.shellIntegrationReady === 1,

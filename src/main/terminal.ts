@@ -1,8 +1,16 @@
 import { WebContents } from 'electron'
 import * as HeadlessXterm from '@xterm/headless'
+import { createHash } from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import { logger } from './logger'
-import { TerminalSession, TerminalIO, CommandResult, TerminalStream } from '../shared/types'
+import {
+  TerminalSession,
+  TerminalIO,
+  CommandResult,
+  TerminalStream,
+  TerminalSessionRole,
+  TerminalTakeoverMode
+} from '../shared/types'
 import { topicDB, hostDB } from './db'
 import { ShellIntegrationParser, stripAnsi } from './terminal/shell-integration-parser'
 import { TerminalCommandQueue } from './terminal/terminal-command-queue'
@@ -32,6 +40,10 @@ if (!HeadlessTerminalCtor) {
   throw new Error('@xterm/headless Terminal export is unavailable')
 }
 
+const SCREEN_HISTORY_LIMIT = 120
+const SCREEN_HISTORY_TTL_MS = 10 * 60 * 1000
+const SCREEN_POLL_INTERVAL_MS = 250
+
 interface ActiveCommand {
   inputId: string
   sessionId: string
@@ -47,6 +59,7 @@ interface ActiveCommand {
 
 export interface CommandExecutionOptions {
   onOutputChunk?: (chunk: string, fullOutput: string) => void
+  timeoutMs?: number
 }
 
 export interface TerminalScreenLine {
@@ -74,6 +87,24 @@ export interface TerminalScreenSnapshot {
   visibleText: string
 }
 
+export interface TerminalChangedLine {
+  row: number
+  previous?: string
+  current: string
+}
+
+export interface TerminalScreenHistoryEntry {
+  updatedAt: number
+  hash: string
+  cursorX: number
+  cursorY: number
+  bufferType: 'normal' | 'alternate'
+  cols: number
+  rows: number
+  changedLines: TerminalChangedLine[]
+  excerpt: string
+}
+
 export interface WaitTerminalTextOptions {
   text?: string
   regex?: RegExp
@@ -88,6 +119,72 @@ export interface WaitTerminalTextResult {
   snapshot: TerminalScreenSnapshot
 }
 
+export interface WaitTerminalActivityOptions {
+  stopText?: string
+  stopRegex?: RegExp
+  timeoutMs: number
+  idleMs: number
+  requireFreshMatch: boolean
+  returnOnIdle?: boolean
+}
+
+export type TerminalScreenPhase = 'running' | 'stable_output' | 'awaiting_input' | 'unknown'
+
+export interface WaitTerminalActivityResult {
+  status: 'matched' | 'stable_output' | 'awaiting_input' | 'idle' | 'timeout'
+  screenPhase: TerminalScreenPhase
+  matched: boolean
+  timedOut: boolean
+  elapsedMs: number
+  idleMs: number
+  snapshot: TerminalScreenSnapshot
+  history: TerminalScreenHistoryEntry[]
+}
+
+function nonEmptyScreenLines(snapshot: TerminalScreenSnapshot): string[] {
+  return snapshot.lines.map((line) => line.text.trimEnd()).filter((line) => line.trim().length > 0)
+}
+
+function lastNonEmptyLine(snapshot: TerminalScreenSnapshot): string {
+  return nonEmptyScreenLines(snapshot).at(-1)?.trim() ?? ''
+}
+
+function hasRunningMarker(text: string): boolean {
+  return [
+    /\b\d{1,3}(?:\.\d+)?%\b/,
+    /\(\s*\d{1,3}(?:\.\d+)?%\s*\)/,
+    /\b(?:loading|running|processing|analyzing|thinking|generating|installing|building)\b/i,
+    /\b(?:esc|ctrl\+[a-z])\s+(?:interrupt|commands)\b/i,
+    /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏◐◓◑◒]/
+  ].some((pattern) => pattern.test(text))
+}
+
+function hasInputPrompt(snapshot: TerminalScreenSnapshot): boolean {
+  const text = snapshot.visibleText
+  const lastLine = lastNonEmptyLine(snapshot)
+  const cursorLine = snapshot.lines[snapshot.cursorY]?.text.trim() ?? ''
+  return [
+    /\b(?:press|hit)\s+(?:enter|return)\b/i,
+    /\b(?:continue|confirm|select|choose|yes\/no|y\/n)\b/i,
+    /\bask anything\b/i,
+    /\binput\b/i,
+    /\?$/
+  ].some((pattern) => pattern.test(text) || pattern.test(lastLine) || pattern.test(cursorLine))
+}
+
+export function classifyTerminalScreen(
+  snapshot: TerminalScreenSnapshot,
+  _history: TerminalScreenHistoryEntry[] = []
+): TerminalScreenPhase {
+  const lines = nonEmptyScreenLines(snapshot)
+  const text = snapshot.visibleText
+
+  if (snapshot.isCommandRunning || hasRunningMarker(text)) return 'running'
+  if (hasInputPrompt(snapshot)) return 'awaiting_input'
+  if (lines.length >= 3) return 'stable_output'
+  return 'unknown'
+}
+
 interface SessionState {
   session: TerminalSession
   stream: TerminalStream
@@ -97,10 +194,15 @@ interface SessionState {
   screen: HeadlessTerminal
   screenWriteChain: Promise<void>
   lastScreenUpdatedAt: number
+  screenHistory: TerminalScreenHistoryEntry[]
+  lastScreenHash?: string
+  lastScreenSnapshot?: TerminalScreenSnapshot
   outputBuffer: string
   rawBuffer: string
   isLocked: boolean
   lockedBy: 'agent' | 'user' | null
+  paused: boolean
+  takeoverMode: TerminalTakeoverMode | null
   shellIntegrationInjected: boolean
 }
 
@@ -117,15 +219,21 @@ class CommandExecutor {
     hostAlias: string,
     stream: TerminalStream,
     webContents?: WebContents,
-    autoInject = true
+    autoInject = true,
+    role: TerminalSessionRole = 'agent_command'
   ): Promise<TerminalSession> {
     const session: TerminalSession = {
       id: sessionId,
       topicId,
       hostId,
       hostAlias,
+      role,
       status: 'active',
       shellIntegrationReady: false,
+      isLocked: false,
+      lockedBy: null,
+      paused: false,
+      takeoverMode: null,
       createdAt: Date.now()
     }
 
@@ -144,10 +252,13 @@ class CommandExecutor {
       }),
       screenWriteChain: Promise.resolve(),
       lastScreenUpdatedAt: Date.now(),
+      screenHistory: [],
       outputBuffer: '',
       rawBuffer: '',
       isLocked: false,
       lockedBy: null,
+      paused: false,
+      takeoverMode: null,
       shellIntegrationInjected: false
     })
 
@@ -156,6 +267,70 @@ class CommandExecutor {
     }
 
     return session
+  }
+
+  private syncSessionControlState(state: SessionState): void {
+    state.session.isLocked = state.isLocked
+    state.session.lockedBy = state.lockedBy
+    state.session.paused = state.paused
+    state.session.takeoverMode = state.takeoverMode
+  }
+
+  private emitControlState(state: SessionState): void {
+    this.syncSessionControlState(state)
+    if (!state.webContents) return
+    state.webContents.send(`terminal:control-state:${state.session.id}`, {
+      lockedBy: state.lockedBy,
+      takeoverMode: state.takeoverMode,
+      paused: state.paused
+    })
+  }
+
+  private setControlState(
+    state: SessionState,
+    updates: {
+      isLocked?: boolean
+      lockedBy?: 'agent' | 'user' | null
+      paused?: boolean
+      takeoverMode?: TerminalTakeoverMode | null
+    }
+  ): void {
+    if (typeof updates.isLocked === 'boolean') state.isLocked = updates.isLocked
+    if (updates.lockedBy !== undefined) state.lockedBy = updates.lockedBy
+    if (typeof updates.paused === 'boolean') state.paused = updates.paused
+    if (updates.takeoverMode !== undefined) state.takeoverMode = updates.takeoverMode
+    this.emitControlState(state)
+  }
+
+  private canAutoResumeAgent(state: SessionState): boolean {
+    return (
+      state.isLocked &&
+      state.lockedBy === 'user' &&
+      state.takeoverMode === 'auto' &&
+      !state.paused
+    )
+  }
+
+  private releaseAutoTakeover(state: SessionState): boolean {
+    if (!this.canAutoResumeAgent(state)) return false
+    this.setControlState(state, {
+      isLocked: false,
+      lockedBy: null,
+      takeoverMode: null,
+      paused: false
+    })
+    return true
+  }
+
+  private ensureAgentCanTakeControl(state: SessionState, action: string): void {
+    if (this.releaseAutoTakeover(state)) return
+
+    if (state.isLocked && state.lockedBy === 'user') {
+      if (state.paused || state.takeoverMode === 'manual') {
+        throw new Error('Session is under manual user takeover, resume Agent control before continuing')
+      }
+      throw new Error(`Session is locked by user, cannot ${action}`)
+    }
   }
 
   private shellIntegrationScript = `printf '\\x1b]6973;OPENTERM_CMD_START\\x07'; __openterm_end() { printf '\\x1b]6973;OPENTERM_CMD_END;%s;%s\\x07' "$?" "$PWD"; }; if [ -n "$BASH_VERSION" ]; then PROMPT_COMMAND='__openterm_end'; elif [ -n "$ZSH_VERSION" ]; then precmd_functions+=(__openterm_end); fi`
@@ -197,12 +372,17 @@ class CommandExecutor {
     logger.info('Terminal', `Executing agent command in session ${sessionId}`, { command })
     const state = this.sessions.get(sessionId)!
 
-    if (state.isLocked && state.lockedBy === 'user') {
-      throw new Error('Session is locked by user, cannot execute agent command')
-    }
+    this.ensureAgentCanTakeControl(state, 'execute agent command')
 
-    state.isLocked = true
-    state.lockedBy = 'agent'
+    this.setControlState(state, {
+      isLocked: true,
+      lockedBy: 'agent',
+      takeoverMode: null
+    })
+    state.session.commandSource = 'agent'
+    state.session.command = command
+    state.session.commandStatus = 'running'
+    state.session.commandStartTime = Date.now()
 
     const inputId = uuidv4()
     const input: TerminalIO = {
@@ -253,14 +433,17 @@ class CommandExecutor {
 
       state.currentCommand = activeCommand
 
+      const timeoutMs = Math.max(100, options.timeoutMs ?? COMMAND_TIMEOUT_MS)
       const timeout = setTimeout(() => {
         if (state.currentCommand && state.currentCommand.inputId === inputId) {
-          this.completeCommand(sessionId, -1, '', true)
-          reject(
-            new Error(`Command execution timed out after ${COMMAND_TIMEOUT_MS / 1000} seconds`)
-          )
+          try {
+            state.stream.write('\x03')
+          } catch {
+            // Ignore interrupt failures; the command is still marked timed out below.
+          }
+          this.completeCommand(sessionId, -1, undefined, false, true)
         }
-      }, COMMAND_TIMEOUT_MS)
+      }, timeoutMs)
 
       if (activeCommand.isStreaming) {
         this.startStreamingFlush(sessionId, inputId)
@@ -270,8 +453,8 @@ class CommandExecutor {
         state.stream.write(cmdWithNewline)
       } catch (err) {
         state.currentCommand = undefined
-        state.isLocked = false
-        state.lockedBy = null
+        this.setControlState(state, { isLocked: false, lockedBy: null, takeoverMode: null })
+        state.session.commandStatus = 'failed'
         clearTimeout(timeout)
         reject(err)
       }
@@ -338,10 +521,7 @@ class CommandExecutor {
     if (!state) return
 
     if (state.isLocked && state.lockedBy === 'agent') {
-      // Always allow Ctrl+C (Interrupt) even if locked by agent
-      if (data === '\x03') {
-        state.stream.write(data)
-      }
+      this.takeoverSessionByUser(sessionId, 'auto')
       return
     }
 
@@ -360,6 +540,10 @@ class CommandExecutor {
           timestamp: Date.now()
         }
         this.history.createIO(input)
+        state.session.command = command
+        state.session.commandSource = 'user'
+        state.session.commandStatus = 'running'
+        state.session.commandStartTime = Date.now()
 
         if (state.webContents) {
           state.webContents.send(`terminal:command-start:${sessionId}`, {
@@ -388,6 +572,46 @@ class CommandExecutor {
     }
 
     state.stream.write(data)
+  }
+
+  takeoverSessionByUser(sessionId: string, mode: TerminalTakeoverMode = 'auto'): boolean {
+    const state = this.sessions.get(sessionId)
+    if (!state) return false
+    const shouldInterrupt = state.lockedBy === 'agent' || Boolean(state.currentCommand)
+
+    if (state.currentCommand && state.lockedBy === 'agent') {
+      state.currentCommand.reject(new Error('Command interrupted by user takeover'))
+      state.currentCommand = undefined
+    }
+
+    const timer = this.streamingTimers.get(sessionId)
+    if (timer) {
+      clearInterval(timer)
+      this.streamingTimers.delete(sessionId)
+    }
+
+    this.setControlState(state, {
+      isLocked: true,
+      lockedBy: 'user',
+      paused: mode === 'manual',
+      takeoverMode: mode
+    })
+    if (shouldInterrupt || state.session.commandStatus === 'running') {
+      state.session.commandStatus = 'failed'
+    }
+
+    if (shouldInterrupt) {
+      try {
+        state.stream.write('\x03')
+      } catch {
+        // Ignore interrupt failures; the lock state still reflects user takeover.
+      }
+    }
+
+    if (state.webContents) {
+      state.webContents.send(`terminal:user-takeover:${sessionId}`)
+    }
+    return true
   }
 
   handleStreamOutput(
@@ -488,6 +712,7 @@ class CommandExecutor {
           new Promise<void>((resolve) => {
             state.screen.write(data, () => {
               state.lastScreenUpdatedAt = Date.now()
+              this.recordScreenHistory(state)
               resolve()
             })
           })
@@ -519,6 +744,12 @@ class CommandExecutor {
     }
 
     await this.waitForScreenWrites(state)
+
+    return this.captureTerminalSnapshot(state)
+  }
+
+  private captureTerminalSnapshot(state: SessionState): TerminalScreenSnapshot {
+    const sessionId = state.session.id
 
     const activeBuffer = state.screen.buffer.active
     const lines: TerminalScreenLine[] = []
@@ -557,6 +788,109 @@ class CommandExecutor {
     }
   }
 
+  private recordScreenHistory(state: SessionState): void {
+    const snapshot = this.captureTerminalSnapshot(state)
+    const hash = this.hashScreen(snapshot.visibleText)
+    if (state.lastScreenHash === hash) return
+
+    const changedLines = this.diffScreenLines(state.lastScreenSnapshot, snapshot)
+    state.screenHistory.push({
+      updatedAt: snapshot.updatedAt,
+      hash,
+      cursorX: snapshot.cursorX,
+      cursorY: snapshot.cursorY,
+      bufferType: snapshot.bufferType,
+      cols: snapshot.cols,
+      rows: snapshot.rows,
+      changedLines,
+      excerpt: this.buildScreenExcerpt(snapshot, changedLines)
+    })
+
+    state.lastScreenHash = hash
+    state.lastScreenSnapshot = snapshot
+    this.pruneScreenHistory(state)
+  }
+
+  private hashScreen(text: string): string {
+    return createHash('sha1').update(text).digest('hex')
+  }
+
+  private diffScreenLines(
+    previous: TerminalScreenSnapshot | undefined,
+    current: TerminalScreenSnapshot
+  ): TerminalChangedLine[] {
+    const changed: TerminalChangedLine[] = []
+    const maxRows = Math.max(previous?.lines.length ?? 0, current.lines.length)
+    for (let index = 0; index < maxRows; index++) {
+      const previousText = previous?.lines[index]?.text ?? ''
+      const currentText = current.lines[index]?.text ?? ''
+      if (previousText !== currentText) {
+        changed.push({
+          row: index,
+          previous: previous ? previousText : undefined,
+          current: currentText
+        })
+      }
+    }
+    return changed
+  }
+
+  private buildScreenExcerpt(
+    snapshot: TerminalScreenSnapshot,
+    changedLines: TerminalChangedLine[]
+  ): string {
+    const rowSet = new Set<number>()
+    for (const line of changedLines.slice(-8)) {
+      rowSet.add(line.row)
+    }
+    for (let row = snapshot.cursorY - 2; row <= snapshot.cursorY + 2; row++) {
+      if (row >= 0 && row < snapshot.lines.length) rowSet.add(row)
+    }
+    if (rowSet.size === 0) {
+      snapshot.lines.forEach((line) => {
+        if (line.text.trim()) rowSet.add(line.row)
+      })
+    }
+
+    return [...rowSet]
+      .sort((a, b) => a - b)
+      .slice(-12)
+      .map((row) => {
+        const line = snapshot.lines[row]
+        const marker = row === snapshot.cursorY ? '>' : ' '
+        return `${String(row + 1).padStart(2, '0')}${marker} ${line?.text ?? ''}`
+      })
+      .join('\n')
+      .trimEnd()
+  }
+
+  private pruneScreenHistory(state: SessionState): void {
+    const minUpdatedAt = Date.now() - SCREEN_HISTORY_TTL_MS
+    state.screenHistory = state.screenHistory
+      .filter((entry) => entry.updatedAt >= minUpdatedAt)
+      .slice(-SCREEN_HISTORY_LIMIT)
+  }
+
+  async getTerminalHistory(
+    sessionId: string,
+    options: { sinceUpdatedAt?: number; maxHistory?: number } = {}
+  ): Promise<TerminalScreenHistoryEntry[]> {
+    const state = this.sessions.get(sessionId)
+    if (!state) {
+      throw new Error(`Session not found: ${sessionId}`)
+    }
+
+    await this.waitForScreenWrites(state)
+    this.pruneScreenHistory(state)
+
+    const maxHistory = Math.max(1, Math.min(options.maxHistory ?? 20, SCREEN_HISTORY_LIMIT))
+    return state.screenHistory
+      .filter((entry) =>
+        typeof options.sinceUpdatedAt === 'number' ? entry.updatedAt > options.sinceUpdatedAt : true
+      )
+      .slice(-maxHistory)
+  }
+
   async sendAgentInput(
     sessionId: string,
     data: string,
@@ -570,9 +904,7 @@ class CommandExecutor {
       throw new Error(`Session not found: ${sessionId}`)
     }
 
-    if (state.isLocked && state.lockedBy === 'user') {
-      throw new Error('Session is locked by user, cannot send agent input')
-    }
+    this.ensureAgentCanTakeControl(state, 'send agent input')
 
     const input: TerminalIO = {
       id: uuidv4(),
@@ -590,16 +922,18 @@ class CommandExecutor {
 
     const shouldUnlockAfterWrite = !state.isLocked
     if (shouldUnlockAfterWrite) {
-      state.isLocked = true
-      state.lockedBy = 'agent'
+      this.setControlState(state, {
+        isLocked: true,
+        lockedBy: 'agent',
+        takeoverMode: null
+      })
     }
 
     try {
       state.stream.write(data)
     } finally {
       if (shouldUnlockAfterWrite && !state.currentCommand) {
-        state.isLocked = false
-        state.lockedBy = null
+        this.setControlState(state, { isLocked: false, lockedBy: null, takeoverMode: null })
       }
     }
   }
@@ -654,11 +988,133 @@ class CommandExecutor {
     }
   }
 
+  async waitForTerminalActivity(
+    sessionId: string,
+    options: WaitTerminalActivityOptions,
+    signal?: AbortSignal
+  ): Promise<WaitTerminalActivityResult> {
+    const startedAt = Date.now()
+    const timeoutMs = Math.max(0, options.timeoutMs)
+    const idleMs = Math.max(0, options.idleMs)
+    const baselineSnapshot = await this.getTerminalSnapshot(sessionId)
+    const baselineHistory = await this.getTerminalHistory(sessionId, { maxHistory: 1 })
+    const baselineUpdatedAt = baselineHistory.at(-1)?.updatedAt ?? baselineSnapshot.updatedAt
+
+    let sawChange = false
+    let lastChangeAt = Date.now()
+    let lastSnapshot = baselineSnapshot
+    let historySinceBaseline: TerminalScreenHistoryEntry[] = []
+
+    while (Date.now() - startedAt <= timeoutMs) {
+      if (signal?.aborted) {
+        throw new Error('Terminal activity wait aborted')
+      }
+
+      const controlState = this.getSessionControlState(sessionId)
+      if (controlState?.paused && controlState.takeoverMode === 'manual') {
+        throw new Error('Session is under manual user takeover, resume Agent control before waiting')
+      }
+
+      const snapshot = await this.getTerminalSnapshot(sessionId)
+      const history = await this.getTerminalHistory(sessionId, {
+        sinceUpdatedAt: baselineUpdatedAt,
+        maxHistory: SCREEN_HISTORY_LIMIT
+      })
+
+      if (history.length > historySinceBaseline.length) {
+        sawChange = true
+        historySinceBaseline = history
+        lastChangeAt = Date.now()
+      }
+
+      lastSnapshot = snapshot
+
+      if (this.matchesTerminalActivity(snapshot, history, options)) {
+        const screenPhase = classifyTerminalScreen(snapshot, history)
+        return {
+          status: 'matched',
+          screenPhase,
+          matched: true,
+          timedOut: false,
+          elapsedMs: Date.now() - startedAt,
+          idleMs,
+          snapshot,
+          history: history.slice(-20)
+        }
+      }
+
+      if (sawChange && Date.now() - lastChangeAt >= idleMs) {
+        const screenPhase = classifyTerminalScreen(snapshot, historySinceBaseline)
+        if (options.returnOnIdle === true || screenPhase !== 'running') {
+          const status =
+            screenPhase === 'stable_output' || screenPhase === 'awaiting_input'
+              ? screenPhase
+              : 'idle'
+          return {
+            status,
+            screenPhase,
+            matched: false,
+            timedOut: false,
+            elapsedMs: Date.now() - startedAt,
+            idleMs,
+            snapshot,
+            history: historySinceBaseline.slice(-20)
+          }
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, SCREEN_POLL_INTERVAL_MS))
+    }
+
+    const screenPhase = classifyTerminalScreen(lastSnapshot, historySinceBaseline)
+    return {
+      status: 'timeout',
+      screenPhase,
+      matched: false,
+      timedOut: true,
+      elapsedMs: Date.now() - startedAt,
+      idleMs,
+      snapshot: lastSnapshot,
+      history: historySinceBaseline.slice(-20)
+    }
+  }
+
+  private matchesTerminalActivity(
+    snapshot: TerminalScreenSnapshot,
+    history: TerminalScreenHistoryEntry[],
+    options: WaitTerminalActivityOptions
+  ): boolean {
+    if (!options.stopText && !options.stopRegex) return false
+
+    if (!options.requireFreshMatch) {
+      return this.matchesText(snapshot.visibleText, options.stopText, options.stopRegex)
+    }
+
+    return history.some((entry) => {
+      const changedText = entry.changedLines.map((line) => line.current).join('\n')
+      return this.matchesText(
+        `${changedText}\n${entry.excerpt}`,
+        options.stopText,
+        options.stopRegex
+      )
+    })
+  }
+
+  private matchesText(text: string, stopText?: string, stopRegex?: RegExp): boolean {
+    if (stopText && text.includes(stopText)) return true
+    if (stopRegex) {
+      stopRegex.lastIndex = 0
+      return stopRegex.test(text)
+    }
+    return false
+  }
+
   private completeCommand(
     sessionId: string,
     exitCode?: number,
     cwd?: string,
-    isTruncated = false
+    isTruncated = false,
+    timedOut = false
   ): void {
     const state = this.sessions.get(sessionId)
     if (!state || !state.currentCommand) return
@@ -717,16 +1173,74 @@ class CommandExecutor {
       durationMs,
       isTruncated,
       sessionId,
+      timedOut,
       cwd
     }
 
     cmd.resolve(result)
 
     state.currentCommand = undefined
+    state.session.commandStatus = exitCode === 0 ? 'completed' : 'failed'
+    state.session.commandExitCode = exitCode ?? -1
+    state.session.commandDurationMs = durationMs
     if (state.lockedBy === 'agent') {
-      state.isLocked = false
-      state.lockedBy = null
+      this.setControlState(state, { isLocked: false, lockedBy: null, takeoverMode: null })
     }
+  }
+
+  async buildTerminalScreenSummary(topicId: string): Promise<string> {
+    const sessions = this.history.getSessionsByTopic(topicId)
+    const activeSessions = sessions.filter((session) => Boolean(this.sessions.get(session.id)))
+    if (activeSessions.length === 0) return this.buildTerminalContext(topicId)
+
+    const chunks: string[] = ['[Terminal Screen Summary]']
+    for (const session of activeSessions) {
+      const snapshot = await this.getTerminalSnapshot(session.id)
+      const history = await this.getTerminalHistory(session.id, { maxHistory: 6 })
+      const phase = classifyTerminalScreen(snapshot, history)
+      const rows = this.compactSnapshotRows(snapshot)
+      const recentChanges = history
+        .slice(-3)
+        .map((entry) =>
+          entry.excerpt
+            .split('\n')
+            .slice(-5)
+            .map((line) => `    ${line}`)
+            .join('\n')
+        )
+
+      chunks.push(
+        [
+          `${session.hostAlias} - ${session.name || 'unnamed'} (id: ${session.id})`,
+          `  status: ${session.status}, phase: ${phase}, buffer: ${snapshot.bufferType}, cursor: ${snapshot.cursorX + 1},${snapshot.cursorY + 1}`,
+          '  screen:',
+          ...rows.map((row) => `    ${row}`),
+          recentChanges.length > 0 ? '  recent changes:' : '',
+          ...recentChanges
+        ]
+          .filter(Boolean)
+          .join('\n')
+      )
+    }
+    return chunks.join('\n\n')
+  }
+
+  private compactSnapshotRows(snapshot: TerminalScreenSnapshot): string[] {
+    const rows = new Set<number>()
+    snapshot.lines.forEach((line) => {
+      if (line.text.trim()) rows.add(line.row)
+    })
+    for (let row = snapshot.cursorY - 3; row <= snapshot.cursorY + 3; row++) {
+      if (row >= 0 && row < snapshot.lines.length) rows.add(row)
+    }
+    return [...rows]
+      .sort((a, b) => a - b)
+      .slice(-24)
+      .map((row) => {
+        const marker = row === snapshot.cursorY ? '>' : ' '
+        const line = snapshot.lines[row]?.text ?? ''
+        return `${String(row + 1).padStart(2, '0')}${marker} ${line}`
+      })
   }
 
   buildTerminalContext(topicId: string): string {
@@ -823,8 +1337,32 @@ class CommandExecutor {
         state.currentCommand.reject(new Error('Command interrupted by user takeover'))
         state.currentCommand = undefined
       }
-      state.isLocked = locked
-      state.lockedBy = lockedBy
+
+      if (!locked && state.paused) {
+        this.setControlState(state, {
+          isLocked: true,
+          lockedBy: 'user',
+          paused: true,
+          takeoverMode: 'manual'
+        })
+        return
+      }
+
+      if (!locked && state.takeoverMode === 'auto' && state.lockedBy === 'user') {
+        this.setControlState(state, {
+          isLocked: false,
+          lockedBy: null,
+          takeoverMode: null,
+          paused: false
+        })
+        return
+      }
+
+      this.setControlState(state, {
+        isLocked: locked,
+        lockedBy,
+        takeoverMode: lockedBy === 'user' ? state.takeoverMode : null
+      })
     }
   }
 
@@ -838,6 +1376,53 @@ class CommandExecutor {
     const state = this.sessions.get(sessionId)
     if (!state) return false
     return state.session.status === 'active' && !state.currentCommand && !state.isLocked
+  }
+
+  canAcceptAgentCommand(sessionId: string): { ok: boolean; reason?: string } {
+    const state = this.sessions.get(sessionId)
+    if (!state) return { ok: false, reason: 'session_not_found' }
+    if (state.session.status !== 'active') return { ok: false, reason: 'session_not_active' }
+    if (state.currentCommand) return { ok: false, reason: 'command_running' }
+    if (state.paused) return { ok: false, reason: 'manual_pause' }
+    if (state.isLocked) return { ok: false, reason: `locked_by_${state.lockedBy || 'unknown'}` }
+    const bufferType = state.screen.buffer.active.type === 'alternate' ? 'alternate' : 'normal'
+    if (bufferType === 'alternate') return { ok: false, reason: 'alternate_buffer' }
+    return { ok: true }
+  }
+
+  setSessionPaused(sessionId: string, paused: boolean): boolean {
+    const state = this.sessions.get(sessionId)
+    if (!state) return false
+
+    if (paused) {
+      return this.takeoverSessionByUser(sessionId, 'manual')
+    }
+
+    this.setControlState(state, {
+      isLocked: false,
+      lockedBy: null,
+      paused: false,
+      takeoverMode: null
+    })
+    return true
+  }
+
+  getSessionControlState(sessionId: string):
+    | {
+        isLocked: boolean
+        lockedBy: 'agent' | 'user' | null
+        paused: boolean
+        takeoverMode: TerminalTakeoverMode | null
+      }
+    | undefined {
+    const state = this.sessions.get(sessionId)
+    if (!state) return undefined
+    return {
+      isLocked: state.isLocked,
+      lockedBy: state.lockedBy,
+      paused: state.paused,
+      takeoverMode: state.takeoverMode
+    }
   }
 
   attachSession(sessionId: string, webContents: WebContents): boolean {

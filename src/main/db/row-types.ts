@@ -157,6 +157,7 @@ export interface TerminalSessionRow {
   topicId: string
   hostId: string
   hostAlias: string
+  role: string | null
   status: string
   shellType: string | null
   shellIntegrationReady: number // 0 or 1

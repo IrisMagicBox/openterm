@@ -94,8 +94,8 @@ export function deriveTerminalActivities(
 
     let status: TerminalActivityStatus = 'idle'
     if (session.commandStatus === 'running' || runningPart) status = 'running'
-    else if (session.commandStatus === 'failed' || latestPart?.status === 'error') status = 'failed'
     else if (session.paused) status = 'paused'
+    else if (session.commandStatus === 'failed' || latestPart?.status === 'error') status = 'failed'
     else if (session.commandStatus === 'completed' || latestPart?.status === 'completed') {
       status = 'completed'
     }

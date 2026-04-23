@@ -24,6 +24,7 @@ import type {
   AgentThinkingPayload,
   TerminalCommandStartPayload,
   TerminalCommandEndPayload,
+  TerminalControlStatePayload,
   DebugLogEntry,
   SessionRecoveredPayload
 } from '../shared/ipc/channels'
@@ -314,8 +315,8 @@ const api: Record<string, unknown> = {
     ipcRenderer.invoke('ssh:agent:execute', id, command),
   closeAgentSSHSession: (id: string) => ipcRenderer.invoke('ssh:agent:close', id),
   setAgentSessionPaused: (id: string, paused: boolean) =>
-    ipcRenderer.invoke('ssh:agent:set-paused', id, paused),
-  isAgentSessionPaused: (id: string) => ipcRenderer.invoke('ssh:agent:is-paused', id),
+    ipcRenderer.invoke('agent:set-session-paused', id, paused),
+  isAgentSessionPaused: (id: string) => ipcRenderer.invoke('agent:is-session-paused', id),
   onSSHReady: (id: string, callback: (hostAlias: string) => void) => {
     const listener = (_event, hostAlias: string) => callback(hostAlias)
     ipcRenderer.on(`ssh:ready:${id}`, listener)
@@ -337,6 +338,12 @@ const api: Record<string, unknown> = {
     const listener = () => callback()
     ipcRenderer.on(`terminal:user-takeover:${id}`, listener)
     return () => ipcRenderer.removeListener(`terminal:user-takeover:${id}`, listener)
+  },
+  onTerminalControlState: (id: string, callback: (state: TerminalControlStatePayload) => void) => {
+    const listener = (_event: IpcRendererEvent, state: TerminalControlStatePayload) =>
+      callback(state)
+    ipcRenderer.on(`terminal:control-state:${id}`, listener)
+    return () => ipcRenderer.removeListener(`terminal:control-state:${id}`, listener)
   },
 
   // Multi-Terminal Management

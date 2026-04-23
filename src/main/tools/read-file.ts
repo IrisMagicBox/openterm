@@ -20,7 +20,9 @@ export default define('read_file', {
       return { output: `Error: Host ${hostId} not found` }
     }
 
-    const sessionId = await ctx.ensureSession(host.id, host.alias, undefined)
+    const sessionId = await ctx.ensureSession(host.id, host.alias, undefined, {
+      role: 'agent_command'
+    })
     const result = await commandExecutor.execute(
       sessionId,
       `cat < ${shellQuote(path)}`,

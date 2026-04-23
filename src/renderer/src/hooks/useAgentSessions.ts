@@ -34,10 +34,26 @@ export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | nul
         const exists = prev.find((s) => s.id === data.id)
         if (exists) {
           return prev.map((s) =>
-            s.id === data.id ? { ...s, ...data, visible: true, paused: s.paused ?? false } : s
+            s.id === data.id
+              ? {
+                  ...s,
+                  ...data,
+                  visible: true,
+                  paused: data.paused ?? s.paused ?? false,
+                  takeoverMode: data.takeoverMode ?? s.takeoverMode ?? null
+                }
+              : s
           )
         }
-        return [...prev, { ...data, visible: true, paused: false }]
+        return [
+          ...prev,
+          {
+            ...data,
+            visible: true,
+            paused: data.paused ?? false,
+            takeoverMode: data.takeoverMode ?? null
+          }
+        ]
       })
     })
 
@@ -49,7 +65,15 @@ export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | nul
       setAgentSessions((prev) => {
         const exists = prev.find((s) => s.id === data.id)
         if (exists) return prev
-        return [...prev, { ...data, visible: true, paused: false }]
+        return [
+          ...prev,
+          {
+            ...data,
+            visible: true,
+            paused: data.paused ?? false,
+            takeoverMode: data.takeoverMode ?? null
+          }
+        ]
       })
     })
 
@@ -81,6 +105,7 @@ export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | nul
               ? {
                   ...s,
                   command: data.command,
+                  commandSource: data.source === 'user' ? 'user' : 'agent',
                   commandStatus: 'running',
                   commandStartTime: Date.now(),
                   commandExitCode: undefined,
@@ -106,7 +131,42 @@ export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | nul
         )
       })
 
-      unsubscribers.push(unsubStart, unsubEnd)
+      const unsubTakeover = window.api.onTerminalUserTakeover(session.id, () => {
+        setAgentSessions((prev) =>
+          prev.map((s) =>
+            s.id === session.id
+              ? {
+                  ...s,
+                  commandStatus:
+                    s.commandStatus === 'running' || s.commandSource === 'agent'
+                      ? 'failed'
+                      : s.commandStatus,
+                  commandSource:
+                    s.commandStatus === 'running' || s.commandSource === 'agent'
+                      ? 'user'
+                      : s.commandSource
+                }
+              : s
+          )
+        )
+      })
+
+      const unsubControlState = window.api.onTerminalControlState(session.id, (state) => {
+        setAgentSessions((prev) =>
+          prev.map((s) =>
+            s.id === session.id
+              ? {
+                  ...s,
+                  paused: state.paused,
+                  lockedBy: state.lockedBy,
+                  takeoverMode: state.takeoverMode
+                }
+              : s
+          )
+        )
+      })
+
+      unsubscribers.push(unsubStart, unsubEnd, unsubTakeover, unsubControlState)
     })
 
     return () => {
@@ -122,7 +182,15 @@ export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | nul
         setAgentSessions((prev) => {
           const exists = prev.find((s) => s.id === session.id)
           if (exists) return prev
-          return [...prev, { ...session, visible: true, paused: false }]
+          return [
+            ...prev,
+            {
+              ...session,
+              visible: true,
+              paused: session.paused ?? false,
+              takeoverMode: session.takeoverMode ?? null
+            }
+          ]
         })
       } else {
         await window.api.createAgentTerminal(selectedTopic.id, hostId)
@@ -148,9 +216,6 @@ export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | nul
 
   const handleToggleAgentTerminalPaused = useCallback(async (id: string, paused: boolean) => {
     await window.api.setAgentSessionPaused(id, paused)
-    setAgentSessions((prev) =>
-      prev.map((session) => (session.id === id ? { ...session, paused } : session))
-    )
   }, [])
 
   const handleResolveAuth = useCallback(

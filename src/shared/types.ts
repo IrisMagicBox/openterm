@@ -197,7 +197,7 @@ export interface Message {
     policyReason?: string
     riskLevel?: ApprovalRiskLevel
     memoryRecalled?: boolean
-    agentStatus?: 'thinking' | 'executing' | 'verifying' | 'reflecting'
+    agentStatus?: 'thinking' | 'executing' | 'verifying' | 'reflecting' | 'done' | 'error'
     taskId?: string
     steps?: TaskStep[]
   }
@@ -219,22 +219,27 @@ export interface ToolResult {
 }
 
 export type TerminalSessionStatus = 'active' | 'streaming' | 'closed' | 'disconnected'
+export type TerminalSessionRole = 'agent_command' | 'interactive' | 'user'
+export type TerminalTakeoverMode = 'auto' | 'manual'
 
 export interface TerminalSession {
   id: string
   topicId: string
   hostId: string
   hostAlias: string
+  role?: TerminalSessionRole
   name?: string
   status: TerminalSessionStatus
   shellType?: string
   shellIntegrationReady: boolean
   isLocked?: boolean
   lockedBy?: 'agent' | 'user' | null
+  takeoverMode?: TerminalTakeoverMode | null
   isPinned?: boolean
   visible?: boolean
   paused?: boolean
   command?: string
+  commandSource?: 'agent' | 'user'
   commandStatus?: 'idle' | 'running' | 'completed' | 'failed'
   commandExitCode?: number
   commandDurationMs?: number
@@ -279,6 +284,7 @@ export interface CommandResult {
   durationMs: number
   isTruncated: boolean
   sessionId: string
+  timedOut?: boolean
   cwd?: string
 }
 

@@ -197,8 +197,8 @@ export function TopicHub({
   }
 
   return (
-    <div className="glass-sidebar hidden h-full w-72 shrink-0 flex-col border-y-0 border-r-0 lg:flex">
-      <div className="border-b border-white/55 bg-white/35 px-4 py-3 backdrop-blur-2xl">
+    <div className="light-sidebar hidden h-full w-72 shrink-0 flex-col border-y-0 border-r-0 lg:flex">
+      <div className="border-b border-black/[0.06] bg-white px-4 py-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
             <Server size={13} className="text-accent" />
@@ -221,21 +221,33 @@ export function TopicHub({
         onValueChange={(next) => setView(next as WorkspaceView)}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="border-b border-white/55 bg-white/25 px-3 py-2">
-          <TabsList className="grid h-9 w-full grid-cols-4 rounded-lg">
-            <TabsTrigger value="hosts" className="h-7 px-1 text-xs">
+        <div className="border-b border-black/[0.06] bg-white px-3 py-2">
+          <TabsList className="light-control grid h-10 w-full grid-cols-4 rounded-xl border-black/[0.06] bg-black/[0.02] p-1 shadow-none">
+            <TabsTrigger
+              value="hosts"
+              className="h-8 px-1 text-xs data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            >
               <Server size={12} />
               主机
             </TabsTrigger>
-            <TabsTrigger value="runs" className="h-7 px-1 text-xs">
+            <TabsTrigger
+              value="runs"
+              className="h-8 px-1 text-xs data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            >
               <History size={12} />
               Run
             </TabsTrigger>
-            <TabsTrigger value="memory" className="h-7 px-1 text-xs">
+            <TabsTrigger
+              value="memory"
+              className="h-8 px-1 text-xs data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            >
               <Brain size={12} />
               记忆
             </TabsTrigger>
-            <TabsTrigger value="tunnels" className="h-7 px-1 text-xs">
+            <TabsTrigger
+              value="tunnels"
+              className="h-8 px-1 text-xs data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            >
               <Globe size={12} />
               转发
             </TabsTrigger>
@@ -290,10 +302,12 @@ export function TopicHub({
         </div>
       </Tabs>
 
-      <div className="border-t border-white/55 bg-white/35 p-3 backdrop-blur-2xl">
+      <div className="border-t border-black/[0.06] bg-white p-3">
         <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
           <span>TOPIC-{topicId.slice(0, 4)}</span>
-          <Badge variant="neutral">串行同主机</Badge>
+          <Badge variant="neutral" className="border-black/[0.06] bg-black/[0.02] backdrop-blur-0">
+            串行同主机
+          </Badge>
         </div>
       </div>
       {ConfirmDialogComponent}
@@ -303,7 +317,7 @@ export function TopicHub({
 
 function Metric({ label, value }: { label: string; value: number }): React.ReactElement {
   return (
-    <div className="rounded-md border border-white/60 bg-white/45 px-1.5 py-1">
+    <div className="light-control rounded-xl px-1.5 py-1.5">
       <div className="text-sm font-bold text-foreground">{value}</div>
       <div className="text-[10px] font-semibold text-muted-foreground">{label}</div>
     </div>
@@ -349,9 +363,14 @@ function HostsPane({
 }): React.ReactElement {
   if (hosts.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-white/45 p-4 text-center">
+      <div className="rounded-2xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center">
         <p className="text-xs font-medium leading-relaxed text-muted-foreground">暂无主机。</p>
-        <Button onClick={onAddHost} variant="secondary" size="sm" className="mt-3">
+        <Button
+          onClick={onAddHost}
+          variant="subtle"
+          size="sm"
+          className="mt-3 border-black/[0.06] bg-white"
+        >
           <Plus size={12} />
           添加主机
         </Button>
@@ -431,13 +450,13 @@ function HostsPane({
               </div>
             </div>
 
-            <div className="ml-3 space-y-1 border-l border-white/70 pl-3">
+            <div className="ml-3 space-y-1 border-l border-black/[0.06] pl-3">
               {hostSessions.length === 0 ? (
                 <Button
                   onClick={() => onCreateTerminal(host.id)}
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-start border border-dashed border-border text-xs text-muted-foreground"
+                  className="w-full justify-start rounded-xl border border-dashed border-black/[0.08] bg-black/[0.015] text-xs text-muted-foreground hover:bg-black/[0.03]"
                 >
                   <Plus size={12} /> 初始化终端
                 </Button>
@@ -450,8 +469,8 @@ function HostsPane({
                       className={cn(
                         'group/session relative flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors',
                         focused
-                          ? 'border-white/65 bg-black/5 text-foreground shadow-sm'
-                          : 'border-white/65 bg-white/55 text-muted-foreground hover:border-accent/30 hover:bg-accent-soft/45'
+                          ? 'border-black/[0.08] bg-black/[0.04] text-foreground shadow-sm'
+                          : 'border-black/[0.06] bg-white text-muted-foreground hover:border-black/[0.08] hover:bg-black/[0.02]'
                       )}
                       onClick={() => onFocusSession(session.id)}
                     >
@@ -491,7 +510,7 @@ function HostsPane({
                             }}
                             className={cn(
                               'rounded p-0.5',
-                              focused ? 'hover:bg-white/60' : 'hover:bg-border'
+                              focused ? 'hover:bg-white' : 'hover:bg-black/[0.04]'
                             )}
                           >
                             <FileText size={10} />
@@ -505,7 +524,7 @@ function HostsPane({
                           }}
                           className={cn(
                             'rounded p-0.5',
-                            focused ? 'hover:bg-white/60' : 'hover:bg-border'
+                            focused ? 'hover:bg-white' : 'hover:bg-black/[0.04]'
                           )}
                         >
                           <Pin size={10} fill={session.isPinned ? 'currentColor' : 'none'} />
@@ -549,7 +568,7 @@ function RunsPane({
 }): React.ReactElement {
   if (runs.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-white/45 p-4 text-center text-xs font-semibold text-muted-foreground">
+      <div className="rounded-2xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs font-semibold text-muted-foreground">
         暂无 Run。
       </div>
     )
@@ -561,7 +580,7 @@ function RunsPane({
         <button
           key={run.id}
           onClick={() => onOpenRunDetail?.(run.id)}
-          className="w-full rounded-lg border border-white/65 bg-white/55 px-2.5 py-2 text-left transition hover:border-accent/25 hover:bg-white/75"
+          className="w-full rounded-2xl border border-black/[0.06] bg-white px-3 py-2.5 text-left transition hover:border-black/[0.08] hover:bg-black/[0.015]"
         >
           <div className="flex items-center justify-between gap-2">
             <span className="truncate text-xs font-bold text-foreground">{run.goal}</span>
@@ -602,7 +621,7 @@ function MemoryPane({
 
   if (memories.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-white/45 p-4 text-center text-xs font-semibold text-muted-foreground">
+      <div className="rounded-2xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs font-semibold text-muted-foreground">
         暂无可见记忆。
       </div>
     )
@@ -610,7 +629,7 @@ function MemoryPane({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-1 rounded-lg border border-white/60 bg-white/40 p-1">
+      <div className="light-control flex items-center gap-1 rounded-xl p-1">
         {[
           { value: 'all' as const, label: '全部' },
           { value: 'global' as const, label: '全局' },
@@ -623,8 +642,8 @@ function MemoryPane({
             className={cn(
               'h-7 flex-1 rounded-md text-xs font-bold transition-colors',
               scopeFilter === item.value
-                ? 'bg-white text-accent shadow-sm'
-                : 'text-muted-foreground hover:bg-white/65 hover:text-foreground'
+                ? 'bg-white text-foreground shadow-none'
+                : 'text-muted-foreground hover:bg-white hover:text-foreground'
             )}
           >
             {item.label}
@@ -633,7 +652,7 @@ function MemoryPane({
       </div>
 
       {visibleMemories.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-white/45 p-4 text-center text-xs font-semibold text-muted-foreground">
+        <div className="rounded-2xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs font-semibold text-muted-foreground">
           当前范围暂无记忆。
         </div>
       ) : (
@@ -646,8 +665,8 @@ function MemoryPane({
               className={cn(
                 'rounded-lg border px-3 py-3 transition-colors',
                 memory.disabled
-                  ? 'border-white/55 bg-white/35 opacity-65'
-                  : 'border-white/65 bg-white/60'
+                  ? 'border-black/[0.05] bg-black/[0.02] opacity-65'
+                  : 'border-black/[0.06] bg-white'
               )}
             >
               <div className="flex items-start justify-between gap-2">
@@ -665,7 +684,7 @@ function MemoryPane({
                 <textarea
                   value={draft}
                   onChange={(event) => onDraft(memory.id, event.target.value)}
-                  className="mt-3 min-h-32 w-full resize-y rounded-lg border border-accent/25 bg-white/80 px-3 py-2 text-sm leading-6 text-foreground outline-none focus:border-accent/45"
+                  className="mt-3 min-h-32 w-full resize-y rounded-xl border border-black/[0.08] bg-black/[0.015] px-3 py-2 text-sm leading-6 text-foreground outline-none focus:border-black/[0.14]"
                 />
               ) : (
                 <p className="mt-3 whitespace-pre-wrap break-words text-[13px] leading-6 text-foreground">
@@ -673,7 +692,7 @@ function MemoryPane({
                 </p>
               )}
 
-              <div className="mt-3 flex items-center justify-between gap-2 border-t border-white/55 pt-2">
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-black/[0.06] pt-2">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                   <span>重要性 {memory.importance}</span>
                   <IconButton
@@ -763,9 +782,9 @@ function TunnelsPane({
               <Button
                 key={host.id}
                 onClick={() => onOpenPortForward(host)}
-                variant="secondary"
+                variant="subtle"
                 size="sm"
-                className="justify-start"
+                className="justify-start border-black/[0.06] bg-white"
               >
                 <Globe size={12} />
                 {host.alias}
@@ -775,7 +794,7 @@ function TunnelsPane({
       )}
 
       {tunnels.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-white/45 p-4 text-center text-xs font-semibold text-muted-foreground">
+        <div className="rounded-2xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs font-semibold text-muted-foreground">
           暂无活跃 tunnel。
         </div>
       ) : (
@@ -785,7 +804,7 @@ function TunnelsPane({
             return (
               <div
                 key={tunnel.id}
-                className="rounded-lg border border-white/65 bg-white/55 px-2.5 py-2"
+                className="rounded-2xl border border-black/[0.06] bg-white px-3 py-2.5"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-xs font-bold text-foreground">

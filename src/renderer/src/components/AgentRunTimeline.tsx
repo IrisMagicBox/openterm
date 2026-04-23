@@ -89,7 +89,7 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
 
   if (loading && visibleParts.length === 0) {
     return (
-      <div className="glass-control flex animate-pulse items-center gap-2 rounded-xl border-dashed px-3 py-2">
+      <div className="light-control flex animate-pulse items-center gap-2 rounded-xl border-dashed px-3 py-2">
         <Loader2 size={12} className="animate-spin text-accent" />
         <span className="text-xs font-semibold text-muted-foreground">初始化 Agent Runtime...</span>
       </div>
@@ -114,12 +114,12 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
               part.status === 'running' || part.status === 'pending'
                 ? 'border-accent/25 bg-accent-soft/55'
                 : part.status === 'completed'
-                  ? 'border-success/20 bg-white/55'
+                  ? 'border-black/[0.06] bg-white'
                   : part.status === 'error'
                     ? 'border-danger/25 bg-danger-soft/50'
                     : part.status === 'blocked'
                       ? 'border-warning/25 bg-warning-soft/50'
-                      : 'border-white/65 bg-white/45'
+                      : 'border-black/[0.06] bg-black/[0.015]'
             }`}
           >
             <div className="flex-shrink-0 mt-0.5">{iconFor(part)}</div>
@@ -146,7 +146,7 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
               </div>
             </div>
 
-            <div className="absolute -left-2 top-2.5 flex h-4 w-4 items-center justify-center rounded-full border border-white/70 bg-white/75 font-mono text-[10px] font-semibold text-muted-foreground shadow-sm transition group-hover:bg-white">
+            <div className="absolute -left-2 top-2.5 flex h-4 w-4 items-center justify-center rounded-full border border-black/[0.06] bg-white font-mono text-[10px] font-semibold text-muted-foreground shadow-sm transition group-hover:bg-white">
               {idx + 1}
             </div>
           </div>

@@ -26,7 +26,8 @@ export default define('manage_terminal', {
         const session = await ctx.agentService.createTerminal(
           ctx.topicId,
           normalizedHostId,
-          terminalName
+          terminalName,
+          { role: 'interactive' }
         )
         return {
           output: JSON.stringify({

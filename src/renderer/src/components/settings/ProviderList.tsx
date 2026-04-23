@@ -62,7 +62,7 @@ export function ProviderList({
   const enabledCount = providers.filter((p) => p.enabled).length
 
   return (
-    <div className="glass-sidebar flex h-full w-72 flex-col border-y-0 border-l-0">
+    <div className="glass-sidebar glass-sidebar-joined flex h-full w-72 flex-col border-y-0 border-l-0">
       <div className="border-b border-white/55 bg-white/35 p-4 backdrop-blur-2xl">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-foreground">AI 提供商</h2>

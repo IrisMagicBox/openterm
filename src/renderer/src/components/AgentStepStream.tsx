@@ -11,10 +11,10 @@ export function AgentStepStream({ steps }: AgentStepStreamProps) {
   return (
     <div className="flex justify-start">
       <div className="flex items-end gap-2.5">
-        <div className="flex h-8 w-8 animate-pulse items-center justify-center rounded-xl border border-white/75 bg-white/70 text-accent shadow-sm backdrop-blur-xl">
+        <div className="flex h-8 w-8 animate-pulse items-center justify-center rounded-xl border border-black/[0.06] bg-white text-accent shadow-sm">
           <Brain size={14} />
         </div>
-        <div className="glass-panel max-w-md rounded-2xl rounded-bl-md px-4 py-3">
+        <div className="max-w-md rounded-2xl rounded-bl-md border border-black/[0.06] bg-white px-4 py-3 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
           <div className="space-y-2">
             {steps.map((step, idx) => {
               const status = step.metadata?.agentStatus as string

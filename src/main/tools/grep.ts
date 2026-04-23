@@ -24,7 +24,9 @@ export default define('grep', {
       return { output: `Error: Host ${hostId} not found` }
     }
 
-    const sessionId = await ctx.ensureSession(host.id, host.alias, undefined)
+    const sessionId = await ctx.ensureSession(host.id, host.alias, undefined, {
+      role: 'agent_command'
+    })
 
     let grepCmd = 'grep'
     if (!caseSensitive) {

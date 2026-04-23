@@ -75,13 +75,30 @@ export class AgentLoop {
         turnCount === maxTurns && !allowFinalTurnTools ? 'none' : 'auto'
       )
 
+      this.streamCollector.recordUsage(streamResult.usage)
+
+      if (streamResult.toolCalls.length > 0 && turnCount === maxTurns && !allowFinalTurnTools) {
+        const attemptedTools = streamResult.toolCalls
+          .map((call) => call.function.name)
+          .filter(Boolean)
+          .join(', ')
+        const screenSummary = await commandExecutor.buildTerminalScreenSummary(context.topicId)
+        return this.lifecycle.failRuntimeBlocked(
+          [
+            `未完成：已达到最大推理轮次 (${maxTurns}步)，模型仍尝试调用工具${attemptedTools ? `：${attemptedTools}` : ''}。`,
+            '为避免工具调用标记泄漏或无限循环，runtime 没有继续执行这些工具。'
+          ].join('\n'),
+          ['最后终端屏幕摘要：', screenSummary].join('\n'),
+          streamResult.assistantPartId
+        )
+      }
+
       turnMessages.push({
         role: 'assistant',
         content: streamResult.content,
         tool_calls: streamResult.toolCalls
       })
 
-      this.streamCollector.recordUsage(streamResult.usage)
       await this.compaction.maybeAutoCompact(workingHistory, turnMessages)
 
       if (streamResult.toolCalls.length === 0) {
@@ -95,6 +112,15 @@ export class AgentLoop {
             content: this.toolExecutor.getVerificationObservation()
           })
           continue
+        }
+
+        if (!streamResult.content.trim()) {
+          const screenSummary = await commandExecutor.buildTerminalScreenSummary(context.topicId)
+          return this.lifecycle.failRuntimeBlocked(
+            '未完成：模型没有返回可用的最终回答。',
+            ['最后终端屏幕摘要：', screenSummary].join('\n'),
+            streamResult.assistantPartId
+          )
         }
 
         return this.lifecycle.finish(

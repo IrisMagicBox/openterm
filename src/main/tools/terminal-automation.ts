@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { define, Tool } from './tool-factory'
-import { commandExecutor, TerminalScreenSnapshot } from '../terminal'
+import { commandExecutor, TerminalScreenHistoryEntry, TerminalScreenSnapshot } from '../terminal'
 import { normalizeHostId, resolveHostId } from '../utils/host-resolver'
 
 const KEY_SEQUENCES = {
@@ -55,6 +55,12 @@ const observeParameters = z.object({
     .optional()
     .describe('没有 sessionId 时指定主机 ID 或 @别名，工具会复用或打开一个终端。'),
   terminalName: z.string().optional().describe('没有 sessionId 时用于复用或创建的终端名称。'),
+  includeHistory: z
+    .boolean()
+    .default(false)
+    .describe('是否包含最近屏幕变化摘要。长 TUI 任务复盘时设为 true。'),
+  sinceUpdatedAt: z.number().optional().describe('只返回该时间戳之后的屏幕变化历史。'),
+  maxHistory: z.number().min(1).max(120).default(12).describe('最多返回多少条屏幕变化历史。'),
   reason: z.string().optional().describe('观察这个终端的原因。')
 })
 
@@ -66,7 +72,11 @@ const sendParameters = z.object({
     .string()
     .max(4000)
     .optional()
-    .describe('要输入的普通文本。回车请优先用 keys: ["Enter"]。'),
+    .describe('要输入的普通文本。此字段只会输入文本；提交请使用 submit=true 或 keys: ["Enter"]。'),
+  submit: z
+    .boolean()
+    .default(false)
+    .describe('当 text 存在时自动追加 Enter/Return。若 keys 中已经包含 Enter/Return，则不会重复追加。'),
   keys: z.array(keyNameSchema).max(100).optional().describe('要发送的特殊按键列表。'),
   sequence: z
     .array(
@@ -85,7 +95,7 @@ const waitParameters = z.object({
   sessionId: z.string().describe('要等待的终端会话 ID。'),
   text: z.string().optional().describe('等待屏幕上出现的固定文本。'),
   regex: z.string().optional().describe('等待屏幕匹配的正则表达式。'),
-  timeoutMs: z.number().min(100).max(120000).default(10000).describe('最长等待毫秒数。'),
+  timeoutMs: z.number().min(100).max(300000).default(10000).describe('最长等待毫秒数。'),
   stableMs: z
     .number()
     .min(0)
@@ -95,18 +105,41 @@ const waitParameters = z.object({
   reason: z.string().optional().describe('等待这个界面状态的原因。')
 })
 
+const waitActivityParameters = z.object({
+  sessionId: z.string().describe('要等待的终端会话 ID。'),
+  timeoutMs: z.number().min(100).max(300000).default(120000).describe('最长等待毫秒数。'),
+  idleMs: z
+    .number()
+    .min(250)
+    .max(30000)
+    .default(3000)
+    .describe('屏幕发生变化后静默多久视为阶段稳定。'),
+  stopText: z.string().optional().describe('可选：等待新屏幕变化中出现的固定文本。'),
+  stopRegex: z.string().optional().describe('可选：等待新屏幕变化匹配的正则表达式。'),
+  requireFreshMatch: z
+    .boolean()
+    .default(true)
+    .describe('是否要求 stopText/stopRegex 出现在本次等待之后的新变化中，避免误命中旧屏。'),
+  returnOnIdle: z
+    .boolean()
+    .default(false)
+    .describe('兼容旧行为：屏幕变化后静默达到 idleMs 即返回 idle。默认 false，会继续区分 stable_output / awaiting_input / running。'),
+  reason: z.string().optional().describe('等待这个 TUI 阶段的原因。')
+})
+
 function summarizeText(text: string): string {
   const normalized = text.replace(/\s+/g, ' ')
   if (normalized.length <= 120) return JSON.stringify(normalized)
   return `${JSON.stringify(normalized.slice(0, 120))}... (${text.length} chars)`
 }
 
-function formatSnapshot(snapshot: TerminalScreenSnapshot): string {
-  const numberedLines = snapshot.lines
-    .map((line) => {
-      const row = String(line.row + 1).padStart(2, '0')
-      const cursor = line.row === snapshot.cursorY ? '>' : ' '
-      return `${row}${cursor} ${line.text}`
+function formatSnapshot(snapshot: TerminalScreenSnapshot, full = false): string {
+  const displayRows = full ? snapshot.lines.map((line) => line.row) : compactRows(snapshot)
+  const numberedLines = displayRows
+    .map((row) => {
+      const line = snapshot.lines[row]
+      const cursor = row === snapshot.cursorY ? '>' : ' '
+      return `${String(row + 1).padStart(2, '0')}${cursor} ${line?.text ?? ''}`
     })
     .join('\n')
     .replace(/\s+$/g, '')
@@ -121,6 +154,38 @@ function formatSnapshot(snapshot: TerminalScreenSnapshot): string {
     numberedLines || '(blank)',
     '```'
   ].join('\n')
+}
+
+function compactRows(snapshot: TerminalScreenSnapshot): number[] {
+  const rows = new Set<number>()
+  snapshot.lines.forEach((line) => {
+    if (line.text.trim()) rows.add(line.row)
+  })
+  for (let row = snapshot.cursorY - 3; row <= snapshot.cursorY + 3; row++) {
+    if (row >= 0 && row < snapshot.lines.length) rows.add(row)
+  }
+  return [...rows].sort((a, b) => a - b).slice(-24)
+}
+
+function formatHistory(history: TerminalScreenHistoryEntry[]): string {
+  if (history.length === 0) return 'recent changes: (none)'
+  const chunks = history.slice(-12).map((entry) => {
+    const changedRows = entry.changedLines
+      .slice(-6)
+      .map((line) => String(line.row + 1))
+      .join(', ')
+    return [
+      `- updatedAt=${entry.updatedAt}, cursor=${entry.cursorX + 1},${entry.cursorY + 1}, buffer=${entry.bufferType}, changedRows=${changedRows || '(none)'}`,
+      entry.excerpt
+        .split('\n')
+        .slice(-8)
+        .map((line) => `  ${line}`)
+        .join('\n')
+    ]
+      .filter(Boolean)
+      .join('\n')
+  })
+  return ['recent changes:', ...chunks].join('\n')
 }
 
 async function resolveSessionId(
@@ -144,7 +209,8 @@ async function resolveSessionId(
   const sessionId = await ctx.ensureSession(
     host?.id ?? 'local',
     host?.alias ?? '本地终端',
-    args.terminalName
+    args.terminalName,
+    { role: 'interactive' }
   )
   return { sessionId }
 }
@@ -167,7 +233,7 @@ function assertSafeText(text: string): void {
   }
 }
 
-export function encodeTerminalInput(args: z.infer<typeof sendParameters>): {
+export function encodeTerminalInput(args: z.input<typeof sendParameters>): {
   data: string
   recordedContent: string
 } {
@@ -192,7 +258,11 @@ export function encodeTerminalInput(args: z.infer<typeof sendParameters>): {
       chunks.push(args.text)
       summary.push(`text ${summarizeText(args.text)}`)
     }
-    for (const key of args.keys ?? []) {
+    const keys = [...(args.keys ?? [])]
+    if (args.text && args.submit && !keys.some((key) => key === 'Enter' || key === 'Return')) {
+      keys.push('Enter')
+    }
+    for (const key of keys) {
       chunks.push(KEY_SEQUENCES[key])
       summary.push(`key ${key}`)
     }
@@ -206,7 +276,7 @@ export function encodeTerminalInput(args: z.infer<typeof sendParameters>): {
 
 export const observeTerminalTool = define('observe_terminal', {
   description:
-    '读取一个现有终端的当前可见屏幕，适合 TUI、交互式安装器、菜单选择、REPL、编辑器等无法用普通命令输出表达的场景。对交互式任务先 observe_terminal，再 send_terminal_keys，再 wait_terminal_text 或再次 observe_terminal。',
+    '读取一个现有终端的当前可见屏幕，适合 TUI、交互式安装器、菜单选择、REPL、编辑器等无法用普通命令输出表达的场景。默认只返回非空行和光标附近行；需要复盘长任务时设置 includeHistory=true。长 TUI 阶段优先用 wait_terminal_activity，避免反复刷新和猜关键词。',
   parameters: observeParameters,
   async execute(
     args: z.infer<typeof observeParameters>,
@@ -216,16 +286,24 @@ export const observeTerminalTool = define('observe_terminal', {
     if (!resolved.sessionId) return { output: resolved.error ?? 'Error: No terminal session.' }
 
     const snapshot = await commandExecutor.getTerminalSnapshot(resolved.sessionId)
+    const history = args.includeHistory
+      ? await commandExecutor.getTerminalHistory(resolved.sessionId, {
+          sinceUpdatedAt: args.sinceUpdatedAt,
+          maxHistory: args.maxHistory
+        })
+      : []
     return {
-      output: formatSnapshot(snapshot),
-      metadata: { sessionId: resolved.sessionId, snapshot }
+      output: [formatSnapshot(snapshot), args.includeHistory ? formatHistory(history) : '']
+        .filter(Boolean)
+        .join('\n\n'),
+      metadata: { sessionId: resolved.sessionId, snapshot, history }
     }
   }
 })
 
 export const sendTerminalKeysTool = define('send_terminal_keys', {
   description:
-    '向现有终端发送文本或键盘按键，用于自动操作 TUI/交互式安装器/菜单/REPL。发送前应先用 observe_terminal 确认界面状态；发送后应用 wait_terminal_text 或 observe_terminal 验证界面变化。普通命令优先用 execute_command，只有交互式场景用本工具。',
+    '向现有终端发送文本或键盘按键，用于自动操作 TUI/交互式安装器/菜单/REPL。text 只会输入文本，不会自动回车；需要提交时使用 submit=true 或 keys:["Enter"]。发送前应先用 observe_terminal 确认界面状态；发送后应用 wait_terminal_activity 或 observe_terminal 验证界面变化。普通非交互命令优先用 execute_command，只有交互式场景用本工具。',
   parameters: sendParameters,
   async execute(
     args: z.infer<typeof sendParameters>,
@@ -258,7 +336,7 @@ export const sendTerminalKeysTool = define('send_terminal_keys', {
 
 export const waitTerminalTextTool = define('wait_terminal_text', {
   description:
-    '等待终端可见屏幕出现指定文本或匹配正则，常用于 TUI 自动化中等待菜单、提示符、安装完成信息或错误信息。返回最终屏幕快照。',
+    '等待终端可见屏幕出现明确、短期、确定的文本或正则，常用于菜单、提示符或短交互确认。长时间 TUI 任务不要用它反复猜 completed/Research Report 等关键词；优先使用 wait_terminal_activity 监听屏幕变化和稳定状态。',
   parameters: waitParameters,
   async execute(
     args: z.infer<typeof waitParameters>,
@@ -300,6 +378,72 @@ export const waitTerminalTextTool = define('wait_terminal_text', {
         timedOut: result.timedOut,
         elapsedMs: result.elapsedMs,
         snapshot: result.snapshot
+      }
+    }
+  }
+})
+
+export const waitTerminalActivityTool = define('wait_terminal_activity', {
+  description:
+    '等待 TUI 终端出现新屏幕变化并进入稳定状态，或等待新变化中出现 stopText/stopRegex。适合长任务、后台 agent、安装器进度、动态 TUI 输出。返回最近变化摘要和最终屏幕，避免模型频繁刷新。',
+  parameters: waitActivityParameters,
+  async execute(
+    args: z.infer<typeof waitActivityParameters>,
+    ctx: Tool.Context
+  ): Promise<Tool.ExecuteResult> {
+    let stopRegex: RegExp | undefined
+    if (args.stopRegex) {
+      try {
+        stopRegex = new RegExp(args.stopRegex)
+      } catch (error) {
+        return { output: `Error: Invalid stopRegex: ${error}` }
+      }
+    }
+
+    const result = await commandExecutor.waitForTerminalActivity(
+      args.sessionId,
+      {
+        stopText: args.stopText,
+        stopRegex,
+        timeoutMs: args.timeoutMs,
+        idleMs: args.idleMs,
+        requireFreshMatch: args.requireFreshMatch,
+        returnOnIdle: args.returnOnIdle
+      },
+      ctx.abort
+    )
+
+    const statusText =
+      result.status === 'matched'
+        ? 'Matched fresh terminal activity.'
+        : result.status === 'stable_output'
+          ? 'Terminal screen stabilized with readable output.'
+          : result.status === 'awaiting_input'
+            ? 'Terminal appears to be waiting for input.'
+            : result.status === 'idle'
+              ? 'Terminal activity became idle after screen changes.'
+              : 'Timed out waiting for terminal activity.'
+
+    return {
+      output: [
+        statusText,
+        `status: ${result.status}`,
+        `screenPhase: ${result.screenPhase}`,
+        `elapsedMs: ${result.elapsedMs}`,
+        `idleMs: ${result.idleMs}`,
+        formatHistory(result.history),
+        formatSnapshot(result.snapshot)
+      ].join('\n'),
+      metadata: {
+        sessionId: args.sessionId,
+        status: result.status,
+        screenPhase: result.screenPhase,
+        matched: result.matched,
+        timedOut: result.timedOut,
+        elapsedMs: result.elapsedMs,
+        idleMs: result.idleMs,
+        snapshot: result.snapshot,
+        history: result.history
       }
     }
   }

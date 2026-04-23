@@ -4,6 +4,7 @@ import { hostDB, memoryDB, topicDB } from '../db'
 import { commandExecutor } from '../terminal'
 import { createLocalSession } from '../local-terminal'
 import type { AgentSession, CreateAgentSessionFn } from './agent-service-types'
+import type { TerminalSessionRole } from '../../shared/types'
 
 export class AgentSessionManager {
   private webContents?: WebContents
@@ -49,10 +50,15 @@ export class AgentSessionManager {
     hostMap?.delete(hostId)
   }
 
-  async createTerminal(topicId: string, hostId: string, name?: string): Promise<AgentSession> {
+  async createTerminal(
+    topicId: string,
+    hostId: string,
+    name?: string,
+    options: { role?: TerminalSessionRole } = {}
+  ): Promise<AgentSession> {
     const host = hostDB.getHostById(hostId)
     if (!host) throw new Error('Host not found')
-    return this.createNewSession(topicId, hostId, host.alias, name, true)
+    return this.createNewSession(topicId, hostId, host.alias, name, true, options.role ?? 'user')
   }
 
   async closeTerminal(id: string): Promise<void> {
@@ -101,7 +107,7 @@ export class AgentSessionManager {
     if (!hostMap) return []
     const allSessions: AgentSession[] = []
     for (const sessions of hostMap.values()) {
-      allSessions.push(...sessions)
+      allSessions.push(...sessions.map((session) => this.withControlState(session)))
     }
     return allSessions
   }
@@ -131,28 +137,38 @@ export class AgentSessionManager {
     hostId: string,
     hostAlias: string,
     name?: string,
-    showInUI = false
+    showInUI = false,
+    options: { role?: TerminalSessionRole } = {}
   ): Promise<AgentSession> {
     const sessions = this.topicSessions.get(topicId)?.get(hostId)
+    const role = options.role ?? 'agent_command'
 
-    const reusableSession = this.findReusableSession(sessions, name)
+    const reusableSession = this.findReusableSession(sessions, name, role)
     if (reusableSession) {
       if (showInUI) this.webContents?.send('agent:session-created', reusableSession)
       return reusableSession
     }
 
-    const session = await this.createNewSession(topicId, hostId, hostAlias, name, true)
+    const session = await this.createNewSession(topicId, hostId, hostAlias, name, true, role)
     if (showInUI) this.webContents?.send('agent:session-created', session)
     return session
   }
 
   async setPaused(id: string, paused: boolean): Promise<void> {
     const session = this.findSession(id)
-    if (session) session.paused = paused
+    if (!session) return
+    commandExecutor.setSessionPaused(id, paused)
+    const updated = this.withControlState(session)
+    session.paused = updated.paused
+    session.isLocked = updated.isLocked
+    session.lockedBy = updated.lockedBy
+    session.takeoverMode = updated.takeoverMode
   }
 
   async isPaused(id: string): Promise<boolean> {
-    return this.findSession(id)?.paused ?? false
+    const session = this.findSession(id)
+    if (!session) return false
+    return this.withControlState(session).paused ?? false
   }
 
   private async createNewSession(
@@ -160,7 +176,8 @@ export class AgentSessionManager {
     hostId: string,
     hostAlias: string,
     name?: string,
-    showInUI = false
+    showInUI = false,
+    role: TerminalSessionRole = 'agent_command'
   ): Promise<AgentSession> {
     if (!this.webContents) throw new Error('WebContents not initialized')
 
@@ -168,27 +185,37 @@ export class AgentSessionManager {
     const existingCount = this.topicSessions.get(topicId)?.get(hostId)?.length || 0
 
     if (hostId === 'local') {
-      const localSession = await createLocalSession(uuidv4(), topicId, this.webContents, true)
+      const localSession = await createLocalSession(
+        uuidv4(),
+        topicId,
+        this.webContents,
+        role !== 'user',
+        role
+      )
       session = {
         ...localSession,
+        role,
         paused: false,
-        name: name || `本地终端-${existingCount + 1}`,
+        takeoverMode: null,
+        name: name || this.defaultSessionName(hostAlias, existingCount, role, true),
         visible: showInUI
       } as AgentSession
     } else {
       if (!this.createAgentSessionRef) throw new Error('SSH service not initialized')
-      const sessionId = await this.createAgentSessionRef(hostId, this.webContents, topicId)
+      const sessionId = await this.createAgentSessionRef(hostId, this.webContents, topicId, role)
       session = {
         id: sessionId,
         topicId,
         hostId,
         hostAlias,
+        role,
         status: 'active',
         shellType: 'bash',
         shellIntegrationReady: false,
         createdAt: Date.now(),
         paused: false,
-        name: name || `终端-${existingCount + 1}`,
+        takeoverMode: null,
+        name: name || this.defaultSessionName(hostAlias, existingCount, role, false),
         visible: showInUI
       }
     }
@@ -199,12 +226,20 @@ export class AgentSessionManager {
 
   private findReusableSession(
     sessions: AgentSession[] | undefined,
-    preferredName?: string
+    preferredName?: string,
+    role: TerminalSessionRole = 'agent_command'
   ): AgentSession | undefined {
     if (!sessions || sessions.length === 0) return undefined
 
-    const isReusable = (session: AgentSession): boolean =>
-      session.status === 'active' && !session.paused && commandExecutor.isSessionIdle(session.id)
+    const isReusable = (session: AgentSession): boolean => {
+      const current = this.withControlState(session)
+      if ((current.role ?? 'agent_command') !== role) return false
+      if (current.status !== 'active' || current.paused) return false
+      if (current.lockedBy === 'user') return false
+      if (role === 'agent_command') return commandExecutor.canAcceptAgentCommand(session.id).ok
+      const lock = commandExecutor.isSessionLocked(session.id)
+      return !lock.locked || lock.lockedBy !== 'user'
+    }
 
     if (preferredName) {
       const namedSession = sessions.find(
@@ -216,6 +251,19 @@ export class AgentSessionManager {
     return sessions.find(isReusable)
   }
 
+  private defaultSessionName(
+    hostAlias: string,
+    existingCount: number,
+    role: TerminalSessionRole,
+    local: boolean
+  ): string {
+    if (role === 'agent_command') {
+      return existingCount > 0 ? `Agent 执行-${hostAlias}-${existingCount + 1}` : `Agent 执行-${hostAlias}`
+    }
+    if (role === 'interactive') return `交互终端-${existingCount + 1}`
+    return local ? `本地终端-${existingCount + 1}` : `终端-${existingCount + 1}`
+  }
+
   private findSession(id: string): AgentSession | undefined {
     for (const hostMap of this.topicSessions.values()) {
       for (const sessions of hostMap.values()) {
@@ -224,5 +272,17 @@ export class AgentSessionManager {
       }
     }
     return undefined
+  }
+
+  private withControlState(session: AgentSession): AgentSession {
+    const controlState = commandExecutor.getSessionControlState(session.id)
+    if (!controlState) return session
+    return {
+      ...session,
+      paused: controlState.paused,
+      isLocked: controlState.isLocked,
+      lockedBy: controlState.lockedBy,
+      takeoverMode: controlState.takeoverMode
+    }
   }
 }

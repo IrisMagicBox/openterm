@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
 import type {
+  ChatCompletionMessageFunctionToolCall,
   ChatCompletionMessageParam,
   ChatCompletionTool
 } from 'openai/resources/chat/completions/completions'
@@ -18,6 +19,11 @@ interface StreamedToolCall {
   name: string
   arguments: string
   partId: string
+}
+
+export interface ExtractedXmlToolCalls {
+  content: string
+  toolCalls: ChatCompletionMessageFunctionToolCall[]
 }
 
 function nonEmptyString(value: string | null | undefined): string | undefined {
@@ -55,6 +61,77 @@ export function resolveStreamedToolName(
 
   const previousName = nonEmptyString(existingName)
   return previousName && previousName !== 'unknown' ? previousName : 'unknown'
+}
+
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+}
+
+function coerceXmlParameter(value: string): unknown {
+  const decoded = decodeXmlText(value).trim()
+  if (decoded === 'true') return true
+  if (decoded === 'false') return false
+  if (decoded === 'null') return null
+  if (/^-?\d+(?:\.\d+)?$/.test(decoded)) return Number(decoded)
+  if (
+    (decoded.startsWith('{') && decoded.endsWith('}')) ||
+    (decoded.startsWith('[') && decoded.endsWith(']'))
+  ) {
+    try {
+      return JSON.parse(decoded) as unknown
+    } catch {
+      return decoded
+    }
+  }
+  return decoded
+}
+
+export function extractXmlToolCalls(
+  rawContent: string,
+  registeredToolNames?: Set<string>
+): ExtractedXmlToolCalls {
+  const toolCalls: ChatCompletionMessageFunctionToolCall[] = []
+  let cleaned = rawContent
+  const invokePattern =
+    /<invoke\s+name=(["'])([^"']+)\1\s*>([\s\S]*?)<\/invoke>\s*(?:<\/[A-Za-z0-9_-]+:tool_call>)?/gi
+
+  cleaned = cleaned.replace(invokePattern, (_fullMatch, _quote: string, toolName: string, body) => {
+    const args: Record<string, unknown> = {}
+    const parameterPattern = /<parameter\s+name=(["'])([^"']+)\1\s*>([\s\S]*?)<\/parameter>/gi
+    let parameterMatch: RegExpExecArray | null
+    while ((parameterMatch = parameterPattern.exec(body)) !== null) {
+      args[parameterMatch[2]] = coerceXmlParameter(parameterMatch[3])
+    }
+
+    const normalizedToolName = (() => {
+      if (!registeredToolNames) return toolName
+      if (registeredToolNames.has(toolName)) return toolName
+      const lower = toolName.toLowerCase()
+      if (registeredToolNames.has(lower)) return lower
+      args.tool = toolName
+      args.error = `Unknown tool "${toolName}".`
+      return 'invalid_tool'
+    })()
+
+    toolCalls.push({
+      id: `call_xml_${toolCalls.length}`,
+      type: 'function',
+      function: {
+        name: normalizedToolName,
+        arguments: JSON.stringify(args)
+      }
+    })
+
+    return ''
+  })
+
+  cleaned = cleaned.replace(/<\/[A-Za-z0-9_-]+:tool_call>/gi, '').trim()
+  return { content: cleaned, toolCalls }
 }
 
 export class ProviderStreamCollector {
@@ -204,27 +281,43 @@ export class ProviderStreamCollector {
       if (chunk.finishReason) finishReason = chunk.finishReason
     }
 
+    const registeredToolNames = this.getRegisteredToolNames()
+    const extractedXml = extractXmlToolCalls(content, registeredToolNames)
+    content = extractedXml.content
+
     if (textPart) {
       agentRunStore.updatePart(textPart.id, {
         status: 'completed',
         output: content,
-        endedAt: Date.now()
+        endedAt: Date.now(),
+        metadata: extractedXml.toolCalls.length > 0 ? { extractedXmlToolCalls: true } : undefined
       })
     }
 
+    const streamedToolCalls = Array.from(toolBuilders.values()).map((builder) => ({
+      id: builder.id,
+      type: 'function' as const,
+      function: {
+        name: resolveStreamedToolName(undefined, builder.name, builder.arguments),
+        arguments: builder.arguments
+      }
+    }))
+
     return {
       content,
-      toolCalls: Array.from(toolBuilders.values()).map((builder) => ({
-        id: builder.id,
-        type: 'function' as const,
-        function: {
-          name: resolveStreamedToolName(undefined, builder.name, builder.arguments),
-          arguments: builder.arguments
-        }
-      })),
+      toolCalls: [...streamedToolCalls, ...extractedXml.toolCalls],
       usage,
       finishReason,
       assistantPartId: textPart?.id
     }
+  }
+
+  private getRegisteredToolNames(): Set<string> {
+    return new Set(
+      this.options.toolRegistry
+        .getFilteredDefinitions(this.options.config.name)
+        .filter((tool) => this.options.permissionEngine.isToolAllowed(tool.function.name))
+        .map((tool) => tool.function.name)
+    )
   }
 }

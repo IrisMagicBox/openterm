@@ -1,13 +1,21 @@
-import { useEffect, useRef } from 'react'
-import { Send, Clock, Hash, Server, ArrowRight, X } from 'lucide-react'
+import { useCallback, useLayoutEffect, useRef } from 'react'
+import { Send, Clock, Hash, Server, ArrowRight, X, Pause } from 'lucide-react'
 import type { Host } from '../../../../shared/types'
+import { cn } from '../../lib/utils'
 import { Badge, IconButton, Surface, Textarea } from '../ui'
+
+const MAX_TEXTAREA_HEIGHT = 144
+const MIN_TEXTAREA_HEIGHT = 78
 
 interface ChatInputProps {
   inputValue: string
   onInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
   onSend: () => void
   thinking: boolean
+  onPause?: () => void | Promise<void>
+  canPause?: boolean
+  pausing?: boolean
+  modelSelector?: React.ReactNode
   messageQueue: { id: string; content: string }[]
   onRemoveFromQueue: (id: string) => void
   onClearQueue: () => void
@@ -21,6 +29,10 @@ export function ChatInput({
   onInputChange,
   onSend,
   thinking,
+  onPause,
+  canPause = false,
+  pausing = false,
+  modelSelector,
   messageQueue,
   onRemoveFromQueue,
   onClearQueue,
@@ -30,28 +42,40 @@ export function ChatInput({
 }: ChatInputProps): React.ReactElement {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => {
-    const node = textareaRef.current
+  const resizeTextarea = useCallback((node: HTMLTextAreaElement | null) => {
     if (!node) return
-    node.style.height = '0px'
-    node.style.height = `${Math.min(node.scrollHeight, 144)}px`
-  }, [inputValue])
+    node.style.height = 'auto'
+    const nextHeight = Math.max(
+      Math.min(node.scrollHeight, MAX_TEXTAREA_HEIGHT),
+      MIN_TEXTAREA_HEIGHT
+    )
+    node.style.height = `${nextHeight}px`
+    node.style.overflowY = node.scrollHeight > MAX_TEXTAREA_HEIGHT ? 'auto' : 'hidden'
+  }, [])
+
+  useLayoutEffect(() => {
+    resizeTextarea(textareaRef.current)
+  }, [inputValue, resizeTextarea])
+
+  const primaryActionAriaLabel = pausing ? '正在暂停' : thinking ? '暂停当前回复' : '发送消息'
+  const primaryActionTitle = pausing ? '正在暂停' : thinking ? '暂停当前回复' : '发送消息'
+  const primaryActionDisabled = pausing || (thinking ? !canPause : !inputValue.trim())
 
   return (
-    <div className="relative border-t border-white/45 bg-surface/45 px-6 pb-5 pt-3 backdrop-blur-xl">
+    <div className="relative px-6 pb-5 pt-3">
       <div className="relative mx-auto w-full max-w-4xl">
         {showMentions && filteredHosts.length > 0 && (
-          <div className="glass-menu absolute bottom-full left-0 z-10 mb-2 w-72 overflow-hidden rounded-xl">
-            <div className="flex items-center gap-1.5 border-b border-white/70 bg-white/55 px-3 py-2 text-xs font-semibold text-muted-foreground">
+          <div className="absolute bottom-full left-0 z-20 mb-3 w-72 overflow-hidden rounded-[22px] border border-black/10 bg-white/98 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+            <div className="flex items-center gap-1.5 border-b border-black/[0.06] px-3 py-2.5 text-xs font-semibold text-muted-foreground">
               <Hash size={10} /> 提及主机
             </div>
             {filteredHosts.map((host) => (
               <button
                 key={host.id}
-                className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-accent-soft/60"
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-black/[0.035]"
                 onClick={() => onInsertMention(host)}
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/70 bg-white/65 text-muted-foreground">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-black/[0.06] bg-black/[0.025] text-muted-foreground">
                   <Server size={15} />
                 </div>
                 <div>
@@ -96,18 +120,20 @@ export function ChatInput({
           </Surface>
         )}
 
-        <div className="composer-shell flex items-end gap-3 rounded-2xl p-2 transition-all focus-within:border-accent/30 focus-within:ring-2 focus-within:ring-accent/10">
+        <div className="composer-shell relative rounded-[30px] px-4 py-3 transition-all focus-within:border-black/15">
           <Textarea
             ref={textareaRef}
             value={inputValue}
-            onChange={onInputChange}
+            onChange={(event) => {
+              onInputChange(event)
+              resizeTextarea(event.currentTarget)
+            }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter') return
               if (event.nativeEvent.isComposing) return
-              if (event.metaKey || event.ctrlKey) {
-                event.preventDefault()
-                onSend()
-              }
+              if (event.shiftKey) return
+              event.preventDefault()
+              onSend()
             }}
             placeholder={
               messageQueue.length > 0
@@ -115,18 +141,39 @@ export function ChatInput({
                 : '给助手发送消息或输入 @ 来指定主机...'
             }
             rows={1}
-            title="Enter 换行，Command/Ctrl + Enter 发送"
-            className="max-h-36 min-h-11 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-2 py-2.5 leading-6 focus-visible:ring-0"
+            title="Enter 发送，Shift + Enter 换行"
+            className="max-h-36 min-h-[78px] w-full resize-none overflow-y-hidden border-0 bg-transparent px-1 py-1 pb-12 text-[15px] leading-7 text-foreground placeholder:text-muted-foreground/45 focus-visible:ring-0"
           />
-          <IconButton
-            aria-label="发送消息"
-            onClick={onSend}
-            disabled={!inputValue.trim()}
-            variant="primary"
-            className="mb-1 h-9 w-9"
-          >
-            {thinking ? <Clock size={16} /> : <Send size={16} />}
-          </IconButton>
+          <div className="pointer-events-none absolute inset-x-4 bottom-3 flex items-center justify-between gap-3">
+            <div className="pointer-events-auto min-w-0 flex-1">{modelSelector}</div>
+            <IconButton
+              aria-label={primaryActionAriaLabel}
+              title={primaryActionTitle}
+              onClick={() => {
+                if (thinking) {
+                  void onPause?.()
+                  return
+                }
+                onSend()
+              }}
+              disabled={primaryActionDisabled}
+              variant="ghost"
+              className={cn(
+                'pointer-events-auto h-11 w-11 shrink-0 rounded-full border border-black/5 bg-foreground text-white shadow-none hover:bg-foreground/92 hover:text-white',
+                primaryActionDisabled &&
+                  'border-black/[0.04] bg-black/20 text-white/70 hover:bg-black/20 hover:text-white/70',
+                pausing && 'cursor-wait'
+              )}
+            >
+              {pausing ? (
+                <Clock size={16} className="animate-spin" />
+              ) : thinking ? (
+                <Pause size={16} />
+              ) : (
+                <Send size={16} />
+              )}
+            </IconButton>
+          </div>
         </div>
       </div>
     </div>

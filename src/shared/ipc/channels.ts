@@ -15,6 +15,7 @@ import type {
   PermissionSettings,
   TerminalSession,
   TerminalSessionStatus,
+  TerminalTakeoverMode,
   MemoryEntry
 } from '../types'
 
@@ -95,6 +96,12 @@ export interface TerminalCommandEndPayload {
   durationMs: number
   isTruncated: boolean
   cwd?: string
+}
+
+export interface TerminalControlStatePayload {
+  lockedBy: 'agent' | 'user' | null
+  takeoverMode: TerminalTakeoverMode | null
+  paused: boolean
 }
 
 export interface DebugLogEntry {
@@ -261,6 +268,8 @@ export interface IpcInvokeChannels {
   'agent:close-terminal': { payload: [id: string]; result: void }
   'agent:rename-terminal': { payload: [id: string, name: string]; result: void }
   'agent:toggle-terminal-pin': { payload: [id: string, isPinned: boolean]; result: void }
+  'agent:set-session-paused': { payload: [id: string, paused: boolean]; result: boolean }
+  'agent:is-session-paused': { payload: [id: string]; result: boolean }
 
   'get-model-settings': { payload: void; result: ModelSettings }
   'save-model-settings': { payload: [settings: Partial<ModelSettings>]; result: void }
@@ -323,6 +332,7 @@ type SshReadyChannel = `ssh:ready:${string}`
 type SshCommandChannel = `ssh:command:${string}`
 type TerminalCommandStartChannel = `terminal:command-start:${string}`
 type TerminalCommandEndChannel = `terminal:command-end:${string}`
+type TerminalControlStateChannel = `terminal:control-state:${string}`
 
 type IpcPushChannelsDynamic = {
   [K in SshDataChannel]: { payload: string }
@@ -336,6 +346,8 @@ type IpcPushChannelsDynamic = {
   [K in TerminalCommandStartChannel]: { payload: TerminalCommandStartPayload }
 } & {
   [K in TerminalCommandEndChannel]: { payload: TerminalCommandEndPayload }
+} & {
+  [K in TerminalControlStateChannel]: { payload: TerminalControlStatePayload }
 }
 
 interface IpcPushChannelsStatic {

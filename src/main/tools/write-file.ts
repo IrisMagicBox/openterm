@@ -37,7 +37,9 @@ export default define('write_file', {
       return { output: 'Error: User rejected file write authorization', metadata: policyMetadata }
     }
 
-    const sessionId = await ctx.ensureSession(normalizedHostId, normalizedHostId)
+    const sessionId = await ctx.ensureSession(normalizedHostId, normalizedHostId, undefined, {
+      role: 'agent_command'
+    })
     ctx.updatePartMetadata?.({ ...policyMetadata, sessionId })
 
     const b64 = Buffer.from(content).toString('base64')

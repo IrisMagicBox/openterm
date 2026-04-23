@@ -41,6 +41,7 @@ const migrations: Migration[] = [
       addColumnIfMissing(db, 'messages', 'metadata', 'TEXT')
 
       addColumnIfMissing(db, 'terminal_sessions', 'name', 'TEXT')
+      addColumnIfMissing(db, 'terminal_sessions', 'role', "TEXT DEFAULT 'user'")
       addColumnIfMissing(db, 'terminal_sessions', 'agentNotes', 'TEXT')
       addColumnIfMissing(db, 'terminal_sessions', 'isDeleted', 'INTEGER DEFAULT 0')
       addColumnIfMissing(db, 'terminal_sessions', 'deletedAt', 'INTEGER')
@@ -160,6 +161,13 @@ const migrations: Migration[] = [
       addColumnIfMissing(db, 'approvals', 'riskCategory', 'TEXT')
       addColumnIfMissing(db, 'approvals', 'commandPattern', 'TEXT')
       addColumnIfMissing(db, 'approvals', 'requiresVerification', 'INTEGER DEFAULT 0')
+    }
+  },
+  {
+    id: '007_terminal_session_role',
+    run: (db) => {
+      addColumnIfMissing(db, 'terminal_sessions', 'role', "TEXT DEFAULT 'user'")
+      db.prepare("UPDATE terminal_sessions SET role = 'user' WHERE role IS NULL OR role = ''").run()
     }
   }
 ]

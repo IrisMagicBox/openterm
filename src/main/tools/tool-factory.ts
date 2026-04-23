@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import { z } from 'zod'
 import type { Message } from '../../shared/types'
+import type { TerminalSessionRole } from '../../shared/types'
 import { truncateOutput as truncateToDisk } from './truncation'
 
 export namespace Tool {
@@ -25,7 +26,12 @@ export namespace Tool {
     parentPartId?: string
     webContents: import('electron').WebContents
     agentService: import('../AgentRunner').IAgentService
-    ensureSession: (hostId: string, hostAlias: string, name?: string) => Promise<string>
+    ensureSession: (
+      hostId: string,
+      hostAlias: string,
+      name?: string,
+      options?: { role?: TerminalSessionRole }
+    ) => Promise<string>
     requestAuthorization: (
       command: string,
       riskLevel: 'low' | 'medium' | 'high' | 'critical',

@@ -3,19 +3,29 @@ import type { CommandResult, StructuredObservation } from '../../shared/types'
 export type { StructuredObservation }
 
 export function fromCommandResult(
-  result: CommandResult,
+  result: CommandResult & {
+    stdout?: string
+    stderr?: string
+    timedOut?: boolean
+    workdir?: string
+    outputPath?: string
+    diskPath?: string
+    originalBytes?: number
+  },
   hostId: string,
   terminalName: string
 ): StructuredObservation {
   return {
     hostId,
     terminalName,
-    exitCode: result.exitCode,
-    cwd: result.cwd,
+    exitCode: result.exitCode ?? -1,
+    cwd: result.cwd ?? result.workdir,
     durationMs: result.durationMs,
-    stdout: result.content,
-    stderr: '',
-    isTruncated: result.isTruncated
+    stdout: result.stdout ?? result.content,
+    stderr: result.stderr ?? '',
+    isTruncated: result.isTruncated,
+    truncatedAt: result.originalBytes,
+    diskPath: result.outputPath ?? result.diskPath
   }
 }
 

@@ -146,8 +146,15 @@ export class AgentApplicationService {
       parentPartId: parents.parentPartId,
       webContents: this.webContents,
       agentService: this.getAgentService(),
-      ensureSession: async (hostId, hostAlias, name) => {
-        const session = await this.sessions.ensureSession(topicId, hostId, hostAlias, name, true)
+      ensureSession: async (hostId, hostAlias, name, options) => {
+        const session = await this.sessions.ensureSession(
+          topicId,
+          hostId,
+          hostAlias,
+          name,
+          true,
+          options
+        )
         return session.id
       },
       requestAuthorization: (command, riskLevel, reason, metadata) =>

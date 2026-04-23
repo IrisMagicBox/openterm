@@ -1,5 +1,5 @@
 import { WebContents } from 'electron'
-import { Message, Host } from '../shared/types'
+import { Message, Host, TerminalSessionRole } from '../shared/types'
 import { getAgentConfig } from './agent/agent-config'
 import { eventBus } from './agent/event-bus'
 import { AgentRuntime, type AgentRuntimeOptions } from './agent/agent-runtime'
@@ -16,7 +16,8 @@ export interface IAgentService {
   createTerminal(
     topicId: string,
     hostId: string,
-    name?: string
+    name?: string,
+    options?: { role?: TerminalSessionRole }
   ): Promise<import('./agent').AgentSession>
   closeTerminal(id: string): Promise<void>
   renameTerminal(id: string, name: string): Promise<void>
@@ -32,7 +33,12 @@ export interface AgentContext {
   agentName?: string
   webContents: WebContents
   agentService: IAgentService
-  ensureSession: (hostId: string, hostAlias: string, name?: string) => Promise<string>
+  ensureSession: (
+    hostId: string,
+    hostAlias: string,
+    name?: string,
+    options?: { role?: TerminalSessionRole }
+  ) => Promise<string>
   requestAuthorization: (
     command: string,
     riskLevel: 'low' | 'medium' | 'high' | 'critical',

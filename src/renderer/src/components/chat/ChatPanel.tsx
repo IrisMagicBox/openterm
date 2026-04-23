@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Clock, Monitor, Cpu } from 'lucide-react'
+import { Clock, Monitor, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { TopicHub } from '../TopicHub'
 import { Host, Topic, TerminalSession } from '../../../../shared/types'
 import { AgentRunDetailDrawer } from '../AgentRunDetailDrawer'
@@ -19,7 +19,7 @@ import { useCommandPalette } from '../../hooks/useCommandPalette'
 import { useTerminalPreviews } from '../../hooks/useTerminalPreviews'
 import { useTerminalStageState } from '../../hooks/useTerminalStageState'
 import { deriveTerminalActivities } from '../../lib/terminal-stage'
-import { Badge, Dialog, DialogContent, PageHeader } from '../ui'
+import { Badge, Dialog, DialogContent, IconButton, PageHeader, Tooltip } from '../ui'
 
 import { LOCAL_HOST } from '../../constants'
 
@@ -72,6 +72,10 @@ export function ChatPanel({
   const [isResizing, setIsResizing] = useState(false)
   const [portForwardHost, setPortForwardHost] = useState<{ id: string; alias: string } | null>(null)
   const [runDetailId, setRunDetailId] = useState<string | null>(null)
+  const [pausingRun, setPausingRun] = useState(false)
+  const [workspaceOpen, setWorkspaceOpen] = useState(
+    () => window.localStorage.getItem('openterm.topicWorkspace.open') !== 'false'
+  )
   const scrollRef = useRef<HTMLDivElement>(null)
   const { animationKey } = useVisibilityRestore()
   const { providers, models, defaultProviderId, defaultModelId } = useProvider()
@@ -118,6 +122,17 @@ export function ChatPanel({
     () => deriveTerminalActivities(visibleSessions, activeParts, terminalPreviews),
     [activeParts, terminalPreviews, visibleSessions]
   )
+  const activeRunId = useMemo(() => {
+    const activePart = [...activeParts]
+      .reverse()
+      .find((part) => part.status === 'running' || part.status === 'pending')
+    if (activePart) return activePart.runId
+
+    const activeStep = [...activeSteps].reverse().find((step) => step.runId)
+    if (activeStep?.runId) return activeStep.runId
+
+    return null
+  }, [activeParts, activeSteps])
   const {
     commandPaletteOpen,
     commandPaletteValue,
@@ -134,6 +149,19 @@ export function ChatPanel({
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [messages, thinking, activeSteps, activeParts])
+  useEffect(() => {
+    window.localStorage.setItem('openterm.topicWorkspace.open', String(workspaceOpen))
+  }, [workspaceOpen])
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key.toLowerCase() !== 'b') return
+      if (!event.altKey || (!event.metaKey && !event.ctrlKey)) return
+      event.preventDefault()
+      setWorkspaceOpen((open) => !open)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
     const value = e.target.value
@@ -155,6 +183,15 @@ export function ChatPanel({
     const c = inputValue
     setInputValue('')
     await sendMessage(c)
+  }
+  const handlePauseRun = async (): Promise<void> => {
+    if (!activeRunId || pausingRun) return
+    setPausingRun(true)
+    try {
+      await window.api.cancelAgentRun(activeRunId)
+    } finally {
+      setPausingRun(false)
+    }
   }
   const handleSubmitCommandPalette = async (): Promise<void> => {
     if (!commandPaletteValue.trim()) return
@@ -191,31 +228,6 @@ export function ChatPanel({
                 )}
               </Badge>
             )}
-            {selectedProviderId &&
-              selectedModelId &&
-              (() => {
-                const sp = providers.find((p) => p.id === selectedProviderId)
-                const sm = models.find(
-                  (m) => m.id === selectedModelId && m.providerId === selectedProviderId
-                )
-                return sp && sm ? (
-                  <Badge variant="accent">
-                    <Cpu size={13} />
-                    <span>{sm.name}</span>
-                    <span className="text-accent/70">{sp.name}</span>
-                  </Badge>
-                ) : null
-              })()}
-            <ModelSelector
-              providers={providers}
-              models={models}
-              selectedProviderId={selectedProviderId}
-              selectedModelId={selectedModelId}
-              onSelect={(pid, mid) => {
-                onUpdateModel(topic.id, pid, mid)
-              }}
-              disabled={thinking}
-            />
             {topicHosts.length > 0 && (
               <div className="flex -space-x-2">
                 {topicHosts.slice(0, 4).map((h) => (
@@ -229,6 +241,25 @@ export function ChatPanel({
                 ))}
               </div>
             )}
+            <Tooltip
+              side="bottom"
+              content={
+                <span className="flex items-center gap-2">
+                  切换作战中心
+                  <kbd className="rounded bg-black/[0.06] px-1.5 py-0.5 font-mono text-[10px]">
+                    ⌥⌘B
+                  </kbd>
+                </span>
+              }
+            >
+              <IconButton
+                aria-label={workspaceOpen ? '隐藏作战中心' : '显示作战中心'}
+                onClick={() => setWorkspaceOpen((open) => !open)}
+                className="h-8 w-8 rounded-lg border border-black/[0.06] bg-white text-muted-foreground shadow-sm hover:bg-black/[0.02] hover:text-foreground"
+              >
+                {workspaceOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+              </IconButton>
+            </Tooltip>
           </>
         }
       />
@@ -270,6 +301,25 @@ export function ChatPanel({
             onInputChange={handleInputChange}
             onSend={handleSend}
             thinking={!!thinking}
+            onPause={handlePauseRun}
+            canPause={!!thinking && !!activeRunId && !pausingRun}
+            pausing={pausingRun}
+            modelSelector={
+              <ModelSelector
+                providers={providers}
+                models={models}
+                selectedProviderId={selectedProviderId}
+                selectedModelId={selectedModelId}
+                onSelect={(pid, mid) => {
+                  onUpdateModel(topic.id, pid, mid)
+                }}
+                disabled={thinking}
+                triggerVariant="ghost"
+                triggerSize="sm"
+                triggerClassName="w-fit max-w-full px-3 text-[13px] font-medium"
+                menuAlign="start"
+              />
+            }
             messageQueue={messageQueue}
             onRemoveFromQueue={removeQueuedMessage}
             onClearQueue={clearQueue}
@@ -311,22 +361,24 @@ export function ChatPanel({
             }
           />
         )}
-        <TopicHub
-          topicId={topic.id}
-          hosts={topicHosts}
-          sessions={agentSessions}
-          onAddHost={onManageHosts}
-          onRemoveHost={onRemoveHostFromTopic}
-          onCreateTerminal={onCreateTerminal}
-          onCloseTerminal={onCloseTerminal}
-          onRenameTerminal={onRenameTerminal}
-          onTogglePin={onToggleTerminalPin}
-          focusedSessionId={terminalStage.focusedSessionId}
-          onFocusSession={handleFocusSession}
-          onOpenFileBrowser={onOpenFileBrowser}
-          onOpenPortForward={(host) => setPortForwardHost({ id: host.id, alias: host.alias })}
-          onOpenRunDetail={setRunDetailId}
-        />
+        {workspaceOpen && (
+          <TopicHub
+            topicId={topic.id}
+            hosts={topicHosts}
+            sessions={agentSessions}
+            onAddHost={onManageHosts}
+            onRemoveHost={onRemoveHostFromTopic}
+            onCreateTerminal={onCreateTerminal}
+            onCloseTerminal={onCloseTerminal}
+            onRenameTerminal={onRenameTerminal}
+            onTogglePin={onToggleTerminalPin}
+            focusedSessionId={terminalStage.focusedSessionId}
+            onFocusSession={handleFocusSession}
+            onOpenFileBrowser={onOpenFileBrowser}
+            onOpenPortForward={(host) => setPortForwardHost({ id: host.id, alias: host.alias })}
+            onOpenRunDetail={setRunDetailId}
+          />
+        )}
       </div>
 
       {commandPaletteOpen && (

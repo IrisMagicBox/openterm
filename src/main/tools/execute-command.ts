@@ -5,8 +5,9 @@ import { resolveHostId } from '../utils/host-resolver'
 import { commandExecutor } from '../terminal'
 import { PolicyEngine } from '../PolicyEngine'
 import { approvalDB, permissionDB, commandPatternDB, taskStepDB } from '../db'
-import { TRUST_APPROVAL_THRESHOLD } from '../constants'
+import { COMMAND_TIMEOUT_MS, TRUST_APPROVAL_THRESHOLD } from '../constants'
 import { truncateOutput } from './truncation'
+import { shellQuote } from './shell-quote'
 
 const LIVE_TOOL_OUTPUT_LIMIT = 12000
 const LIVE_TOOL_OUTPUT_UPDATE_INTERVAL_MS = 150
@@ -65,17 +66,27 @@ const parameters = z.object({
   terminalName: z
     .string()
     .optional()
-    .describe('终端名称（可选，默认为 default。用于命名或复用终端；同一主机仍按队列串行执行）'),
+    .describe('可选：Agent 专用可视终端名称。仅影响普通命令终端，不用于 TUI 并发。'),
   command: z.string().describe('要执行的命令'),
+  workdir: z
+    .string()
+    .optional()
+    .describe('命令工作目录。优先使用此字段，不要用 cd <dir> && command。'),
+  timeoutMs: z
+    .number()
+    .min(100)
+    .max(300000)
+    .default(COMMAND_TIMEOUT_MS)
+    .describe('最长等待毫秒数，超时后终止命令。'),
   reason: z.string().describe('执行该命令的原因')
 })
 
 export default define('execute_command', {
   description:
-    '在指定主机上执行会自行结束的终端命令。当你需要检查系统状态、验证服务运行、收集信息或执行普通命令时，必须使用此工具而非猜测结果。若命令会进入 TUI、交互式安装器、菜单、编辑器、REPL 或需要键盘选择，不要用本工具等待完成；改用 manage_terminal + observe_terminal + send_terminal_keys + wait_terminal_text 自动交互。',
+    '在指定主机的 Agent 专用可视终端中执行会自行结束的非交互命令。用户会实时看到命令输入和输出；普通检查、构建、验证、系统状态收集请用本工具，并用 workdir 指定目录。若命令会进入 TUI、交互式安装器、菜单、编辑器、REPL 或需要键盘选择，改用 manage_terminal + observe_terminal + send_terminal_keys + wait_terminal_activity。',
   parameters,
   async execute(args: z.infer<typeof parameters>, ctx: Tool.Context): Promise<Tool.ExecuteResult> {
-    const { hostId, command, reason, terminalName } = args
+    const { hostId, command, reason, workdir, timeoutMs, terminalName } = args
     const host = resolveHostId(hostId)
     if (!host) {
       return {
@@ -140,10 +151,15 @@ export default define('execute_command', {
 
     // Update the step with actual hostId for trace and memory reflection
     taskStepDB.updateStep(ctx.stepId!, { hostId: host.id })
-    ctx.updatePartMetadata?.({ hostId: host.id, hostAlias: host.alias, command, ...policyMetadata })
+    ctx.updatePartMetadata?.({
+      hostId: host.id,
+      hostAlias: host.alias,
+      command,
+      workdir,
+      timeoutMs,
+      ...policyMetadata
+    })
 
-    const sessionId = await ctx.ensureSession(host.id, host.alias, terminalName)
-    ctx.updatePartMetadata?.({ sessionId })
     let lastLiveUpdateAt = 0
     let lastLiveUpdateBytes = 0
     let lastLiveOutput = ''
@@ -166,7 +182,6 @@ export default define('execute_command', {
         status: 'running',
         output: preview.output,
         metadata: {
-          sessionId,
           live: true,
           liveOutputBytes: fullOutput.length,
           liveOutputTruncated: preview.truncated,
@@ -176,46 +191,88 @@ export default define('execute_command', {
       })
     }
 
-    const result = await commandExecutor.execute(
+    const sessionId = await ctx.ensureSession(host.id, host.alias, terminalName, {
+      role: 'agent_command'
+    })
+    const visibleCommand = workdir ? `cd ${shellQuote(workdir)} && ${command}` : command
+    ctx.updatePartMetadata?.({
+      displayMode: 'terminal',
       sessionId,
-      command,
+      terminalRole: 'agent_command',
+      visibleCommand
+    })
+
+    const result = await commandExecutor.executeAgentCommand(
+      sessionId,
+      visibleCommand,
       ctx.topicId,
       ctx.taskId,
-      ctx.stepId!,
+      ctx.stepId,
       {
+        timeoutMs,
         onOutputChunk: (_chunk, fullOutput) => publishLiveOutput(fullOutput)
       }
     )
-    publishLiveOutput(lastLiveOutput || result.content, true)
+    const combinedOutput = result.content
+    const timedOut = Boolean(result.timedOut)
+    const effectiveWorkdir = result.cwd || workdir
+    const commandResult = {
+      stdout: combinedOutput,
+      stderr: '',
+      content: combinedOutput,
+      combinedOutput,
+      exitCode: result.exitCode,
+      durationMs: result.durationMs,
+      timedOut,
+      workdir: effectiveWorkdir,
+      sessionId,
+      displayMode: 'terminal',
+      terminalRole: 'agent_command',
+      isTruncated: result.isTruncated
+    }
+    publishLiveOutput(lastLiveOutput || commandResult.content, true)
+
     const commandMetadata = {
       ...policyMetadata,
       hostId: host.id,
       hostAlias: host.alias,
-      sessionId,
       command,
+      visibleCommand,
+      displayMode: 'terminal',
+      sessionId,
+      terminalRole: 'agent_command',
+      workdir: effectiveWorkdir,
+      timeoutMs,
+      stdout: commandResult.stdout,
+      stderr: commandResult.stderr,
+      combinedOutput,
       exitCode: result.exitCode,
       durationMs: result.durationMs,
-      cwd: result.cwd,
+      timedOut,
       isTruncated: result.isTruncated,
       live: false
     }
     ctx.updatePartMetadata?.(commandMetadata)
 
-    // Truncate large outputs to protect the context window budget
-    const rawOutput = JSON.stringify(result)
+    // Truncate large outputs to protect the context window budget.
+    const rawOutput = JSON.stringify(commandResult, null, 2)
     const truncated = truncateOutput(rawOutput, ctx.topicId, ctx.stepId)
 
     if (truncated.truncated) {
+      const metadata = {
+        ...commandMetadata,
+        truncated: true,
+        isTruncated: true,
+        originalLines: truncated.originalLines,
+        originalBytes: truncated.originalBytes,
+        diskPath: truncated.outputPath,
+        outputPath: truncated.outputPath
+      }
+      ctx.updatePartMetadata?.(metadata)
+
       return {
         output: truncated.content,
-        metadata: {
-          truncated: true,
-          originalLines: truncated.originalLines,
-          originalBytes: truncated.originalBytes,
-          diskPath: truncated.outputPath,
-          outputPath: truncated.outputPath,
-          ...commandMetadata
-        }
+        metadata
       }
     }
 

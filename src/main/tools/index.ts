@@ -10,6 +10,7 @@ import listTerminalsTool from './list-terminals'
 import {
   observeTerminalTool,
   sendTerminalKeysTool,
+  waitTerminalActivityTool,
   waitTerminalTextTool
 } from './terminal-automation'
 import manageHostTool from './manage-host'
@@ -43,6 +44,7 @@ export function createDefaultRegistry(): ToolRegistry {
   registry.register(listTerminalsTool)
   registry.register(observeTerminalTool)
   registry.register(sendTerminalKeysTool)
+  registry.register(waitTerminalActivityTool)
   registry.register(waitTerminalTextTool)
   registry.register(manageHostTool)
   registry.register(searchMemoryTool)
