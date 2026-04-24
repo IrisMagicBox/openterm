@@ -8,6 +8,7 @@ import { approvalDB, permissionDB, commandPatternDB, taskStepDB } from '../db'
 import { COMMAND_TIMEOUT_MS, TRUST_APPROVAL_THRESHOLD } from '../constants'
 import { truncateOutput } from './truncation'
 import { shellQuote } from './shell-quote'
+import { ShellAnalyzer } from '../utils/shell-analyzer'
 
 const LIVE_TOOL_OUTPUT_LIMIT = 12000
 const LIVE_TOOL_OUTPUT_UPDATE_INTERVAL_MS = 150
@@ -100,10 +101,19 @@ export default define('execute_command', {
     }
 
     const commandPattern = policyResult.commandPattern || PolicyEngine.normalizeCommand(command)
+    const commandSegments = ShellAnalyzer.splitSegments(command).map((segment, index) => ({
+      index,
+      raw: segment.raw,
+      command: segment.command,
+      args: segment.args
+    }))
     const permissions = permissionDB.getPermissions()
     const policyMetadata = {
+      riskLevel: policyResult.riskLevel,
       riskCategory: policyResult.riskCategory,
+      trustLevel: policyResult.trustLevel,
       commandPattern,
+      commandSegments,
       requiresVerification: policyResult.requiresVerification
     }
 
@@ -122,7 +132,6 @@ export default define('execute_command', {
             taskId: ctx.taskId,
             stepId: ctx.stepId!,
             command,
-            riskLevel: policyResult.riskLevel,
             ...policyMetadata,
             reason,
             status: 'rejected',
@@ -140,7 +149,6 @@ export default define('execute_command', {
           taskId: ctx.taskId,
           stepId: ctx.stepId!,
           command,
-          riskLevel: policyResult.riskLevel,
           ...policyMetadata,
           reason,
           status: 'approved',

@@ -26,11 +26,11 @@ export class ToolContextFactory {
       messages: [],
       requestAuthorization: async (command, riskLevel, reason, metadata) =>
         permissionEngine.ask({
-          permission: 'command',
+          permission: 'execute_command',
           pattern: command,
           riskLevel,
           reason,
-          metadata
+          metadata: { toolName: 'execute_command', ...metadata }
         }),
       ask: async (request) => {
         await permissionEngine.ask({

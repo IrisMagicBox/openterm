@@ -1,10 +1,21 @@
 export type AgentMode = 'primary' | 'subagent' | 'hidden'
+export type PermissionRuleAction = 'allow' | 'deny' | 'ask'
+export type PermissionRuleScope = 'once' | 'always'
+export type PermissionRejectBehavior = 'throw' | 'reject_with_feedback'
 
 export interface PermissionRule {
   /** Tool name pattern (exact match or '*' for all) */
   tool: string
-  /** Whether this tool is allowed */
-  allowed: boolean
+  /** @deprecated Use action for new rulesets. Kept for legacy compatibility. */
+  allowed?: boolean
+  /** Permission decision for this tool/pattern. Defaults to legacy allowed semantics. */
+  action?: PermissionRuleAction
+  /** Whether an allow decision is one-shot or can be persisted by callers. */
+  scope?: PermissionRuleScope
+  /** How denial should be surfaced to the model/runtime. */
+  rejectBehavior?: PermissionRejectBehavior
+  /** Optional feedback returned when rejectBehavior is reject_with_feedback. */
+  rejectFeedback?: string
   /** Optional max risk level that this agent can auto-approve ('low'|'medium'|'high'|'critical') */
   maxAutoApproveRisk?: 'low' | 'medium' | 'high' | 'critical'
 }

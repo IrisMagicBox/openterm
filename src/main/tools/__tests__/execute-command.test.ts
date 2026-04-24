@@ -139,4 +139,45 @@ describe('execute_command tool', () => {
       isTruncated: false
     })
   })
+
+  it('records policy analysis and command segments in part metadata', async () => {
+    mocks.ensureSession.mockResolvedValueOnce('session-1')
+    mocks.executeAgentCommand.mockResolvedValueOnce({
+      content: 'done\n',
+      exitCode: 0,
+      durationMs: 10,
+      timedOut: false,
+      isTruncated: false,
+      sessionId: 'session-1'
+    })
+    const context = makeContext()
+
+    const tool = await executeCommandTool.init()
+    await tool.execute(
+      {
+        hostId: 'local',
+        command: 'echo ok && systemctl status nginx',
+        timeoutMs: 1234,
+        reason: 'capture metadata'
+      },
+      context
+    )
+
+    expect(context.updatePartMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        riskLevel: 'low',
+        riskCategory: 'read',
+        commandPattern: 'echo *',
+        commandSegments: [
+          { index: 0, raw: 'echo ok', command: 'echo', args: ['ok'] },
+          {
+            index: 1,
+            raw: 'systemctl status nginx',
+            command: 'systemctl',
+            args: ['status', 'nginx']
+          }
+        ]
+      })
+    )
+  })
 })
