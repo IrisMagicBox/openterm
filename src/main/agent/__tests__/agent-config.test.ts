@@ -46,7 +46,16 @@ describe('agent-config', () => {
 
   describe('BUILT_IN_AGENTS', () => {
     it('contains primary, subagent, and hidden agents', () => {
-      expect(Object.keys(BUILT_IN_AGENTS)).toEqual(['build', 'explore', 'verify', 'compaction'])
+      expect(Object.keys(BUILT_IN_AGENTS)).toEqual([
+        'build',
+        'explore',
+        'verify',
+        'plan',
+        'compaction',
+        'summary',
+        'title',
+        'question'
+      ])
     })
 
     it('explore does not allow write_file or manage_terminal', () => {
@@ -81,10 +90,32 @@ describe('agent-config', () => {
       expect(cmdRule).toBeDefined()
       expect(cmdRule?.maxAutoApproveRisk).toBe('low')
     })
+
+    it('plan is read-only and rejects write-like command approvals with feedback', () => {
+      const plan = BUILT_IN_AGENTS.plan
+      const cmdRule = plan.permissions.find((p) => p.tool === 'execute_command')
+
+      expect(plan.mode).toBe('subagent')
+      expect(plan.allowedTools).toContain('execute_command')
+      expect(plan.allowedTools).toContain('read_file')
+      expect(plan.allowedTools).not.toContain('write_file')
+      expect(cmdRule).toMatchObject({
+        maxAutoApproveRisk: 'low',
+        rejectBehavior: 'reject_with_feedback'
+      })
+    })
+
+    it('summary, title, and question are hidden no-tool agents', () => {
+      for (const name of ['summary', 'title', 'question'] as const) {
+        expect(BUILT_IN_AGENTS[name].mode).toBe('hidden')
+        expect(BUILT_IN_AGENTS[name].allowedTools).toEqual([])
+        expect(BUILT_IN_AGENTS[name].permissions).toEqual([{ tool: '*', allowed: false }])
+      }
+    })
   })
 })
 
-function makeMockTool(id: string) {
+function makeMockTool(id: string): ReturnType<typeof define> {
   return define(id, {
     description: `Mock ${id}`,
     parameters: z.object({}),
