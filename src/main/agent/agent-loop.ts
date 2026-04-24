@@ -103,7 +103,10 @@ export class AgentLoop {
         tool_calls: streamResult.toolCalls
       })
 
-      await this.compaction.maybeAutoCompact(workingHistory, turnMessages)
+      const autoCompacted = await this.compaction.maybeAutoCompact(workingHistory, turnMessages)
+      if (autoCompacted) {
+        workingHistory = autoCompacted
+      }
 
       if (streamResult.toolCalls.length === 0) {
         if (this.toolExecutor.hasPendingVerification()) {

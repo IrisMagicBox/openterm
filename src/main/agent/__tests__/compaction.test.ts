@@ -1,52 +1,32 @@
 import { describe, it, expect } from 'vitest'
 import { PRUNE_PROTECT_TOKENS } from '../token-counter'
+import type { Message } from '../../../shared/types'
+import {
+  buildAnchoredCompactionPrompt,
+  pruneToolOutputs,
+  selectTailMessages
+} from '../compaction-policy'
 
-// Inline pruneToolOutputs to avoid importing compaction.ts
-// (which imports ai.ts → db → electron, not available in test env)
-interface SimpleMessage {
-  role: string
-  content: string
-  toolCalls?: unknown[]
-  name?: string
-  toolCallId?: string
+function makeMessage(role: Message['role'], content: string, id: string): Message {
+  return {
+    id,
+    topicId: 'topic-1',
+    role,
+    content,
+    timestamp: 1
+  }
 }
 
-function pruneToolOutputs(messages: SimpleMessage[]): {
-  messages: SimpleMessage[]
-  prunedCount: number
-  prunedTokens: number
-} {
-  let protectedTokens = 0
-  let prunedCount = 0
-  let prunedTokens = 0
-  const result = messages.map((msg) => {
-    if (msg.role !== 'tool' && !(msg.toolCalls && msg.toolCalls.length > 0)) {
-      return msg
-    }
-    if (msg.role === 'tool' && msg.content) {
-      const msgTokens = Math.ceil(msg.content.length / 4)
-      protectedTokens += msgTokens
-      if (protectedTokens > PRUNE_PROTECT_TOKENS) {
-        prunedCount++
-        prunedTokens += msgTokens
-        return { ...msg, content: `[Tool output pruned — ${msgTokens} tokens recovered]` }
-      }
-    }
-    return msg
-  })
-  return { messages: result, prunedCount, prunedTokens }
+function makeToolResult(content: string, id = 'tool-1'): Message {
+  return { ...makeMessage('tool', content, id), name: 'execute_command', toolCallId: id }
 }
 
-function makeToolResult(content: string): SimpleMessage {
-  return { role: 'tool', content, name: 'execute_command', toolCallId: 'tc1' }
+function makeUserMsg(content: string, id = 'user-1'): Message {
+  return makeMessage('user', content, id)
 }
 
-function makeUserMsg(content: string): SimpleMessage {
-  return { role: 'user', content }
-}
-
-function makeAssistantMsg(content: string): SimpleMessage {
-  return { role: 'assistant', content }
+function makeAssistantMsg(content: string, id = 'assistant-1'): Message {
+  return makeMessage('assistant', content, id)
 }
 
 describe('compaction', () => {
@@ -67,9 +47,21 @@ describe('compaction', () => {
 
     it('prunes tool outputs that exceed protection budget', () => {
       const largeContent = 'x'.repeat(200_000) // ~50000 tokens
-      const messages = [makeToolResult(largeContent), makeToolResult(largeContent)]
+      const messages = [makeToolResult(largeContent, 'old'), makeToolResult(largeContent, 'new')]
       const result = pruneToolOutputs(messages)
       expect(result.prunedCount).toBeGreaterThanOrEqual(1)
+    })
+
+    it('protects the most recent tool output before pruning older outputs', () => {
+      const largeContent = 'x'.repeat((PRUNE_PROTECT_TOKENS + 1) * 4)
+      const messages = [
+        makeToolResult(largeContent, 'old-tool-call'),
+        makeToolResult('recent output', 'recent-tool-call')
+      ]
+      const result = pruneToolOutputs(messages)
+
+      expect(result.messages[0].content).toContain('[Tool output pruned')
+      expect(result.messages[1].content).toBe('recent output')
     })
 
     it('preserves non-tool messages', () => {
@@ -98,6 +90,35 @@ describe('compaction', () => {
       if (prunedMsg) {
         expect(prunedMsg.content).toContain('[Tool output pruned')
       }
+    })
+  })
+
+  describe('anchored compaction prompt', () => {
+    it('requires stable continuation sections', () => {
+      const prompt = buildAnchoredCompactionPrompt({ conversationText: 'user: deploy app' })
+      expect(prompt).toContain('## Goal')
+      expect(prompt).toContain('## Constraints & Preferences')
+      expect(prompt).toContain('## Next Steps')
+      expect(prompt).toContain('## Relevant Hosts/Files/Commands')
+    })
+  })
+
+  describe('selectTailMessages', () => {
+    it('keeps the last user-led turns', () => {
+      const messages = [
+        makeUserMsg('one', 'u1'),
+        makeAssistantMsg('a1', 'a1'),
+        makeUserMsg('two', 'u2'),
+        makeAssistantMsg('a2', 'a2'),
+        makeUserMsg('three', 'u3'),
+        makeAssistantMsg('a3', 'a3')
+      ]
+
+      const tail = selectTailMessages(messages, 2)
+
+      expect(tail.tailStartMessageId).toBe('u2')
+      expect(tail.messages.map((message) => message.id)).toEqual(['u2', 'a2', 'u3', 'a3'])
+      expect(tail.droppedCount).toBe(2)
     })
   })
 })

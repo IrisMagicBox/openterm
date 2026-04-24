@@ -4,34 +4,41 @@ import { getErrorMessage } from '../../shared/errors'
 import { logger } from '../logger'
 import { AUTO_COMPACT_THRESHOLD } from '../constants'
 import { compactContext } from './compaction'
+import { selectTailMessages } from './compaction-policy'
 import { getContextBudget } from './token-counter'
 import { agentRunStore } from './agent-run-store'
 import { eventBus } from './event-bus'
 import type { AgentProcessorOptions } from './agent-processor-types'
+import { AgentPartWriter } from './agent-part-writer'
 
 export class CompactionCoordinator {
+  private readonly parts = new AgentPartWriter()
+
   constructor(private readonly options: AgentProcessorOptions) {}
 
   async maybeAutoCompact(
     workingHistory: Message[],
     turnMessages: ChatCompletionMessageParam[]
-  ): Promise<void> {
+  ): Promise<Message[] | undefined> {
+    if (turnMessages.length === 0) return undefined
     const usage = this.options.provider.getSessionUsage()
-    if (usage.totalTokens <= 0) return
+    if (usage.totalTokens <= 0) return undefined
     const budget = getContextBudget(usage.totalTokens)
-    if (budget.used / budget.usable < AUTO_COMPACT_THRESHOLD) return
-    await this.compactHistory(workingHistory, turnMessages)
+    if (budget.used / budget.usable < AUTO_COMPACT_THRESHOLD) return undefined
+    return this.compactHistory(workingHistory, turnMessages, { auto: true })
   }
 
   async compactHistory(
     workingHistory: Message[],
-    turnMessages: ChatCompletionMessageParam[]
+    _turnMessages: ChatCompletionMessageParam[],
+    opts: { auto?: boolean } = {}
   ): Promise<Message[] | undefined> {
-    const part = agentRunStore.createPart({
+    const part = this.parts.createPart({
       runId: this.options.run.id,
       type: 'compaction',
       status: 'running',
       input: 'Context overflow or proactive compaction requested.',
+      metadata: { auto: opts.auto === true },
       startedAt: Date.now()
     })
     agentRunStore.updateRun(this.options.run.id, { status: 'compacting' })
@@ -39,29 +46,28 @@ export class CompactionCoordinator {
     try {
       const compactionResult = await compactContext(workingHistory)
       if (!compactionResult?.summary) {
-        agentRunStore.updatePart(part.id, {
+        this.parts.updatePart(part.id, {
           status: 'completed',
           output: 'No compaction was needed.',
-          endedAt: Date.now()
+          endedAt: Date.now(),
+          metadata: compactionResult
+            ? {
+                auto: opts.auto === true,
+                originalTokens: compactionResult.originalTokenEstimate,
+                compactedTokens: compactionResult.compactedTokenEstimate,
+                prunedCount: compactionResult.prunedCount,
+                prunedTokens: compactionResult.prunedTokens,
+                tailStartMessageId: compactionResult.tailStartMessageId,
+                tailMessageCount: compactionResult.tailMessageCount,
+                pruneOnly: compactionResult.prunedCount > 0
+              }
+            : { auto: opts.auto === true, skipped: true }
         })
         agentRunStore.updateRun(this.options.run.id, { status: 'running' })
         return undefined
       }
 
-      const recentTurnsAsMessages: Message[] = turnMessages
-        .slice(-6)
-        .map((m, i) => ({
-          id: `compaction_turn_${i}`,
-          topicId: this.options.run.topicId,
-          role: (m.role === 'tool' ? 'tool' : m.role === 'assistant' ? 'assistant' : 'user') as
-            | 'tool'
-            | 'assistant'
-            | 'user',
-          content: typeof m.content === 'string' ? m.content : '',
-          timestamp: Date.now()
-        }))
-        .filter((m) => m.content.length > 0)
-
+      const tail = selectTailMessages(workingHistory)
       const compactedHistory = [
         {
           id: 'compaction_summary',
@@ -70,18 +76,22 @@ export class CompactionCoordinator {
           content: compactionResult.summary,
           timestamp: Date.now()
         },
-        ...recentTurnsAsMessages,
-        workingHistory[workingHistory.length - 1]
+        ...tail.messages
       ].filter(Boolean) as Message[]
 
-      agentRunStore.updatePart(part.id, {
+      this.parts.updatePart(part.id, {
         status: 'completed',
         output: compactionResult.summary,
         endedAt: Date.now(),
         metadata: {
+          auto: opts.auto === true,
           originalTokens: compactionResult.originalTokenEstimate,
           compactedTokens: compactionResult.compactedTokenEstimate,
-          prunedCount: compactionResult.prunedCount
+          prunedCount: compactionResult.prunedCount,
+          prunedTokens: compactionResult.prunedTokens,
+          tailStartMessageId: compactionResult.tailStartMessageId,
+          tailMessageCount: compactionResult.tailMessageCount,
+          droppedHistoryMessages: tail.droppedCount
         }
       })
       agentRunStore.updateRun(this.options.run.id, { status: 'running' })
@@ -93,7 +103,7 @@ export class CompactionCoordinator {
       })
       return compactedHistory
     } catch (error) {
-      agentRunStore.updatePart(part.id, {
+      this.parts.updatePart(part.id, {
         status: 'error',
         error: getErrorMessage(error),
         endedAt: Date.now()
