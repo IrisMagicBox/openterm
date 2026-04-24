@@ -150,6 +150,7 @@ export const mapAgentRunRow = (row: AgentRunRow): AgentRun => ({
   providerId: row.providerId ?? undefined,
   modelId: row.modelId ?? undefined,
   usage: parseJSON<Record<string, unknown> | undefined>(row.usage, undefined),
+  metadata: parseJSON<Record<string, unknown> | undefined>(row.metadata, undefined),
   error: row.error ?? undefined,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,

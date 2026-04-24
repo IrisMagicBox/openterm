@@ -131,6 +131,7 @@ export interface AgentRun {
   providerId?: string
   modelId?: string
   usage?: Record<string, unknown>
+  metadata?: Record<string, unknown>
   error?: string
   createdAt: number
   updatedAt: number

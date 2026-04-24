@@ -332,6 +332,49 @@ describe('ContextAssembler', () => {
 
       const report = result.layerReport.find((r) => r.name === 'test-layer')
       expect(report?.tokenEstimate).toBe(estimateTokenCount(content))
+      expect(report?.priority).toBe(50)
+      expect(report?.reason).toBe('included')
+    })
+
+    it('includes context report details for layers, history, turns, and budget', () => {
+      const history = [makeMessage('user', 'hello'), makeMessage('assistant', 'world')]
+      const turn = makeTurnMessage('assistant', 'turn')
+      const result = new ContextAssembler({ modelContextWindow: 1000, reserveTokens: 100 })
+        .setSystemPrompt('System')
+        .addLayer('memory', 'Memory content', 60, {
+          tokenBudget: 20,
+          debugReport: { source: 'test' }
+        })
+        .setHistory(history)
+        .setTurnMessages([turn] as never[])
+        .assemble()
+
+      expect(result.contextReport.layers[0]).toMatchObject({
+        name: 'memory',
+        priority: 60,
+        tokenBudget: 20,
+        included: true,
+        debugReport: { source: 'test' }
+      })
+      expect(result.contextReport.history.totalMessages).toBe(2)
+      expect(result.contextReport.history.includedMessages).toBe(2)
+      expect(result.contextReport.turns.messageCount).toBe(1)
+      expect(result.contextReport.budget.windowSize).toBe(1000)
+    })
+
+    it('honors per-layer token budgets before global budget is exhausted', () => {
+      const result = new ContextAssembler({ modelContextWindow: 1000, reserveTokens: 100 })
+        .setSystemPrompt('System')
+        .addLayer('budgeted', tokenString(50), 90, { tokenBudget: 10 })
+        .addLayer('next', 'still has room', 80)
+        .assemble()
+
+      const budgeted = result.layerReport.find((r) => r.name === 'budgeted')
+      const next = result.layerReport.find((r) => r.name === 'next')
+      expect(budgeted?.included).toBe(true)
+      expect(budgeted?.truncated).toBe(true)
+      expect(budgeted?.tokenBudget).toBe(10)
+      expect(next?.included).toBe(true)
     })
 
     it('reports all layers even when not included', () => {

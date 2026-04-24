@@ -11,6 +11,7 @@ import { LegacyAgentEventAdapter } from './legacy-agent-event-adapter'
 import { ProviderStreamCollector } from './provider-stream-collector'
 import { RunLifecycleService } from './run-lifecycle-service'
 import { ToolCallExecutor } from './tool-call-executor'
+import { agentRunStore } from './agent-run-store'
 
 export class AgentLoop {
   private readonly streamCollector: ProviderStreamCollector
@@ -50,18 +51,21 @@ export class AgentLoop {
         terminalContext,
         extraContext
       )
+      this.recordContextReport(assembled, turnCount, false)
 
       let currentMessages = assembled.messages
       if (assembled.budget.isOverflow) {
         const compacted = await this.compaction.compactHistory(workingHistory, turnMessages)
         if (compacted) {
           workingHistory = compacted
-          currentMessages = this.assembleContext(
+          const compactedContext = this.assembleContext(
             workingHistory,
             turnMessages,
             terminalContext,
             extraContext
-          ).messages
+          )
+          this.recordContextReport(compactedContext, turnCount, true)
+          currentMessages = compactedContext.messages
         }
       }
 
@@ -154,5 +158,21 @@ export class AgentLoop {
       .setHistory(workingHistory)
       .setTurnMessages(turnMessages)
       .assemble()
+  }
+
+  private recordContextReport(
+    assembled: AssembledContext,
+    turnCount: number,
+    afterCompaction: boolean
+  ): void {
+    agentRunStore.updateRun(this.options.run.id, {
+      metadata: {
+        latestContextReport: {
+          ...assembled.contextReport,
+          turnCount,
+          afterCompaction
+        }
+      }
+    })
   }
 }

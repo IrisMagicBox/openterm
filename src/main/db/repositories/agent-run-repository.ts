@@ -49,6 +49,7 @@ export class AgentRunRepository extends BaseRepository<AgentRunRow> {
       providerId: run.providerId,
       modelId: run.modelId,
       usage: run.usage,
+      metadata: run.metadata,
       error: run.error,
       createdAt: run.createdAt ?? now,
       updatedAt: run.updatedAt ?? now,
@@ -59,9 +60,9 @@ export class AgentRunRepository extends BaseRepository<AgentRunRow> {
       `
       INSERT INTO agent_runs (
         id, topicId, taskId, parentRunId, parentPartId, agentName, mode, status, goal,
-        providerId, modelId, usage, error, createdAt, updatedAt, completedAt
+        providerId, modelId, usage, metadata, error, createdAt, updatedAt, completedAt
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
     ).run(
       created.id,
@@ -76,6 +77,7 @@ export class AgentRunRepository extends BaseRepository<AgentRunRow> {
       created.providerId ?? null,
       created.modelId ?? null,
       created.usage ? JSON.stringify(created.usage) : null,
+      created.metadata ? JSON.stringify(created.metadata) : null,
       created.error ?? null,
       created.createdAt,
       created.updatedAt,
@@ -95,6 +97,13 @@ export class AgentRunRepository extends BaseRepository<AgentRunRow> {
     const updated: AgentRun = {
       ...existing,
       ...updates,
+      metadata:
+        updates.metadata === undefined
+          ? existing.metadata
+          : {
+              ...(existing.metadata ?? {}),
+              ...updates.metadata
+            },
       updatedAt: Date.now()
     }
 
@@ -102,7 +111,7 @@ export class AgentRunRepository extends BaseRepository<AgentRunRow> {
       `
       UPDATE agent_runs
       SET parentRunId = ?, parentPartId = ?, agentName = ?, mode = ?, status = ?, goal = ?,
-          providerId = ?, modelId = ?, usage = ?, error = ?, updatedAt = ?, completedAt = ?
+          providerId = ?, modelId = ?, usage = ?, metadata = ?, error = ?, updatedAt = ?, completedAt = ?
       WHERE id = ?
     `
     ).run(
@@ -115,6 +124,7 @@ export class AgentRunRepository extends BaseRepository<AgentRunRow> {
       updated.providerId ?? null,
       updated.modelId ?? null,
       updated.usage ? JSON.stringify(updated.usage) : null,
+      updated.metadata ? JSON.stringify(updated.metadata) : null,
       updated.error ?? null,
       updated.updatedAt,
       updated.completedAt ?? null,
@@ -126,7 +136,7 @@ export class AgentRunRepository extends BaseRepository<AgentRunRow> {
 
   cancelRunTree(id: string, reason = 'Run cancelled'): void {
     const now = Date.now()
-    const cancelOne = (runId: string) => {
+    const cancelOne = (runId: string): void => {
       const children = this.getChildRuns(runId)
       for (const child of children) cancelOne(child.id)
 

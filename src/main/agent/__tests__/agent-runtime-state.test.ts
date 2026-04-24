@@ -16,6 +16,7 @@ describe('agent runtime state mapping', () => {
       providerId: null,
       modelId: 'gpt-test',
       usage: '{"totalTokens":123}',
+      metadata: '{"latestContextReport":{"turnCount":1}}',
       error: null,
       createdAt: 1,
       updatedAt: 2,
@@ -24,6 +25,7 @@ describe('agent runtime state mapping', () => {
 
     expect(run.status).toBe('running')
     expect(run.usage?.totalTokens).toBe(123)
+    expect((run.metadata?.latestContextReport as { turnCount?: number })?.turnCount).toBe(1)
     expect(run.modelId).toBe('gpt-test')
   })
 

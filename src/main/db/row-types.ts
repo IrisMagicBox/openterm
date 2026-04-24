@@ -93,6 +93,7 @@ export interface AgentRunRow {
   providerId: string | null
   modelId: string | null
   usage: string | null // JSON-encoded Record<string, unknown>
+  metadata: string | null // JSON-encoded Record<string, unknown>
   error: string | null
   createdAt: number
   updatedAt: number

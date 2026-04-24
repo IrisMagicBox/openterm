@@ -17,13 +17,45 @@ export interface ContextLayer {
   name: string
   content: string
   priority: number // Higher = more important, kept when budget is tight
+  tokenBudget?: number
+  debugReport?: Record<string, unknown>
 }
 
 export interface LayerReport {
   name: string
+  priority: number
   tokenEstimate: number
+  includedTokenEstimate: number
+  tokenBudget?: number
   included: boolean
   truncated: boolean
+  reason: 'included' | 'empty' | 'budget_exhausted' | 'truncated_to_fit'
+  originalCharLength: number
+  includedCharLength: number
+  debugReport?: Record<string, unknown>
+}
+
+export interface ContextReport {
+  generatedAt: number
+  modelContextWindow: number
+  reserveTokens: number
+  system: {
+    tokenEstimate: number
+    charLength: number
+  }
+  turns: {
+    tokenEstimate: number
+    messageCount: number
+  }
+  history: {
+    availableTokens: number
+    totalMessages: number
+    includedMessages: number
+    droppedMessages: number
+    includedTokenEstimate: number
+  }
+  layers: LayerReport[]
+  budget: ContextBudget
 }
 
 export interface AssembledContext {
@@ -31,6 +63,7 @@ export interface AssembledContext {
   messages: ChatCompletionMessageParam[]
   budget: ContextBudget
   layerReport: LayerReport[]
+  contextReport: ContextReport
 }
 
 export class ContextAssembler {
@@ -53,8 +86,13 @@ export class ContextAssembler {
   }
 
   /** Add a context layer with name, content, and priority */
-  addLayer(name: string, content: string, priority: number): this {
-    this.layers.push({ name, content, priority })
+  addLayer(
+    name: string,
+    content: string,
+    priority: number,
+    opts?: { tokenBudget?: number; debugReport?: Record<string, unknown> }
+  ): this {
+    this.layers.push({ name, content, priority, ...opts })
     return this
   }
 
@@ -91,36 +129,95 @@ export class ContextAssembler {
 
     // Include layers by priority, truncate if needed
     for (const layer of sortedLayers) {
-      const layerTokens = estimateTokenCount(layer.content)
-      if (remainingBudget <= 0) {
+      const rawContent = layer.content || ''
+      const layerTokens = estimateTokenCount(rawContent)
+      const originalCharLength = rawContent.length
+      if (!rawContent.trim()) {
         layerReports.push({
           name: layer.name,
+          priority: layer.priority,
           tokenEstimate: layerTokens,
-          included: false,
-          truncated: false
+          includedTokenEstimate: 0,
+          tokenBudget: layer.tokenBudget,
+          included: true,
+          truncated: false,
+          reason: 'empty',
+          originalCharLength,
+          includedCharLength: 0,
+          debugReport: layer.debugReport
         })
         continue
       }
-      if (layerTokens <= remainingBudget) {
-        includedLayerContents.push(layer.content)
+      if (remainingBudget <= 0) {
+        layerReports.push({
+          name: layer.name,
+          priority: layer.priority,
+          tokenEstimate: layerTokens,
+          includedTokenEstimate: 0,
+          tokenBudget: layer.tokenBudget,
+          included: false,
+          truncated: false,
+          reason: 'budget_exhausted',
+          originalCharLength,
+          includedCharLength: 0,
+          debugReport: layer.debugReport
+        })
+        continue
+      }
+
+      const perLayerBudget = layer.tokenBudget ?? layerTokens
+      const allowedTokens = Math.min(remainingBudget, perLayerBudget)
+      if (allowedTokens <= 0) {
+        layerReports.push({
+          name: layer.name,
+          priority: layer.priority,
+          tokenEstimate: layerTokens,
+          includedTokenEstimate: 0,
+          tokenBudget: layer.tokenBudget,
+          included: false,
+          truncated: false,
+          reason: 'budget_exhausted',
+          originalCharLength,
+          includedCharLength: 0,
+          debugReport: layer.debugReport
+        })
+        continue
+      }
+
+      if (layerTokens <= allowedTokens) {
+        includedLayerContents.push(rawContent)
         remainingBudget -= layerTokens
         layerReports.push({
           name: layer.name,
+          priority: layer.priority,
           tokenEstimate: layerTokens,
+          includedTokenEstimate: layerTokens,
+          tokenBudget: layer.tokenBudget,
           included: true,
-          truncated: false
+          truncated: false,
+          reason: 'included',
+          originalCharLength,
+          includedCharLength: rawContent.length,
+          debugReport: layer.debugReport
         })
       } else {
         // Truncate layer to fit
-        const maxChars = remainingBudget * 4 // 4 chars/token heuristic
-        const truncated = layer.content.slice(0, maxChars) + '\n...[truncated]'
+        const maxChars = allowedTokens * 4 // 4 chars/token heuristic
+        const truncated = rawContent.slice(0, maxChars) + '\n...[truncated]'
         includedLayerContents.push(truncated)
-        remainingBudget = 0
+        remainingBudget -= allowedTokens
         layerReports.push({
           name: layer.name,
+          priority: layer.priority,
           tokenEstimate: layerTokens,
+          includedTokenEstimate: estimateTokenCount(truncated),
+          tokenBudget: layer.tokenBudget,
           included: true,
-          truncated: true
+          truncated: true,
+          reason: 'truncated_to_fit',
+          originalCharLength,
+          includedCharLength: truncated.length,
+          debugReport: layer.debugReport
         })
       }
     }
@@ -129,7 +226,8 @@ export class ContextAssembler {
     const systemContent = [this.systemBase, ...includedLayerContents].join('\n\n')
 
     // Window history to fit remaining budget
-    const historyMessages = this.windowHistory(remainingBudget)
+    const history = this.windowHistory(remainingBudget)
+    const historyMessages = history.messages
 
     // Assemble final messages array
     const messages: ChatCompletionMessageParam[] = [
@@ -141,11 +239,36 @@ export class ContextAssembler {
     const totalUsed =
       estimateTokenCount(systemContent) + estimateMessagesTokens(historyMessages) + turnTokens
 
+    const budget = getContextBudget(totalUsed, this.modelContextWindow, this.reserveTokens)
+    const contextReport: ContextReport = {
+      generatedAt: Date.now(),
+      modelContextWindow: this.modelContextWindow,
+      reserveTokens: this.reserveTokens,
+      system: {
+        tokenEstimate: systemTokens,
+        charLength: this.systemBase.length
+      },
+      turns: {
+        tokenEstimate: turnTokens,
+        messageCount: this.turnMessages.length
+      },
+      history: {
+        availableTokens: Math.max(0, remainingBudget),
+        totalMessages: this.history.length,
+        includedMessages: historyMessages.length,
+        droppedMessages: Math.max(0, this.history.length - historyMessages.length),
+        includedTokenEstimate: history.tokenEstimate
+      },
+      layers: layerReports,
+      budget
+    }
+
     return {
       systemPrompt: systemContent,
       messages,
-      budget: getContextBudget(totalUsed, this.modelContextWindow, this.reserveTokens),
-      layerReport: layerReports
+      budget,
+      layerReport: layerReports,
+      contextReport
     }
   }
 
@@ -165,8 +288,10 @@ export class ContextAssembler {
     return total
   }
 
-  private windowHistory(availableTokens: number): Message[] {
-    if (availableTokens <= 0 || this.history.length === 0) return []
+  private windowHistory(availableTokens: number): { messages: Message[]; tokenEstimate: number } {
+    if (availableTokens <= 0 || this.history.length === 0) {
+      return { messages: [], tokenEstimate: 0 }
+    }
 
     // Include from the end (most recent first)
     const result: Message[] = []
@@ -178,7 +303,7 @@ export class ContextAssembler {
       result.unshift(msg)
       used += msgTokens
     }
-    return result
+    return { messages: result, tokenEstimate: used }
   }
 
   private toChatMessages(messages: Message[]): ChatCompletionMessageParam[] {

@@ -15,6 +15,7 @@ export interface CreateRunInput {
   goal: string
   providerId?: string
   modelId?: string
+  metadata?: Record<string, unknown>
 }
 
 export class AgentRunStore {
@@ -30,7 +31,8 @@ export class AgentRunStore {
       status: input.status ?? 'running',
       goal: input.goal,
       providerId: input.providerId,
-      modelId: input.modelId
+      modelId: input.modelId,
+      metadata: input.metadata
     })
     eventBus.publish('agent:run-created', run)
     return run

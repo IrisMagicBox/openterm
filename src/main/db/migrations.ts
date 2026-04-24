@@ -181,6 +181,12 @@ const migrations: Migration[] = [
         );
       `)
     }
+  },
+  {
+    id: '009_agent_run_metadata',
+    run: (db) => {
+      addColumnIfMissing(db, 'agent_runs', 'metadata', 'TEXT')
+    }
   }
 ]
 

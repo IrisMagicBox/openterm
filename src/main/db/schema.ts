@@ -121,6 +121,7 @@ export const BASE_SCHEMA_SQL = `
     providerId TEXT,
     modelId TEXT,
     usage TEXT,
+    metadata TEXT,
     error TEXT,
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL,
