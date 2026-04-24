@@ -48,6 +48,10 @@ export class AgentRunStore {
     return agentPartDB.getPartsByRun(runId)
   }
 
+  getPart(id: string): AgentPart | undefined {
+    return agentPartDB.getPart(id)
+  }
+
   getPartsByTask(taskId: string): AgentPart[] {
     return agentPartDB.getPartsByTask(taskId)
   }

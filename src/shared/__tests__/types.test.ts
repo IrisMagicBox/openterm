@@ -6,7 +6,9 @@ import type {
   PolicyRiskCategory,
   TerminalSessionStatus,
   TrustLevel,
-  MemoryType
+  MemoryType,
+  AgentPartType,
+  AgentRunStopReason
 } from '../types'
 
 describe('Shared Types - Host', () => {
@@ -199,6 +201,41 @@ describe('Shared Types - Union types', () => {
       'policy_hint'
     ]
     expect(types).toHaveLength(5)
+  })
+
+  it('should include runtime upgrade AgentPartType values', () => {
+    const types: AgentPartType[] = [
+      'text',
+      'reasoning',
+      'tool',
+      'permission',
+      'compaction',
+      'subagent',
+      'usage',
+      'error',
+      'step',
+      'step_start',
+      'step_finish',
+      'snapshot',
+      'patch'
+    ]
+    expect(types).toContain('step_start')
+    expect(types).toContain('patch')
+  })
+
+  it('should include AgentRunStopReason values', () => {
+    const reasons: AgentRunStopReason[] = [
+      'completed',
+      'max_turns',
+      'context_overflow',
+      'provider_error',
+      'tool_error',
+      'permission_rejected',
+      'aborted',
+      'blocked_empty_response'
+    ]
+    expect(reasons).toContain('provider_error')
+    expect(reasons).toContain('blocked_empty_response')
   })
 })
 

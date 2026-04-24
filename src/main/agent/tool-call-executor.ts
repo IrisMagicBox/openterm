@@ -16,11 +16,13 @@ import { eventBus } from './event-bus'
 import { LegacyAgentEventAdapter } from './legacy-agent-event-adapter'
 import type { AgentProcessorOptions } from './agent-processor-types'
 import type { SessionUsage } from './provider-adapter'
+import { AgentPartWriter } from './agent-part-writer'
 
 export class ToolCallExecutor {
   private readonly doomLoop = new DoomLoopDetector()
   private readonly legacyEvents: LegacyAgentEventAdapter
   private readonly contextFactory: ToolContextFactory
+  private readonly parts = new AgentPartWriter()
   private readonly pendingVerifications = new Map<string, PendingVerification>()
   private lastWaitActivityKey: string | null = null
   private repeatedWaitActivityCount = 0
@@ -56,8 +58,7 @@ export class ToolCallExecutor {
   getVerificationObservation(): string {
     const pending = Array.from(this.pendingVerifications.values())
     const lines = pending.map(
-      (item) =>
-        `- host=${item.hostId}, category=${item.riskCategory}, command=${item.command}`
+      (item) => `- host=${item.hostId}, category=${item.riskCategory}, command=${item.command}`
     )
     return [
       '[Runtime observation] 你刚才执行了会修改系统状态的操作，但还没有提供只读验证证据。',
@@ -97,21 +98,21 @@ export class ToolCallExecutor {
           typeof parsed.args.error === 'string'
             ? `Error: ${parsed.args.error}`
             : `Error: Unknown tool "${String(parsed.args.tool ?? 'unknown')}".`
-        agentRunStore.updatePart(part.id, { status: 'error', error, endedAt: Date.now() })
+        this.parts.updatePart(part.id, { status: 'error', error, endedAt: Date.now() })
         observations.push({ role: 'tool', tool_call_id: call.id, content: error })
         continue
       }
 
       if (!this.options.permissionEngine.isToolAllowed(call.function.name)) {
         const error = `Error: Tool "${call.function.name}" is not allowed for agent "${this.options.config.name}".`
-        agentRunStore.updatePart(part.id, { status: 'error', error, endedAt: Date.now() })
+        this.parts.updatePart(part.id, { status: 'error', error, endedAt: Date.now() })
         observations.push({ role: 'tool', tool_call_id: call.id, content: error })
         continue
       }
 
       if (this.doomLoop.check(call.function.name, parsed.args)) {
         const error = `Doom loop detected: the tool '${call.function.name}' has been called with identical arguments ${DOOM_LOOP_THRESHOLD} times consecutively. Try a different approach or arguments.`
-        agentRunStore.updatePart(part.id, { status: 'error', error, endedAt: Date.now() })
+        this.parts.updatePart(part.id, { status: 'error', error, endedAt: Date.now() })
         eventBus.publish('agent:doom-loop', {
           topicId: this.options.run.topicId,
           taskId: this.options.run.taskId,
@@ -152,7 +153,7 @@ export class ToolCallExecutor {
     this.options.context.stepId = legacyStep.id
     this.options.context.partId = part.id
 
-    agentRunStore.updatePart(part.id, {
+    this.parts.updatePart(part.id, {
       status: 'running',
       input: call.function.arguments,
       startedAt: Date.now(),
@@ -181,7 +182,7 @@ export class ToolCallExecutor {
         endedAt: Date.now(),
         metadata
       })
-      agentRunStore.updatePart(part.id, {
+      this.parts.updatePart(part.id, {
         status: 'completed',
         output,
         endedAt: Date.now(),
@@ -209,7 +210,7 @@ export class ToolCallExecutor {
         rawOutput: message,
         endedAt: Date.now()
       })
-      agentRunStore.updatePart(part.id, {
+      this.parts.updatePart(part.id, {
         status: 'error',
         error: message,
         endedAt: Date.now()
@@ -273,7 +274,7 @@ export class ToolCallExecutor {
       '[Runtime observation] 已连续多次等待同一个终端活动，但没有新的输入动作。',
       '不要继续盲目调用 wait_terminal_activity。请基于最近一次终端屏幕和变化摘要总结当前结果；如果仍无法确认完成，请说明仍在运行/等待用户输入/需要用户接管。'
     ].join('\n')
-    agentRunStore.updatePart(part.id, {
+    this.parts.updatePart(part.id, {
       status: 'blocked',
       output: message,
       endedAt: Date.now(),
@@ -291,15 +292,11 @@ export class ToolCallExecutor {
       .getParts(this.options.run.id)
       .find((part) => part.toolCallId === call.id)
     if (existing) return existing
-    return agentRunStore.createPart({
+    return this.parts.createToolPart({
       runId: this.options.run.id,
-      type: 'tool',
-      status: 'pending',
-      role: 'tool',
       toolName: call.function.name,
       toolCallId: call.id,
-      input: call.function.arguments,
-      startedAt: Date.now()
+      input: call.function.arguments
     })
   }
 
@@ -311,7 +308,7 @@ export class ToolCallExecutor {
       return { ok: true, args: JSON.parse(call.function.arguments || '{}') }
     } catch (error) {
       const message = `Error: Tool "${call.function.name}" received invalid JSON arguments: ${getErrorMessage(error)}`
-      agentRunStore.updatePart(part.id, { status: 'error', error: message, endedAt: Date.now() })
+      this.parts.updatePart(part.id, { status: 'error', error: message, endedAt: Date.now() })
       return { ok: false, error: message }
     }
   }

@@ -12,6 +12,7 @@ import { normalizeAgentError, retryDelayMs } from './agent-error'
 import { eventBus } from './event-bus'
 import type { AgentProcessorOptions, StreamResult, ToolChoice } from './agent-processor-types'
 import type { TokenUsage } from './provider-adapter'
+import { AgentPartWriter } from './agent-part-writer'
 
 interface StreamedToolCall {
   index: number
@@ -135,6 +136,8 @@ export function extractXmlToolCalls(
 }
 
 export class ProviderStreamCollector {
+  private readonly parts = new AgentPartWriter()
+
   constructor(private readonly options: AgentProcessorOptions) {}
 
   async streamWithRetry(
@@ -153,28 +156,38 @@ export class ProviderStreamCollector {
         return result
       } catch (error) {
         const normalized = normalizeAgentError(error)
-        const part = agentRunStore.createPart({
+        const part = this.parts.createErrorPart({
           runId: this.options.run.id,
-          type: 'error',
-          status: normalized.retryable && attempt < maxAttempts ? 'completed' : 'error',
           error: normalized.message,
           metadata: { kind: normalized.kind, retryable: normalized.retryable, attempt },
-          startedAt: Date.now(),
-          endedAt: Date.now()
+          role: 'assistant'
         })
+        if (normalized.retryable && attempt < maxAttempts) {
+          this.parts.updatePart(part.id, { status: 'completed' })
+        }
 
         if (!normalized.retryable || attempt >= maxAttempts) {
           if (normalized.kind === 'abort') {
+            this.parts.finishOpenParts(this.options.run.id, {
+              status: 'cancelled',
+              reason: normalized.message,
+              metadata: { stopReason: 'aborted' }
+            })
             agentRunStore.updateRun(this.options.run.id, {
               status: 'cancelled',
               error: normalized.message,
-              usage: { ...this.options.provider.getSessionUsage() },
+              usage: { ...this.options.provider.getSessionUsage(), stopReason: 'aborted' },
               completedAt: Date.now()
             })
           } else {
+            this.parts.finishOpenParts(this.options.run.id, {
+              status: 'error',
+              reason: normalized.message,
+              metadata: { stopReason: 'provider_error' }
+            })
             agentRunStore.completeRun(this.options.run.id, {
               error: normalized.message,
-              usage: { ...this.options.provider.getSessionUsage() }
+              usage: { ...this.options.provider.getSessionUsage(), stopReason: 'provider_error' }
             })
           }
           throw error
@@ -194,13 +207,9 @@ export class ProviderStreamCollector {
 
   recordUsage(usage: TokenUsage): void {
     if (usage.totalTokens <= 0) return
-    agentRunStore.createPart({
+    this.parts.createUsagePart({
       runId: this.options.run.id,
-      type: 'usage',
-      status: 'completed',
-      metadata: { ...usage },
-      startedAt: Date.now(),
-      endedAt: Date.now()
+      metadata: { ...usage }
     })
     eventBus.publish('agent:usage', {
       topicId: this.options.run.topicId,
@@ -234,16 +243,13 @@ export class ProviderStreamCollector {
       if (chunk.content) {
         content += chunk.content
         if (!textPart) {
-          textPart = agentRunStore.createPart({
+          textPart = this.parts.createTextPart({
             runId: this.options.run.id,
-            type: 'text',
-            status: 'running',
             role: 'assistant',
-            output: content,
-            startedAt: Date.now()
+            output: content
           })
         } else {
-          agentRunStore.updatePart(textPart.id, { output: content })
+          this.parts.updatePart(textPart.id, { output: content })
         }
       }
 
@@ -255,19 +261,15 @@ export class ProviderStreamCollector {
           const name = resolveStreamedToolName(delta.function?.name, existing?.name, args)
           let partId = existing?.partId
           if (!partId) {
-            const part = agentRunStore.createPart({
+            const part = this.parts.createToolPart({
               runId: this.options.run.id,
-              type: 'tool',
-              status: 'pending',
-              role: 'tool',
               toolName: name,
               toolCallId: id,
-              input: args,
-              startedAt: Date.now()
+              input: args
             })
             partId = part.id
           } else {
-            agentRunStore.updatePart(partId, {
+            this.parts.updatePart(partId, {
               toolName: name,
               toolCallId: id,
               input: args
@@ -286,7 +288,7 @@ export class ProviderStreamCollector {
     content = extractedXml.content
 
     if (textPart) {
-      agentRunStore.updatePart(textPart.id, {
+      this.parts.updatePart(textPart.id, {
         status: 'completed',
         output: content,
         endedAt: Date.now(),

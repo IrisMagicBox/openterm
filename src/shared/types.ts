@@ -50,6 +50,16 @@ export type AgentRunStatus =
   | 'failed'
   | 'cancelled'
 
+export type AgentRunStopReason =
+  | 'completed'
+  | 'max_turns'
+  | 'context_overflow'
+  | 'provider_error'
+  | 'tool_error'
+  | 'permission_rejected'
+  | 'aborted'
+  | 'blocked_empty_response'
+
 export type AgentPartType =
   | 'text'
   | 'reasoning'
@@ -60,6 +70,10 @@ export type AgentPartType =
   | 'usage'
   | 'error'
   | 'step'
+  | 'step_start'
+  | 'step_finish'
+  | 'snapshot'
+  | 'patch'
 
 export type AgentPartStatus =
   | 'pending'

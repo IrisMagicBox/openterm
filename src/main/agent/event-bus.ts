@@ -83,7 +83,11 @@ export const AgentEvents = {
       'subagent',
       'usage',
       'error',
-      'step'
+      'step',
+      'step_start',
+      'step_finish',
+      'snapshot',
+      'patch'
     ]),
     status: z.enum(['pending', 'running', 'completed', 'error', 'cancelled', 'blocked']),
     role: z.enum(['user', 'assistant', 'system', 'tool']).optional(),
@@ -116,7 +120,11 @@ export const AgentEvents = {
       'subagent',
       'usage',
       'error',
-      'step'
+      'step',
+      'step_start',
+      'step_finish',
+      'snapshot',
+      'patch'
     ]),
     status: z.enum(['pending', 'running', 'completed', 'error', 'cancelled', 'blocked']),
     role: z.enum(['user', 'assistant', 'system', 'tool']).optional(),
