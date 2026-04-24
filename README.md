@@ -46,6 +46,11 @@ Many developers already have a large collection of CLI tools on their machines: 
 
 OpenTerm is built for that workflow. The Agent can operate across multiple terminal sessions, observe command output, help configure tools, debug failures, and continue work in a shared co-driving terminal. You stay in control, and you can pause, take over, or use OpenTerm as a traditional terminal whenever you want.
 
+## Agent Co-driving Terminal
+
+<!-- Add demo GIF at demo/hero-agent-codrive.gif -->
+![Agent co-driving terminal demo](demo/hero-agent-codrive.gif)
+
 ## Highlights
 
 - **Multi-terminal workspace**: Manage local and remote terminal sessions in one place.
@@ -57,6 +62,16 @@ OpenTerm is built for that workflow. The Agent can operate across multiple termi
 - **Port forwarding**: Create and manage convenient tunnels for remote services and local previews.
 - **Provider and model settings**: Configure AI providers, models, and connection checks from one place.
 - **Task memory and context**: Keep task, host, terminal, and execution history connected so the Agent can continue more reliably.
+
+## Multi-terminal Workspace
+
+<!-- Add demo GIF at demo/multi-terminal-workspace.gif -->
+![Multi-terminal workspace demo](demo/multi-terminal-workspace.gif)
+
+## Remote Files And Port Forwarding
+
+<!-- Add demo GIF at demo/file-transfer-port-forwarding.gif -->
+![File transfer and port forwarding demo](demo/file-transfer-port-forwarding.gif)
 
 ## Who Is It For?
 
