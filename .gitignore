@@ -7,3 +7,11 @@ out
 /openterm.db
 /openterm.db-shm
 /openterm.db-wal
+
+# Local planning and draft artifacts
+.sisyphus/
+AGENT_RUNTIME_MASTER_PLAN.md
+LOCAL_UPGRADE_OUTLINE.md
+REFACTOR_REPORT.md
+Agent优化方案.md
+ARCHITECTURE.md
