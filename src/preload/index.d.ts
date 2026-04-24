@@ -178,6 +178,8 @@ declare global {
           category?: GlobalMemoryFactCategory | string
           confidence?: number
           source?: string
+          sourceTaskId?: string
+          sourceRunId?: string
           sourceError?: string
         }) => Promise<GlobalMemoryData>
         updateGlobalFact: (
@@ -257,6 +259,8 @@ declare global {
         category?: GlobalMemoryFactCategory | string
         confidence?: number
         source?: string
+        sourceTaskId?: string
+        sourceRunId?: string
         sourceError?: string
       }) => Promise<GlobalMemoryData>
       updateGlobalMemoryFact: (

@@ -69,6 +69,8 @@ export function registerMemoryIPC(): void {
         category?: GlobalMemoryFactCategory | string
         confidence?: number
         source?: string
+        sourceTaskId?: string
+        sourceRunId?: string
         sourceError?: string
       }
     ) => globalMemoryDB.createFact(fact)

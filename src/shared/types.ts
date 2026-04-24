@@ -539,6 +539,9 @@ export interface GlobalMemoryFact {
   category: GlobalMemoryFactCategory
   confidence: number
   createdAt: number
+  updatedAt: number
   source: string
+  sourceTaskId?: string
+  sourceRunId?: string
   sourceError?: string
 }

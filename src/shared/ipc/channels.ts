@@ -235,6 +235,8 @@ export interface IpcInvokeChannels {
         category?: GlobalMemoryFactCategory | string
         confidence?: number
         source?: string
+        sourceTaskId?: string
+        sourceRunId?: string
         sourceError?: string
       }
     ]

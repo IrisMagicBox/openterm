@@ -2,6 +2,7 @@ import type {
   GlobalMemoryData,
   GlobalMemoryFact,
   GlobalMemoryFactCategory,
+  AgentRun,
   Task,
   TaskStep
 } from '../shared/types'
@@ -10,6 +11,7 @@ import { getAIClient, getCurrentModel } from './ai'
 import { globalMemoryDB, taskDB, taskStepDB } from './db'
 import { getErrorMessage } from '../shared/errors'
 import { logger } from './logger'
+import { agentRunStore } from './agent/agent-run-store'
 
 const GLOBAL_MEMORY_MAX_FACTS = 100
 const GLOBAL_MEMORY_FACT_CONFIDENCE_THRESHOLD = 0.7
@@ -28,6 +30,12 @@ const FACT_CATEGORIES = new Set<GlobalMemoryFactCategory>([
   'goal',
   'correction'
 ])
+
+export interface GlobalMemoryUpdateProvenance {
+  source: string
+  sourceTaskId?: string
+  sourceRunId?: string
+}
 
 const GLOBAL_MEMORY_UPDATE_SYSTEM_PROMPT = `你是 OpenTerm 的长期记忆管理系统。你的任务是根据已完成的任务，更新跨会话的全局用户画像与经验记忆。
 
@@ -56,6 +64,7 @@ const GLOBAL_MEMORY_UPDATE_SYSTEM_PROMPT = `你是 OpenTerm 的长期记忆管�
 - 不要记录密钥、token、密码、私有证书内容。
 - 主机事实如果只是当前 topic 内临时发现，优先不要写入全局画像；只有跨会话可复用时才写入。
 - 新 facts 的 confidence 必须体现把握程度：明确陈述 0.9+，强暗示 0.7-0.8，模糊推断不要写。
+- facts 的来源 task/run 会由系统自动记录；不要为了来源追踪把 Task ID 或 Run ID 写进 fact 内容。
 - 如果新信息推翻旧事实，把旧 fact id 放到 factsToRemove。
 
 输出 JSON 格式：
@@ -93,9 +102,15 @@ export class GlobalMemoryManager {
     const task = taskDB.getTaskById(taskId)
     if (!task || task.status !== 'completed') return
 
+    const sourceRun = getCompletedMemorySourceRun(taskId)
+    if (sourceRun === null) {
+      logger.info('GlobalMemoryManager', `跳过任务 ${taskId} 的全局记忆更新：没有 completed run`)
+      return
+    }
+
     const steps = taskStepDB.getTaskSteps(taskId)
     const currentMemory = globalMemoryDB.getMemory()
-    const userPrompt = buildUpdatePrompt(currentMemory, task, steps)
+    const userPrompt = buildUpdatePrompt(currentMemory, task, steps, sourceRun)
 
     try {
       const aiClient = getAIClient({ topicId: task.topicId })
@@ -111,7 +126,11 @@ export class GlobalMemoryManager {
 
       const raw = response.choices[0]?.message?.content || '{}'
       const updateData = JSON.parse(extractJsonObject(raw))
-      const updatedMemory = applyGlobalMemoryUpdate(currentMemory, updateData, `task:${task.id}`)
+      const updatedMemory = applyGlobalMemoryUpdate(currentMemory, updateData, {
+        source: `task:${task.id}`,
+        sourceTaskId: task.id,
+        sourceRunId: sourceRun?.id
+      })
 
       globalMemoryDB.saveMemory(updatedMemory)
       logger.info('GlobalMemoryManager', `全局记忆已根据任务 ${taskId} 更新`)
@@ -172,9 +191,10 @@ export function formatGlobalMemoryForInjection(
 export function applyGlobalMemoryUpdate(
   currentMemory: GlobalMemoryData,
   updateData: unknown,
-  source: string
+  provenanceInput: string | GlobalMemoryUpdateProvenance
 ): GlobalMemoryData {
   const update = asRecord(updateData)
+  const provenance = normalizeProvenance(provenanceInput)
   const now = Date.now()
   const next: GlobalMemoryData = {
     version: '1.0',
@@ -189,7 +209,10 @@ export function applyGlobalMemoryUpdate(
       earlierContext: { ...currentMemory.history.earlierContext },
       longTermBackground: { ...currentMemory.history.longTermBackground }
     },
-    facts: currentMemory.facts.map((fact) => ({ ...fact }))
+    facts: currentMemory.facts.map((fact) => ({
+      ...fact,
+      updatedAt: fact.updatedAt ?? fact.createdAt ?? now
+    }))
   }
 
   const userUpdate = asRecord(update.user)
@@ -217,7 +240,6 @@ export function applyGlobalMemoryUpdate(
     next.facts = next.facts.filter((fact) => !factsToRemove.has(fact.id))
   }
 
-  const existingKeys = new Set(next.facts.map((fact) => factContentKey(fact.content)))
   const newFacts = Array.isArray(update.newFacts) ? update.newFacts : []
   for (const item of newFacts) {
     const fact = asRecord(item)
@@ -226,12 +248,27 @@ export function applyGlobalMemoryUpdate(
     if (!content || confidence < GLOBAL_MEMORY_FACT_CONFIDENCE_THRESHOLD) continue
 
     const key = factContentKey(content)
-    if (existingKeys.has(key)) continue
-
     const sourceError =
       typeof fact.sourceError === 'string' && fact.sourceError.trim()
         ? fact.sourceError.trim()
         : undefined
+
+    const existingIndex = next.facts.findIndex(
+      (existingFact) => factContentKey(existingFact.content) === key
+    )
+    if (existingIndex !== -1) {
+      const existing = next.facts[existingIndex]
+      next.facts[existingIndex] = {
+        ...existing,
+        confidence: Math.max(existing.confidence, confidence),
+        updatedAt: now,
+        source: provenance.source,
+        sourceTaskId: provenance.sourceTaskId ?? existing.sourceTaskId,
+        sourceRunId: provenance.sourceRunId ?? existing.sourceRunId,
+        sourceError: sourceError ?? existing.sourceError
+      }
+      continue
+    }
 
     next.facts.push({
       id: `fact_${uuidv4().replace(/-/g, '').slice(0, 8)}`,
@@ -239,22 +276,29 @@ export function applyGlobalMemoryUpdate(
       category: normalizeCategory(fact.category),
       confidence,
       createdAt: now,
-      source,
+      updatedAt: now,
+      source: provenance.source,
+      sourceTaskId: provenance.sourceTaskId,
+      sourceRunId: provenance.sourceRunId,
       sourceError
     })
-    existingKeys.add(key)
   }
 
   if (next.facts.length > GLOBAL_MEMORY_MAX_FACTS) {
     next.facts = [...next.facts]
-      .sort((a, b) => b.confidence - a.confidence || b.createdAt - a.createdAt)
+      .sort((a, b) => b.confidence - a.confidence || b.updatedAt - a.updatedAt)
       .slice(0, GLOBAL_MEMORY_MAX_FACTS)
   }
 
   return next
 }
 
-function buildUpdatePrompt(memory: GlobalMemoryData, task: Task, steps: TaskStep[]): string {
+function buildUpdatePrompt(
+  memory: GlobalMemoryData,
+  task: Task,
+  steps: TaskStep[],
+  sourceRun?: AgentRun
+): string {
   const stepSummary = steps
     .slice(-GLOBAL_MEMORY_UPDATE_STEPS_LIMIT)
     .map((step) => {
@@ -276,11 +320,39 @@ ${JSON.stringify(memory, null, 2)}
 结果摘要: ${task.summary || '无'}
 Topic ID: ${task.topicId}
 Task ID: ${task.id}
+Run ID: ${sourceRun?.id ?? 'legacy/no-agent-run'}
+Run 状态: ${sourceRun?.status ?? 'legacy'}
 近期步骤:
 ${stepSummary || '无'}
 </completed_task>
 
 请基于这个任务更新全局长期记忆。`
+}
+
+function getCompletedMemorySourceRun(taskId: string): AgentRun | undefined | null {
+  const runs = agentRunStore.getRunsByTask(taskId)
+  if (runs.length === 0) return undefined
+
+  const completedRuns = runs
+    .filter((run) => run.status === 'completed')
+    .sort(
+      (a, b) =>
+        (b.completedAt ?? b.updatedAt ?? b.createdAt) -
+        (a.completedAt ?? a.updatedAt ?? a.createdAt)
+    )
+
+  return completedRuns[0] ?? null
+}
+
+function normalizeProvenance(
+  provenance: string | GlobalMemoryUpdateProvenance
+): GlobalMemoryUpdateProvenance {
+  if (typeof provenance === 'string') return { source: provenance }
+  return {
+    source: provenance.source.trim() || 'unknown',
+    sourceTaskId: provenance.sourceTaskId?.trim() || undefined,
+    sourceRunId: provenance.sourceRunId?.trim() || undefined
+  }
 }
 
 function extractJsonObject(raw: string): string {
@@ -317,7 +389,7 @@ function scoreFact(fact: GlobalMemoryFact, queryTerms: Set<string>): number {
 
   const categoryBoost =
     fact.category === 'correction' ? 0.4 : fact.category === 'preference' ? 0.25 : 0
-  return overlap * 2 + fact.confidence + categoryBoost + Math.min(0.2, fact.createdAt / 10 ** 15)
+  return overlap * 2 + fact.confidence + categoryBoost + Math.min(0.2, fact.updatedAt / 10 ** 15)
 }
 
 function tokenize(value: string): Set<string> {

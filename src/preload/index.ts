@@ -100,6 +100,8 @@ const api: Record<string, unknown> = {
     category?: GlobalMemoryFactCategory | string
     confidence?: number
     source?: string
+    sourceTaskId?: string
+    sourceRunId?: string
     sourceError?: string
   }) => ipcRenderer.invoke('create-global-memory-fact', fact),
   updateGlobalMemoryFact: (
@@ -590,6 +592,8 @@ flatApi.memories = {
     category?: GlobalMemoryFactCategory | string
     confidence?: number
     source?: string
+    sourceTaskId?: string
+    sourceRunId?: string
     sourceError?: string
   }) => typedIpc.invoke('create-global-memory-fact', fact),
   updateGlobalFact: (

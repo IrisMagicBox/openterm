@@ -51,7 +51,9 @@ describe('GlobalMemoryRepository', () => {
     repo.createFact({
       content: '用户偏好中文回复',
       category: 'preference',
-      confidence: 0.95
+      confidence: 0.95,
+      sourceTaskId: 'task-1',
+      sourceRunId: 'run-1'
     })
     const memory = repo.createFact({
       content: ' 用户偏好中文回复 ',
@@ -64,8 +66,11 @@ describe('GlobalMemoryRepository', () => {
       content: '用户偏好中文回复',
       category: 'preference',
       confidence: 0.95,
-      source: 'manual'
+      source: 'manual',
+      sourceTaskId: 'task-1',
+      sourceRunId: 'run-1'
     })
+    expect(memory.facts[0].updatedAt).toBeGreaterThanOrEqual(memory.facts[0].createdAt)
   })
 
   it('imports and normalizes persisted profile data', () => {
@@ -78,6 +83,7 @@ describe('GlobalMemoryRepository', () => {
       category: 'knowledge',
       confidence: 0.9,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
       source: 'test'
     })
 
@@ -87,5 +93,6 @@ describe('GlobalMemoryRepository', () => {
     expect(saved.lastUpdated).toBeGreaterThanOrEqual(imported.lastUpdated)
     expect(loaded.user.topOfMind.summary).toContain('OpenTerm')
     expect(loaded.facts[0].category).toBe('knowledge')
+    expect(loaded.facts[0].updatedAt).toBeGreaterThan(0)
   })
 })

@@ -26,6 +26,8 @@ export type GlobalMemoryFactInput = {
   category?: GlobalMemoryFactCategory | string
   confidence?: number
   source?: string
+  sourceTaskId?: string
+  sourceRunId?: string
   sourceError?: string
 }
 
@@ -105,7 +107,10 @@ export class GlobalMemoryRepository extends BaseRepository<GlobalMemoryRow> {
       category: normalizeCategory(input.category),
       confidence: clampConfidence(input.confidence ?? 0.7),
       createdAt: now,
+      updatedAt: now,
       source: normalizeContent(input.source) || 'manual',
+      sourceTaskId: normalizeContent(input.sourceTaskId) || undefined,
+      sourceRunId: normalizeContent(input.sourceRunId) || undefined,
       sourceError: normalizeContent(input.sourceError) || undefined
     }
 
@@ -129,6 +134,7 @@ export class GlobalMemoryRepository extends BaseRepository<GlobalMemoryRow> {
       category: patch.category === undefined ? current.category : normalizeCategory(patch.category),
       confidence:
         patch.confidence === undefined ? current.confidence : clampConfidence(patch.confidence),
+      updatedAt: Date.now(),
       sourceError:
         patch.sourceError === undefined
           ? current.sourceError
@@ -189,7 +195,10 @@ function normalizeFact(value: unknown, fallbackCreatedAt: number): GlobalMemoryF
     category: normalizeCategory(value.category),
     confidence: clampConfidence(value.confidence ?? 0.7),
     createdAt: toTimestamp(value.createdAt) ?? fallbackCreatedAt,
+    updatedAt: toTimestamp(value.updatedAt) ?? toTimestamp(value.createdAt) ?? fallbackCreatedAt,
     source: normalizeContent(value.source) || 'unknown',
+    sourceTaskId: normalizeContent(value.sourceTaskId) || undefined,
+    sourceRunId: normalizeContent(value.sourceRunId) || undefined,
     sourceError: normalizeContent(value.sourceError) || undefined
   }
 }
@@ -197,7 +206,7 @@ function normalizeFact(value: unknown, fallbackCreatedAt: number): GlobalMemoryF
 function limitFacts(memory: GlobalMemoryData, maxFacts = DEFAULT_MAX_FACTS): GlobalMemoryData {
   if (memory.facts.length > maxFacts) {
     memory.facts = [...memory.facts]
-      .sort((a, b) => b.confidence - a.confidence || b.createdAt - a.createdAt)
+      .sort((a, b) => b.confidence - a.confidence || b.updatedAt - a.updatedAt)
       .slice(0, maxFacts)
   }
   return memory
