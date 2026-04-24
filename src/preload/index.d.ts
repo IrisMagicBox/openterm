@@ -14,7 +14,10 @@ import {
   Approval,
   Artifact,
   TerminalSession,
-  MemoryEntry
+  MemoryEntry,
+  GlobalMemoryData,
+  GlobalMemoryFact,
+  GlobalMemoryFactCategory
 } from '../shared/types'
 import type {
   DebugLogEntry,
@@ -162,17 +165,28 @@ declare global {
           updates: Partial<
             Pick<
               MemoryEntry,
-              | 'type'
-              | 'scope'
-              | 'content'
-              | 'importance'
-              | 'confidence'
-              | 'disabled'
-              | 'lastUsedAt'
+              'type' | 'scope' | 'content' | 'importance' | 'confidence' | 'disabled' | 'lastUsedAt'
             >
           >
         ) => Promise<MemoryEntry | undefined>
         delete: (id: string) => Promise<void>
+        getGlobal: () => Promise<GlobalMemoryData>
+        importGlobal: (memory: GlobalMemoryData) => Promise<GlobalMemoryData>
+        clearGlobal: () => Promise<GlobalMemoryData>
+        createGlobalFact: (fact: {
+          content: string
+          category?: GlobalMemoryFactCategory | string
+          confidence?: number
+          source?: string
+          sourceError?: string
+        }) => Promise<GlobalMemoryData>
+        updateGlobalFact: (
+          factId: string,
+          updates: Partial<
+            Pick<GlobalMemoryFact, 'content' | 'category' | 'confidence' | 'sourceError'>
+          >
+        ) => Promise<GlobalMemoryData | undefined>
+        deleteGlobalFact: (factId: string) => Promise<GlobalMemoryData | undefined>
       }
       getHosts: () => Promise<Host[]>
       createHost: (host: Omit<Host, 'id' | 'createdAt'>) => Promise<Host>
@@ -230,17 +244,28 @@ declare global {
         updates: Partial<
           Pick<
             MemoryEntry,
-            | 'type'
-            | 'scope'
-            | 'content'
-            | 'importance'
-            | 'confidence'
-            | 'disabled'
-            | 'lastUsedAt'
+            'type' | 'scope' | 'content' | 'importance' | 'confidence' | 'disabled' | 'lastUsedAt'
           >
         >
       ) => Promise<MemoryEntry | undefined>
       deleteMemory: (id: string) => Promise<void>
+      getGlobalMemory: () => Promise<GlobalMemoryData>
+      importGlobalMemory: (memory: GlobalMemoryData) => Promise<GlobalMemoryData>
+      clearGlobalMemory: () => Promise<GlobalMemoryData>
+      createGlobalMemoryFact: (fact: {
+        content: string
+        category?: GlobalMemoryFactCategory | string
+        confidence?: number
+        source?: string
+        sourceError?: string
+      }) => Promise<GlobalMemoryData>
+      updateGlobalMemoryFact: (
+        factId: string,
+        updates: Partial<
+          Pick<GlobalMemoryFact, 'content' | 'category' | 'confidence' | 'sourceError'>
+        >
+      ) => Promise<GlobalMemoryData | undefined>
+      deleteGlobalMemoryFact: (factId: string) => Promise<GlobalMemoryData | undefined>
 
       // Host Pool Management
       getTopicHosts: (topicId: string) => Promise<Host[]>

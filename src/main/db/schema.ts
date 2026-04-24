@@ -250,6 +250,12 @@ export const BASE_SCHEMA_SQL = `
     FOREIGN KEY (topicId) REFERENCES topics(id) ON DELETE SET NULL
   );
 
+  CREATE TABLE IF NOT EXISTS global_memory (
+    id TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS command_patterns (
     id TEXT PRIMARY KEY,
     hostId TEXT NOT NULL,

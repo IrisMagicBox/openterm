@@ -2,6 +2,7 @@ import { getAIClient, getCurrentModel } from './ai'
 import { logger } from './logger'
 import { taskDB, taskStepDB, memoryDB, topicDB, hostDB } from './db'
 import { getErrorMessage } from '../shared/errors'
+import { GlobalMemoryManager } from './GlobalMemoryManager'
 import {
   DISTILLATION_THRESHOLD,
   DISTILLATION_MAX_LENGTH,
@@ -64,8 +65,8 @@ export class MemoryManager {
     const steps = taskStepDB.getTaskSteps(taskId)
 
     try {
-      const aiClient = getAIClient()
-      const model = getCurrentModel()
+      const aiClient = getAIClient({ topicId: task.topicId })
+      const model = getCurrentModel({ topicId: task.topicId })
 
       logger.info('MemoryManager', `正在对任务 ${taskId} 进行回顾并提取记忆...`)
 
@@ -149,6 +150,8 @@ export class MemoryManager {
         message: getErrorMessage(err),
         taskId
       })
+    } finally {
+      await GlobalMemoryManager.updateFromCompletedTask(taskId)
     }
   }
 
@@ -158,6 +161,7 @@ export class MemoryManager {
   static async recallRelevantContext(topicId: string, query: string): Promise<string> {
     const topic = topicDB.getTopicById(topicId)
     const hostId = topic?.hostIds[0]
+    const globalProfileContext = GlobalMemoryManager.formatForPrompt(query)
 
     // 1. Topic-specific context (memories linked to this topic)
     const topicMemories = topicId
@@ -176,7 +180,12 @@ export class MemoryManager {
       .searchRelevantMemories(query)
       .filter((m) => m.scope === 'global')
 
-    if (topicMemories.length === 0 && hostMemories.length === 0 && globalMemories.length === 0) {
+    if (
+      !globalProfileContext &&
+      topicMemories.length === 0 &&
+      hostMemories.length === 0 &&
+      globalMemories.length === 0
+    ) {
       return ''
     }
 
@@ -184,6 +193,10 @@ export class MemoryManager {
     memoryDB.touchMemories(usedMemoryIds)
 
     let context = '\n### 记忆与背景知识 (Layered Context):\n'
+
+    if (globalProfileContext) {
+      context += `\n${globalProfileContext}\n`
+    }
 
     if (topicMemories.length > 0) {
       context += `\n[当前话题记忆]:\n` + topicMemories.map((m) => `- ${m.content}`).join('\n')

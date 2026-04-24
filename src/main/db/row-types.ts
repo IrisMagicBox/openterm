@@ -210,6 +210,13 @@ export interface MemoryRow {
   timestamp: number
 }
 
+// global_memory table
+export interface GlobalMemoryRow {
+  id: string
+  data: string
+  updatedAt: number
+}
+
 // command_patterns table
 export interface CommandPatternRow {
   id: string

@@ -16,7 +16,10 @@ import type {
   TerminalSession,
   TerminalSessionStatus,
   TerminalTakeoverMode,
-  MemoryEntry
+  MemoryEntry,
+  GlobalMemoryData,
+  GlobalMemoryFact,
+  GlobalMemoryFactCategory
 } from '../types'
 
 export interface SSHAgentExecuteResult {
@@ -204,8 +207,7 @@ export interface IpcInvokeChannels {
   }
   'create-memory': {
     payload: [
-      memory: Omit<MemoryEntry, 'id' | 'timestamp' | 'scope'> &
-        Partial<Pick<MemoryEntry, 'scope'>>
+      memory: Omit<MemoryEntry, 'id' | 'timestamp' | 'scope'> & Partial<Pick<MemoryEntry, 'scope'>>
     ]
     result: MemoryEntry
   }
@@ -222,6 +224,32 @@ export interface IpcInvokeChannels {
     result: MemoryEntry | undefined
   }
   'delete-memory': { payload: [id: string]; result: void }
+
+  'get-global-memory': { payload: void; result: GlobalMemoryData }
+  'import-global-memory': { payload: [memory: GlobalMemoryData]; result: GlobalMemoryData }
+  'clear-global-memory': { payload: void; result: GlobalMemoryData }
+  'create-global-memory-fact': {
+    payload: [
+      fact: {
+        content: string
+        category?: GlobalMemoryFactCategory | string
+        confidence?: number
+        source?: string
+        sourceError?: string
+      }
+    ]
+    result: GlobalMemoryData
+  }
+  'update-global-memory-fact': {
+    payload: [
+      factId: string,
+      updates: Partial<
+        Pick<GlobalMemoryFact, 'content' | 'category' | 'confidence' | 'sourceError'>
+      >
+    ]
+    result: GlobalMemoryData | undefined
+  }
+  'delete-global-memory-fact': { payload: [factId: string]; result: GlobalMemoryData | undefined }
 
   'agent:get-topic-hosts': { payload: [topicId: string]; result: Host[] }
   'agent:add-host': { payload: [topicId: string, hostId: string]; result: boolean }

@@ -169,6 +169,18 @@ const migrations: Migration[] = [
       addColumnIfMissing(db, 'terminal_sessions', 'role', "TEXT DEFAULT 'user'")
       db.prepare("UPDATE terminal_sessions SET role = 'user' WHERE role IS NULL OR role = ''").run()
     }
+  },
+  {
+    id: '008_global_memory_profile',
+    run: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS global_memory (
+          id TEXT PRIMARY KEY,
+          data TEXT NOT NULL,
+          updatedAt INTEGER NOT NULL
+        );
+      `)
+    }
   }
 ]
 

@@ -17,7 +17,10 @@ import type {
   Model,
   PermissionSettings,
   TerminalSession,
-  MemoryEntry
+  MemoryEntry,
+  GlobalMemoryData,
+  GlobalMemoryFact,
+  GlobalMemoryFactCategory
 } from '../shared/types'
 import type {
   TopicUpdatedPayload,
@@ -76,8 +79,7 @@ const api: Record<string, unknown> = {
   getMemories: (filters?: { hostId?: string; topicId?: string; includeDisabled?: boolean }) =>
     ipcRenderer.invoke('get-memories', filters),
   createMemory: (
-    memory: Omit<MemoryEntry, 'id' | 'timestamp' | 'scope'> &
-      Partial<Pick<MemoryEntry, 'scope'>>
+    memory: Omit<MemoryEntry, 'id' | 'timestamp' | 'scope'> & Partial<Pick<MemoryEntry, 'scope'>>
   ) => ipcRenderer.invoke('create-memory', memory),
   updateMemory: (
     id: string,
@@ -89,6 +91,23 @@ const api: Record<string, unknown> = {
     >
   ) => ipcRenderer.invoke('update-memory', id, updates),
   deleteMemory: (id: string) => ipcRenderer.invoke('delete-memory', id),
+  getGlobalMemory: () => ipcRenderer.invoke('get-global-memory'),
+  importGlobalMemory: (memory: GlobalMemoryData) =>
+    ipcRenderer.invoke('import-global-memory', memory),
+  clearGlobalMemory: () => ipcRenderer.invoke('clear-global-memory'),
+  createGlobalMemoryFact: (fact: {
+    content: string
+    category?: GlobalMemoryFactCategory | string
+    confidence?: number
+    source?: string
+    sourceError?: string
+  }) => ipcRenderer.invoke('create-global-memory-fact', fact),
+  updateGlobalMemoryFact: (
+    factId: string,
+    updates: Partial<Pick<GlobalMemoryFact, 'content' | 'category' | 'confidence' | 'sourceError'>>
+  ) => ipcRenderer.invoke('update-global-memory-fact', factId, updates),
+  deleteGlobalMemoryFact: (factId: string) =>
+    ipcRenderer.invoke('delete-global-memory-fact', factId),
 
   // Host Pool Management
   getTopicHosts: (topicId: string) => ipcRenderer.invoke('agent:get-topic-hosts', topicId),
@@ -551,8 +570,7 @@ flatApi.memories = {
   list: (filters?: { hostId?: string; topicId?: string; includeDisabled?: boolean }) =>
     typedIpc.invoke('get-memories', filters),
   create: (
-    memory: Omit<MemoryEntry, 'id' | 'timestamp' | 'scope'> &
-      Partial<Pick<MemoryEntry, 'scope'>>
+    memory: Omit<MemoryEntry, 'id' | 'timestamp' | 'scope'> & Partial<Pick<MemoryEntry, 'scope'>>
   ) => typedIpc.invoke('create-memory', memory),
   update: (
     id: string,
@@ -563,7 +581,22 @@ flatApi.memories = {
       >
     >
   ) => typedIpc.invoke('update-memory', id, updates),
-  delete: (id: string) => typedIpc.invoke('delete-memory', id)
+  delete: (id: string) => typedIpc.invoke('delete-memory', id),
+  getGlobal: () => typedIpc.invoke('get-global-memory'),
+  importGlobal: (memory: GlobalMemoryData) => typedIpc.invoke('import-global-memory', memory),
+  clearGlobal: () => typedIpc.invoke('clear-global-memory'),
+  createGlobalFact: (fact: {
+    content: string
+    category?: GlobalMemoryFactCategory | string
+    confidence?: number
+    source?: string
+    sourceError?: string
+  }) => typedIpc.invoke('create-global-memory-fact', fact),
+  updateGlobalFact: (
+    factId: string,
+    updates: Partial<Pick<GlobalMemoryFact, 'content' | 'category' | 'confidence' | 'sourceError'>>
+  ) => typedIpc.invoke('update-global-memory-fact', factId, updates),
+  deleteGlobalFact: (factId: string) => typedIpc.invoke('delete-global-memory-fact', factId)
 }
 
 if (process.contextIsolated) {

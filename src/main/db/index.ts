@@ -11,6 +11,7 @@ import { AgentPartRepository } from './repositories/agent-part-repository'
 import { ApprovalRepository } from './repositories/approval-repository'
 import { ArtifactRepository } from './repositories/artifact-repository'
 import { MemoryRepository } from './repositories/memory-repository'
+import { GlobalMemoryRepository } from './repositories/global-memory-repository'
 import { ModelSettingsRepository } from './repositories/model-settings-repository'
 import { PermissionRepository } from './repositories/permission-repository'
 import { ProviderRepository } from './repositories/provider-repository'
@@ -30,6 +31,7 @@ class AppDatabase {
   readonly approvals: ApprovalRepository
   readonly artifacts: ArtifactRepository
   readonly memories: MemoryRepository
+  readonly globalMemory: GlobalMemoryRepository
   readonly modelSettings: ModelSettingsRepository
   readonly permissions: PermissionRepository
   readonly providers: ProviderRepository
@@ -52,6 +54,7 @@ class AppDatabase {
     this.approvals = new ApprovalRepository(db)
     this.artifacts = new ArtifactRepository(db)
     this.memories = new MemoryRepository(db)
+    this.globalMemory = new GlobalMemoryRepository(db)
     this.modelSettings = new ModelSettingsRepository(db)
     this.permissions = new PermissionRepository(db)
     this.providers = new ProviderRepository(db)
@@ -81,6 +84,7 @@ export const agentPartDB = db.agentParts
 export const approvalDB = db.approvals
 export const artifactDB = db.artifacts
 export const memoryDB = db.memories
+export const globalMemoryDB = db.globalMemory
 export const modelSettingsDB = db.modelSettings
 export const permissionDB = db.permissions
 export const providerDB = db.providers

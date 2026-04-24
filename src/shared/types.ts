@@ -488,3 +488,42 @@ export interface MemoryEntry {
   disabled?: boolean
   timestamp: number
 }
+
+export type GlobalMemoryFactCategory =
+  | 'preference'
+  | 'knowledge'
+  | 'context'
+  | 'behavior'
+  | 'goal'
+  | 'correction'
+
+export interface GlobalMemoryContextSection {
+  summary: string
+  updatedAt?: number
+}
+
+export interface GlobalMemoryData {
+  version: '1.0'
+  lastUpdated: number
+  user: {
+    workContext: GlobalMemoryContextSection
+    personalContext: GlobalMemoryContextSection
+    topOfMind: GlobalMemoryContextSection
+  }
+  history: {
+    recentMonths: GlobalMemoryContextSection
+    earlierContext: GlobalMemoryContextSection
+    longTermBackground: GlobalMemoryContextSection
+  }
+  facts: GlobalMemoryFact[]
+}
+
+export interface GlobalMemoryFact {
+  id: string
+  content: string
+  category: GlobalMemoryFactCategory
+  confidence: number
+  createdAt: number
+  source: string
+  sourceError?: string
+}
