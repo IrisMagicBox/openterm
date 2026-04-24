@@ -3,8 +3,8 @@ import { ipcMain, WebContents } from 'electron'
 import { hostDB } from './db'
 import { commandExecutor } from './terminal'
 import { TERMINAL_BUFFER_SIZE, SSH_RAW_BUFFER_MAX, SSH_RAW_BUFFER_TRIM } from './constants'
-import { buildSSHConfig } from './utils/ssh-config'
-import type { TerminalSessionRole, TerminalStream } from '../shared/types'
+import { buildSSHConfig, type SSHConnectionConfig } from './utils/ssh-config'
+import type { Host, TerminalSessionRole, TerminalStream } from '../shared/types'
 
 interface SSHSession {
   client: Client
@@ -22,7 +22,7 @@ function generateSessionId(hostId: string): string {
   return `${hostId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 }
 
-function getHostAndConfig(hostId: string) {
+function getHostAndConfig(hostId: string): { host: Host; config: SSHConnectionConfig } {
   const host = hostDB.getHostById(hostId)
   if (!host) throw new Error('Host not found')
 
@@ -31,7 +31,7 @@ function getHostAndConfig(hostId: string) {
   return { host, config }
 }
 
-function getConnectionConfig(hostId: string) {
+function getConnectionConfig(hostId: string): { config: SSHConnectionConfig } {
   const { config } = getHostAndConfig(hostId)
   return { config }
 }
@@ -197,15 +197,36 @@ export const closeSession = (sessionId: string): void => {
   }
 }
 
+export const sendSSHInput = (sessionId: string, data: string, topicId?: string): boolean => {
+  const session = sessions.get(sessionId)
+  if (!session?.stream) return false
+  if (topicId) {
+    commandExecutor.handleUserInput(sessionId, data, topicId)
+  } else {
+    session.stream.write(data)
+  }
+  return true
+}
+
+export const resizeSSHSession = (sessionId: string, cols: number, rows: number): boolean => {
+  const session = sessions.get(sessionId)
+  if (!session?.stream) return false
+  session.stream.setWindow(rows, cols, 0, 0)
+  commandExecutor.resizeSession(sessionId, cols, rows)
+  return true
+}
+
 import { AgentSession } from './agent'
 
 let agentServiceRef: { registerSession(session: AgentSession): void } | null = null
 
-export function setAgentService(service: { registerSession(session: AgentSession): void } | null) {
+export function setAgentService(
+  service: { registerSession(session: AgentSession): void } | null
+): void {
   agentServiceRef = service
 }
 
-export function setupSSHHandlers() {
+export function setupSSHHandlers(): void {
   ipcMain.removeHandler('ssh:connect')
   ipcMain.handle('ssh:connect', async (event, hostId: string, topicId: string) => {
     const webContents = event.sender
@@ -349,22 +370,11 @@ export function setupSSHHandlers() {
 
   ipcMain.removeAllListeners('ssh:input')
   ipcMain.on('ssh:input', (_, sessionId: string, data: string, topicId?: string) => {
-    const session = sessions.get(sessionId)
-    if (session && session.stream) {
-      if (topicId) {
-        commandExecutor.handleUserInput(sessionId, data, topicId)
-      } else {
-        session.stream.write(data)
-      }
-    }
+    sendSSHInput(sessionId, data, topicId)
   })
 
   ipcMain.removeAllListeners('ssh:resize')
   ipcMain.on('ssh:resize', (_, sessionId: string, cols: number, rows: number) => {
-    const session = sessions.get(sessionId)
-    if (session && session.stream) {
-      session.stream.setWindow(rows, cols, 0, 0)
-      commandExecutor.resizeSession(sessionId, cols, rows)
-    }
+    resizeSSHSession(sessionId, cols, rows)
   })
 }

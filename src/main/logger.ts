@@ -7,17 +7,20 @@ interface LogEntry {
   timestamp: number
   category: string
   message: string
-  data?: any
+  data?: unknown
 }
+
+type LogListener = (entry: LogEntry) => void
 
 class Logger {
   private webContents?: WebContents
+  private listeners = new Set<LogListener>()
 
-  setWebContents(webContents: WebContents) {
+  setWebContents(webContents: WebContents): void {
     this.webContents = webContents
   }
 
-  private log(level: LogLevel, category: string, message: string, data?: any) {
+  private log(level: LogLevel, category: string, message: string, data?: unknown): void {
     const entry: LogEntry = {
       level,
       timestamp: Date.now(),
@@ -33,21 +36,30 @@ class Logger {
     if (this.webContents) {
       this.webContents.send('debug:log', entry)
     }
+
+    for (const listener of this.listeners) {
+      listener(entry)
+    }
   }
 
-  debug(category: string, message: string, data?: any) {
+  onLog(listener: LogListener): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  debug(category: string, message: string, data?: unknown): void {
     this.log('DEBUG', category, message, data)
   }
 
-  info(category: string, message: string, data?: any) {
+  info(category: string, message: string, data?: unknown): void {
     this.log('INFO', category, message, data)
   }
 
-  warn(category: string, message: string, data?: any) {
+  warn(category: string, message: string, data?: unknown): void {
     this.log('WARN', category, message, data)
   }
 
-  error(category: string, message: string, data?: any) {
+  error(category: string, message: string, data?: unknown): void {
     this.log('ERROR', category, message, data)
   }
 }

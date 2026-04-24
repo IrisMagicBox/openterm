@@ -6,6 +6,7 @@ import { logger } from './logger'
 import type { TerminalSession } from '../shared/types'
 import { WebContents } from 'electron'
 import { agentService } from './agent'
+import { v4 as uuidv4 } from 'uuid'
 
 interface RecoveredSession {
   originalSession: TerminalSession
@@ -32,7 +33,7 @@ export async function recoverSessions(webContents: WebContents): Promise<Recover
       let newSessionId: string | null = null
 
       if (session.hostId === 'local') {
-        newSessionId = await createLocalSession(session.id, session.topicId, webContents, true)
+        newSessionId = await createLocalSession(uuidv4(), session.topicId, webContents, true)
           .then((s) => s.id)
           .catch(() => null)
       } else {

@@ -10,6 +10,7 @@ import { registerLocalTerminalIPC } from './local-terminal'
 import { registerSFTPIPC } from './sftp'
 import { registerLocalFsIPC } from './local-fs'
 import { registerPortForwardIPC } from './port-forward'
+import { startCliControlServer, stopCliControlServer } from './cli-control-server'
 import { handleSessionRecovery } from './session-recovery'
 import { logger } from './logger'
 import { registerAllIPC } from './ipc'
@@ -75,6 +76,7 @@ app.whenReady().then(() => {
   registerPortForwardIPC()
   setAgentService(agentService)
   setCreateAgentSession(createAgentSession)
+  startCliControlServer(agentService)
 
   electronApp.setAppUserModelId(APP_ID)
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
@@ -88,4 +90,8 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  stopCliControlServer()
 })
