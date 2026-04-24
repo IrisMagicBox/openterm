@@ -83,16 +83,6 @@ export class ToolCallExecutor {
         continue
       }
 
-      const repeatedWaitObservation = this.checkRepeatedWaitActivity(call, parsed.args, part)
-      if (repeatedWaitObservation) {
-        observations.push({
-          role: 'tool',
-          tool_call_id: call.id,
-          content: repeatedWaitObservation
-        })
-        continue
-      }
-
       if (call.function.name === 'invalid_tool') {
         const error =
           typeof parsed.args.error === 'string'
@@ -110,7 +100,23 @@ export class ToolCallExecutor {
         continue
       }
 
-      if (this.doomLoop.check(call.function.name, parsed.args)) {
+      const validation = this.validateToolArguments(call, parsed.args, part)
+      if (!validation.ok) {
+        observations.push({ role: 'tool', tool_call_id: call.id, content: validation.error })
+        continue
+      }
+
+      const repeatedWaitObservation = this.checkRepeatedWaitActivity(call, validation.args, part)
+      if (repeatedWaitObservation) {
+        observations.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: repeatedWaitObservation
+        })
+        continue
+      }
+
+      if (this.doomLoop.check(call.function.name, validation.args)) {
         const error = `Doom loop detected: the tool '${call.function.name}' has been called with identical arguments ${DOOM_LOOP_THRESHOLD} times consecutively. Try a different approach or arguments.`
         this.parts.updatePart(part.id, { status: 'error', error, endedAt: Date.now() })
         eventBus.publish('agent:doom-loop', {
@@ -148,6 +154,8 @@ export class ToolCallExecutor {
     const part = this.ensureToolPart(call)
     const parsed = this.parseToolArguments(call, part)
     if (!parsed.ok) return { toolCallId: call.id, content: parsed.error }
+    const validation = this.validateToolArguments(call, parsed.args, part)
+    if (!validation.ok) return { toolCallId: call.id, content: validation.error }
 
     const legacyStep = this.createLegacyStep(call, part)
     this.options.context.stepId = legacyStep.id
@@ -163,14 +171,14 @@ export class ToolCallExecutor {
       topicId: this.options.run.topicId,
       taskId: this.options.run.taskId,
       toolName: call.function.name,
-      args: parsed.args
+      args: validation.args
     })
 
     try {
       const context = this.contextFactory.create(part.id, legacyStep.id)
       const result = await this.options.toolRegistry.execute(
         call.function.name,
-        parsed.args,
+        validation.args,
         context
       )
       const output = result.output
@@ -311,6 +319,24 @@ export class ToolCallExecutor {
       this.parts.updatePart(part.id, { status: 'error', error: message, endedAt: Date.now() })
       return { ok: false, error: message }
     }
+  }
+
+  private validateToolArguments(
+    call: ChatCompletionMessageFunctionToolCall,
+    args: Record<string, unknown>,
+    part: AgentPart
+  ): { ok: true; args: Record<string, unknown> } | { ok: false; error: string } {
+    const validation = this.options.toolRegistry.validate(call.function.name, args)
+    if (validation.ok) return validation
+
+    const message = JSON.stringify(validation.error, null, 2)
+    this.parts.updatePart(part.id, {
+      status: 'error',
+      error: message,
+      endedAt: Date.now(),
+      metadata: { schemaValidationError: validation.error }
+    })
+    return { ok: false, error: message }
   }
 
   private createLegacyStep(call: ChatCompletionMessageFunctionToolCall, part: AgentPart): TaskStep {

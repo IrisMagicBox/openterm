@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
-import { define, Tool } from '../tool-factory'
+import { define, Tool, ToolSchemaValidationError } from '../tool-factory'
 
 function makeCtx(): Tool.Context {
   return {
@@ -60,12 +60,12 @@ describe('define()', () => {
     })
 
     const initialized = await tool.init()
-    await expect(
+    await expect(async () =>
       initialized.execute(
         { count: 'not_a_number' as unknown as number, label: 123 as unknown as string },
         makeCtx()
       )
-    ).rejects.toThrow()
+    ).rejects.toThrow(ToolSchemaValidationError)
   })
 
   it('passes validated args to execute on valid input', async () => {
@@ -90,9 +90,31 @@ describe('define()', () => {
     })
 
     const initialized = await tool.init()
-    await expect(initialized.execute({ x: 'bad' as unknown as number }, makeCtx())).rejects.toThrow(
-      'CUSTOM_ERROR'
-    )
+    await expect(async () =>
+      initialized.execute({ x: 'bad' as unknown as number }, makeCtx())
+    ).rejects.toThrow('CUSTOM_ERROR')
+  })
+
+  it('exposes structured validation payloads', async () => {
+    const tool = define('payload_tool', {
+      description: 'Structured validation',
+      parameters: z.object({ path: z.string() }),
+      execute: async (args) => ({ output: args.path })
+    })
+
+    const initialized = await tool.init()
+
+    try {
+      await initialized.execute({ path: 123 as unknown as string }, makeCtx())
+      throw new Error('Expected validation to fail')
+    } catch (error) {
+      expect(error).toBeInstanceOf(ToolSchemaValidationError)
+      expect((error as ToolSchemaValidationError).payload).toMatchObject({
+        type: 'schema_validation',
+        tool: 'payload_tool',
+        issues: [{ path: 'path' }]
+      })
+    }
   })
 
   it('handles z.enum with enum values', async () => {

@@ -1,11 +1,14 @@
 import type { Tool } from './tool-factory'
 import type { ToolDefinition } from './types'
 import { getAgentConfig } from '../agent/agent-config'
-import { zodToJsonSchema } from './tool-factory'
+import { createToolSchemaValidationError, zodToJsonSchema } from './tool-factory'
+import { z } from 'zod'
 
 export interface InitializedTool {
   id: string
   definition: ToolDefinition
+  parameters: z.ZodType
+  formatValidationError?: (error: z.ZodError) => string
   execute(
     args: Record<string, unknown>,
     ctx: Tool.Context
@@ -15,6 +18,10 @@ export interface InitializedTool {
     output: string
   }>
 }
+
+export type ToolValidationResult =
+  | { ok: true; args: Record<string, unknown> }
+  | { ok: false; error: Tool.SchemaValidationErrorPayload }
 
 export class ToolRegistry {
   private tools = new Map<string, Tool.Info>()
@@ -43,6 +50,8 @@ export class ToolRegistry {
       this.initializedTools.set(id, {
         id,
         definition,
+        parameters: initialized.parameters,
+        formatValidationError: initialized.formatValidationError,
         execute: initialized.execute
       })
     }
@@ -64,6 +73,33 @@ export class ToolRegistry {
 
   get(name: string): InitializedTool | undefined {
     return this.initializedTools.get(name)
+  }
+
+  validate(name: string, args: Record<string, unknown>): ToolValidationResult {
+    const tool = this.initializedTools.get(name)
+    if (!tool) {
+      return {
+        ok: false,
+        error: {
+          type: 'schema_validation',
+          tool: name,
+          message: `Unknown tool "${name}". Please use one of the available tools.`,
+          issues: []
+        }
+      }
+    }
+
+    try {
+      return { ok: true, args: tool.parameters.parse(args) as Record<string, unknown> }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return {
+          ok: false,
+          error: createToolSchemaValidationError(name, error, tool.formatValidationError).payload
+        }
+      }
+      throw error
+    }
   }
 
   async execute(

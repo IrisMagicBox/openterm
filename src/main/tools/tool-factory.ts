@@ -88,6 +88,19 @@ export namespace Tool {
     [key: string]: unknown
   }
 
+  export interface SchemaValidationIssue {
+    path: string
+    message: string
+    code: string
+  }
+
+  export interface SchemaValidationErrorPayload {
+    type: 'schema_validation'
+    tool: string
+    message: string
+    issues: SchemaValidationIssue[]
+  }
+
   export interface ExecuteResult<M extends Metadata = Metadata> {
     output: string
     title?: string
@@ -110,6 +123,38 @@ export namespace Tool {
       formatValidationError?: (error: z.ZodError) => string
     }>
   }
+}
+
+export class ToolSchemaValidationError extends Error {
+  readonly payload: Tool.SchemaValidationErrorPayload
+
+  constructor(toolName: string, error: z.ZodError, formattedMessage?: string) {
+    const issues = error.issues.map((issue) => ({
+      path: issue.path.length > 0 ? issue.path.join('.') : '(root)',
+      message: issue.message,
+      code: issue.code
+    }))
+    const message =
+      formattedMessage ??
+      `The ${toolName} tool was called with invalid arguments. Please rewrite the input so it satisfies the expected schema.`
+
+    super(message, { cause: error })
+    this.name = 'ToolSchemaValidationError'
+    this.payload = {
+      type: 'schema_validation',
+      tool: toolName,
+      message,
+      issues
+    }
+  }
+}
+
+export function createToolSchemaValidationError(
+  toolName: string,
+  error: z.ZodError,
+  formatValidationError?: (error: z.ZodError) => string
+): ToolSchemaValidationError {
+  return new ToolSchemaValidationError(toolName, error, formatValidationError?.(error))
 }
 
 export function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
@@ -244,13 +289,10 @@ export function define<Parameters extends z.ZodType, Result extends Tool.Metadat
         try {
           parsedArgs = toolInfo.parameters.parse(rawArgs)
         } catch (error) {
-          if (error instanceof z.ZodError && toolInfo.formatValidationError) {
-            throw new Error(toolInfo.formatValidationError(error), { cause: error })
+          if (error instanceof z.ZodError) {
+            throw createToolSchemaValidationError(id, error, toolInfo.formatValidationError)
           }
-          throw new Error(
-            `The ${id} tool was called with invalid arguments: ${error}.\nPlease rewrite the input so it satisfies the expected schema.`,
-            { cause: error }
-          )
+          throw error
         }
 
         const result = await execute(parsedArgs, ctx)
