@@ -3,9 +3,12 @@ import { getErrorMessage } from '../../shared/errors'
 export type AgentErrorKind =
   | 'abort'
   | 'timeout'
+  | 'auth'
+  | 'rate_limit'
   | 'context_overflow'
+  | 'invalid_request'
+  | 'server_error'
   | 'permission_denied'
-  | 'provider_retryable'
   | 'provider'
   | 'tool'
   | 'unknown'
@@ -34,27 +37,33 @@ export function normalizeAgentError(error: unknown): NormalizedAgentError {
     return { kind: 'abort', message, retryable: false, cause: error }
   }
 
+  if (status === 401 || status === 403 || /auth|api key|unauthorized|forbidden/i.test(message)) {
+    return { kind: 'auth', message, retryable: false, statusCode: status, cause: error }
+  }
+
+  if (status === 429 || /rate limit|too many requests|quota/i.test(message)) {
+    return { kind: 'rate_limit', message, retryable: true, statusCode: status, cause: error }
+  }
+
   if (/timed?\s*out|timeout/i.test(message)) {
-    return { kind: 'timeout', message, retryable: true, cause: error }
+    return { kind: 'timeout', message, retryable: true, statusCode: status, cause: error }
   }
 
   if (/context|maximum context|token limit|too many tokens/i.test(message)) {
-    return { kind: 'context_overflow', message, retryable: false, cause: error }
+    return { kind: 'context_overflow', message, retryable: false, statusCode: status, cause: error }
   }
 
   if (/permission denied|user rejected|authorization/i.test(message)) {
     return { kind: 'permission_denied', message, retryable: false, cause: error }
   }
 
-  if (
-    status === 408 ||
-    status === 409 ||
-    status === 425 ||
-    status === 429 ||
-    (status && status >= 500)
-  ) {
+  if (status === 400 || status === 422 || /invalid request|bad request/i.test(message)) {
+    return { kind: 'invalid_request', message, retryable: false, statusCode: status, cause: error }
+  }
+
+  if (status === 408 || status === 409 || status === 425 || (status && status >= 500)) {
     return {
-      kind: 'provider_retryable',
+      kind: 'server_error',
       message,
       retryable: true,
       statusCode: status,
@@ -67,7 +76,7 @@ export function normalizeAgentError(error: unknown): NormalizedAgentError {
   }
 
   if (/ECONNRESET|ETIMEDOUT|ENOTFOUND|network|socket/i.test(message)) {
-    return { kind: 'provider_retryable', message, retryable: true, cause: error }
+    return { kind: 'server_error', message, retryable: true, cause: error }
   }
 
   return { kind: 'unknown', message, retryable: false, cause: error }
