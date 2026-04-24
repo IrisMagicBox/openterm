@@ -3,7 +3,8 @@ import {
   SYSTEM_MODELS,
   getModelApiId,
   getSystemModels,
-  inferModelCapabilities
+  inferModelCapabilities,
+  inferModelRuntimeCapabilities
 } from '../provider-presets'
 
 describe('provider presets', () => {
@@ -31,5 +32,24 @@ describe('provider presets', () => {
     expect(inferModelCapabilities('jina-reranker-v2-base-multilingual')).toEqual(['rerank'])
     expect(inferModelCapabilities('claude-sonnet-4-20250514')).toContain('tool-use')
     expect(inferModelCapabilities('o3')).toContain('reasoning')
+  })
+
+  it('infers structured runtime capabilities for provider adapters', () => {
+    const gpt5 = inferModelRuntimeCapabilities('gpt-5.2', 'openai')
+    expect(gpt5).toMatchObject({
+      toolCalling: true,
+      reasoning: true,
+      temperature: false,
+      contextWindow: 200_000
+    })
+    expect(inferModelRuntimeCapabilities('openai/gpt-5.2', 'openrouter').temperature).toBe(false)
+
+    const embedding = inferModelRuntimeCapabilities('text-embedding-3-large', 'openai')
+    expect(embedding.toolCalling).toBe(false)
+    expect(embedding.streaming).toBe(false)
+
+    const claude = inferModelRuntimeCapabilities('claude-sonnet-4-20250514', 'anthropic')
+    expect(claude.promptCaching).toBe(true)
+    expect(claude.parallelToolCalls).toBe(false)
   })
 })

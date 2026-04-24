@@ -5,6 +5,18 @@ export interface SystemProvider extends Provider {
   isSystem: true
 }
 
+export interface ModelCapabilities {
+  toolCalling: boolean
+  parallelToolCalls: boolean
+  streaming: boolean
+  reasoning: boolean
+  promptCaching: boolean
+  vision: boolean
+  temperature: boolean
+  contextWindow: number
+  maxOutputTokens: number
+}
+
 type ProviderUrlInfo = {
   api: { url: string }
   websites?: {
@@ -128,6 +140,29 @@ export function inferModelCapabilities(
   if (REASONING_REGEX.test(subject)) capabilities.push('reasoning')
   if (TOOL_USE_REGEX.test(subject) || providerId === 'anthropic') capabilities.push('tool-use')
   return capabilities
+}
+
+export function inferModelRuntimeCapabilities(
+  modelId: string,
+  providerId?: string,
+  name = modelId,
+  knownCapabilities = inferModelCapabilities(modelId, providerId, name)
+): ModelCapabilities {
+  const subject = `${modelId} ${name}`.toLowerCase()
+  const text = knownCapabilities.includes('text')
+  const toolCalling = knownCapabilities.includes('tool-use')
+
+  return {
+    toolCalling,
+    parallelToolCalls: toolCalling && providerId !== 'anthropic',
+    streaming: text,
+    reasoning: knownCapabilities.includes('reasoning'),
+    promptCaching: supportsPromptCaching(subject, providerId),
+    vision: knownCapabilities.includes('vision'),
+    temperature: supportsTemperature(subject, providerId),
+    contextWindow: inferContextWindow(subject, providerId),
+    maxOutputTokens: inferMaxOutputTokens(subject, providerId)
+  }
 }
 
 function model(
@@ -312,6 +347,32 @@ export function isAgentUsableModel(model: Model): boolean {
 
 export function isAgentRuntimeProvider(provider: Pick<Provider, 'type'>): boolean {
   return provider.type === 'openai' || provider.type === 'anthropic' || provider.type === 'ollama'
+}
+
+function supportsTemperature(subject: string, providerId?: string): boolean {
+  if (providerId === 'anthropic') return true
+  return !/(?:^|[/\s])(?:o[134](?:-|$)|gpt-5)/i.test(subject)
+}
+
+function supportsPromptCaching(subject: string, providerId?: string): boolean {
+  return (
+    providerId === 'anthropic' ||
+    providerId === 'gemini' ||
+    /\b(gpt-4o|gpt-4\.1|gpt-5|claude|gemini)\b/i.test(subject)
+  )
+}
+
+function inferContextWindow(subject: string, providerId?: string): number {
+  if (/gpt-4\.1|gpt-5|gemini-2\.5|claude/.test(subject)) return 200_000
+  if (/gpt-4o|o[134]|deepseek|qwen|glm|kimi|moonshot/.test(subject)) return 128_000
+  if (/llama|mistral|mixtral/.test(subject)) return 32_000
+  return providerId === 'anthropic' ? 200_000 : 128_000
+}
+
+function inferMaxOutputTokens(subject: string, providerId?: string): number {
+  if (/gpt-5|gpt-4\.1|o[134]|claude|gemini-2\.5/.test(subject)) return 16_384
+  if (providerId === 'anthropic') return 8_192
+  return 4_096
 }
 
 export const PROVIDER_URLS: Record<SystemProviderId, ProviderUrlInfo> = {

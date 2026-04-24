@@ -8,8 +8,10 @@ import {
   getModelApiId,
   getSystemModels,
   inferModelCapabilities,
+  inferModelRuntimeCapabilities,
   isAgentRuntimeProvider,
-  isAgentUsableModel
+  isAgentUsableModel,
+  type ModelCapabilities
 } from '../shared/provider-presets'
 
 let cachedClient: OpenAI | null = null
@@ -28,6 +30,7 @@ export interface ProviderSelection {
   model?: Model
   modelId: string
   modelRecordId?: string
+  capabilities: ModelCapabilities
 }
 
 const OPENAI_HOST_WITHOUT_V1_PROVIDER_IDS = new Set(['github', 'copilot'])
@@ -152,12 +155,19 @@ export function resolveProviderSelection(
       models.find((m) => m.id === requestedModelId || m.providerModelId === requestedModelId)) ||
     models[0]
   const modelId = model ? getModelApiId(model) : DEFAULT_MODEL
+  const capabilities = inferModelRuntimeCapabilities(
+    modelId,
+    provider.id,
+    model?.name ?? modelId,
+    model?.capabilities
+  )
 
   return {
     provider,
     model,
     modelId,
-    modelRecordId: model?.id
+    modelRecordId: model?.id,
+    capabilities
   }
 }
 

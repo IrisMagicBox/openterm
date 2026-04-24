@@ -11,6 +11,7 @@ import type {
 import type { Provider } from '../../shared/types'
 import { getErrorMessage } from '../../shared/errors'
 import { buildProviderChatUrl, getAIClient, resolveProviderSelection } from '../ai'
+import { inferModelRuntimeCapabilities } from '../../shared/provider-presets'
 
 export interface TokenUsage {
   inputTokens: number
@@ -112,13 +113,16 @@ export class ProviderAdapter {
     const request: Record<string, unknown> = {
       model,
       messages: params.messages,
-      temperature: this.shouldSendTemperature(selection.provider, model)
-        ? params.temperature
-        : undefined,
+      temperature: selection.capabilities.temperature ? params.temperature : undefined,
       max_tokens: params.maxTokens
     }
 
-    if (params.tools && params.tools.length > 0 && params.toolChoice !== 'none') {
+    if (
+      selection.capabilities.toolCalling &&
+      params.tools &&
+      params.tools.length > 0 &&
+      params.toolChoice !== 'none'
+    ) {
       request.tools = params.tools
       request.tool_choice = params.toolChoice
     } else if (params.toolChoice === 'none') {
@@ -171,13 +175,16 @@ export class ProviderAdapter {
     const request: Record<string, unknown> = {
       model,
       messages: params.messages,
-      temperature: this.shouldSendTemperature(selection.provider, model)
-        ? params.temperature
-        : undefined,
+      temperature: selection.capabilities.temperature ? params.temperature : undefined,
       stream: true
     }
 
-    if (params.tools && params.tools.length > 0 && params.toolChoice !== 'none') {
+    if (
+      selection.capabilities.toolCalling &&
+      params.tools &&
+      params.tools.length > 0 &&
+      params.toolChoice !== 'none'
+    ) {
       request.tools = params.tools
       request.tool_choice = params.toolChoice
     } else if (params.toolChoice === 'none') {
@@ -373,8 +380,12 @@ export class ProviderAdapter {
     }
   ): AnthropicRequest {
     const { system, messages } = this.toAnthropicMessages(params.messages)
+    const capabilities = inferModelRuntimeCapabilities(model, provider.id)
     const tools =
-      params.tools && params.tools.length > 0 && params.toolChoice !== 'none'
+      capabilities.toolCalling &&
+      params.tools &&
+      params.tools.length > 0 &&
+      params.toolChoice !== 'none'
         ? params.tools
             .filter(
               (tool): tool is Extract<ChatCompletionTool, { type: 'function' }> =>
@@ -395,7 +406,7 @@ export class ProviderAdapter {
       max_tokens: params.maxTokens ?? 4096
     }
 
-    if (this.shouldSendTemperature(provider, model)) {
+    if (capabilities.temperature) {
       request.temperature = params.temperature
     }
 
@@ -550,11 +561,6 @@ export class ProviderAdapter {
     } catch {
       return {}
     }
-  }
-
-  private shouldSendTemperature(provider: Provider, model: string): boolean {
-    if (provider.type === 'anthropic') return true
-    return !/^(?:o[134](?:-|$)|gpt-5)/i.test(model)
   }
 
   private extractOpenAIUsage(
