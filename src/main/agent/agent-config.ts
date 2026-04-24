@@ -115,6 +115,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
     allowedTools: [
       'execute_command',
       'read_file',
+      'lsp',
       'list_hosts',
       'list_terminals',
       'search_memory',
@@ -123,6 +124,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
     permissions: [
       { tool: 'execute_command', allowed: true, maxAutoApproveRisk: 'low' },
       { tool: 'read_file', allowed: true },
+      { tool: 'lsp', allowed: true },
       { tool: 'list_hosts', allowed: true },
       { tool: 'list_terminals', allowed: true },
       { tool: 'search_memory', allowed: true },
@@ -136,10 +138,11 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
     description: 'Verification agent that checks command results and validates state',
     mode: 'subagent',
     systemPrompt: VERIFY_SYSTEM_PROMPT,
-    allowedTools: ['execute_command', 'read_file', 'list_hosts', 'list_terminals'],
+    allowedTools: ['execute_command', 'read_file', 'lsp', 'list_hosts', 'list_terminals'],
     permissions: [
       { tool: 'execute_command', allowed: true, maxAutoApproveRisk: 'low' },
       { tool: 'read_file', allowed: true },
+      { tool: 'lsp', allowed: true },
       { tool: 'list_hosts', allowed: true },
       { tool: 'list_terminals', allowed: true }
     ],
@@ -154,6 +157,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
     allowedTools: [
       'execute_command',
       'read_file',
+      'lsp',
       'grep',
       'glob',
       'ls',
@@ -172,6 +176,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
           'plan agent 是只读规划模式：请改用只读检查命令，或停止并请求 build agent 执行变更。'
       },
       { tool: 'read_file', allowed: true },
+      { tool: 'lsp', allowed: true },
       { tool: 'grep', allowed: true },
       { tool: 'glob', allowed: true },
       { tool: 'ls', allowed: true },

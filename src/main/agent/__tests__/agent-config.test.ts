@@ -98,6 +98,7 @@ describe('agent-config', () => {
       expect(plan.mode).toBe('subagent')
       expect(plan.allowedTools).toContain('execute_command')
       expect(plan.allowedTools).toContain('read_file')
+      expect(plan.allowedTools).toContain('lsp')
       expect(plan.allowedTools).not.toContain('write_file')
       expect(cmdRule).toMatchObject({
         maxAutoApproveRisk: 'low',
@@ -130,6 +131,7 @@ describe('ToolRegistry.getFilteredDefinitions', () => {
     registry = new ToolRegistry()
     registry.register(makeMockTool('execute_command'))
     registry.register(makeMockTool('read_file'))
+    registry.register(makeMockTool('lsp'))
     registry.register(makeMockTool('write_file'))
     registry.register(makeMockTool('list_hosts'))
     registry.register(makeMockTool('list_terminals'))
