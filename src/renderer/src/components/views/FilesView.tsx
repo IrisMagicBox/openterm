@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Folder, X, Plus, LayoutGrid, Columns, Rows, Monitor } from 'lucide-react'
 import { FileBrowser } from '../terminal/FileBrowser'
 import { Host } from '../../../../shared/types'
@@ -14,6 +14,7 @@ import {
   resolvePaneDropEdgeFromPoint,
   type PaneDropEdge
 } from '../../lib/pane-drop'
+import { LOCAL_HOST } from '../../constants'
 
 interface FilesViewProps {
   fileBrowserHostId: string
@@ -57,6 +58,10 @@ export function FilesView({
   const [dragOverPaneId, setDragOverPaneId] = useState<string | null>(null)
   const [dragOverEdge, setDragOverEdge] = useState<PaneDropEdge | null>(null)
   const [showHostPicker, setShowHostPicker] = useState(false)
+  const selectableHosts = useMemo(
+    () => (hosts.some((host) => host.id === LOCAL_HOST.id) ? hosts : [LOCAL_HOST, ...hosts]),
+    [hosts]
+  )
 
   const openedHostIdsRef = useRef<Set<string>>(new Set())
   const openFileTabRef = useRef(paneManager.openFileTab)
@@ -418,12 +423,6 @@ export function FilesView({
         <div className="flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/85 backdrop-blur-2xl">
           <div className="h-11 text-workspace-foreground px-5 flex items-center justify-between flex-shrink-0 drag">
             <div className="flex items-center gap-3 no-drag">
-              <div className="flex gap-1.5">
-                <div className="w-3 h-3 bg-red-500 rounded-full" />
-                <div className="w-3 h-3 bg-yellow-400 rounded-full" />
-                <div className="w-3 h-3 bg-emerald-400 rounded-full" />
-              </div>
-              <div className="w-px h-4 bg-workspace-border" />
               <Folder size={13} className="text-accent" />
               <span className="text-xs font-semibold font-mono text-workspace-foreground">
                 {activeTab?.title || activeTab?.hostAlias || '文件管理'}
@@ -558,11 +557,11 @@ export function FilesView({
             <h3 className="text-workspace-foreground font-bold text-sm mb-4 flex items-center gap-2">
               <Monitor size={14} /> 选择主机
             </h3>
-            {hosts.length === 0 ? (
+            {selectableHosts.length === 0 ? (
               <p className="text-workspace-muted-foreground text-xs">暂无可用主机</p>
             ) : (
               <div className="grid grid-cols-1 gap-2 max-h-80 overflow-y-auto">
-                {hosts.map((host) => {
+                {selectableHosts.map((host) => {
                   const isOpen = allTabs.some((t) => t.hostId === host.id)
                   return (
                     <div

@@ -223,11 +223,11 @@ export function AppSidebar({
           aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
           className={cn(
-            'absolute -right-3 top-12 z-10 h-6 w-6 rounded-full border-white/80 bg-white/85 text-muted-foreground shadow-sm backdrop-blur-xl hover:text-accent',
+            'absolute -right-4 top-11 z-30 h-9 w-9 rounded-full border border-white/85 bg-white/95 text-muted-foreground shadow-md shadow-black/[0.06] backdrop-blur-xl hover:border-accent/30 hover:text-accent',
             sidebarCollapsed && 'rotate-180'
           )}
         >
-          <ChevronLeft size={14} />
+          <ChevronLeft size={18} />
         </IconButton>
       </Tooltip>
 

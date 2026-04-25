@@ -427,7 +427,7 @@ declare global {
       sftpClose: (sessionId: string) => Promise<boolean>
 
       // Local Filesystem APIs
-      localFsConnect: () => Promise<{ sessionId: string; hostId: string }>
+      localFsConnect: () => Promise<{ sessionId: string; hostId: string; homeDir: string }>
       localFsList: (
         sessionId: string,
         path: string

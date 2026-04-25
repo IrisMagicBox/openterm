@@ -46,6 +46,7 @@ interface FileBrowserProps {
 const api = window.api
 
 type ElectronFile = File & { path?: string }
+type FileSessionConnectResult = { sessionId: string; hostId: string; homeDir?: string }
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return '-'
@@ -77,7 +78,8 @@ export function FileBrowser({
   const fsMkdir = isLocal ? api.localFsMkdir : api.sftpMkdir
   const fsDelete = isLocal ? api.localFsDelete : api.sftpDelete
   const fsClose = isLocal ? api.localFsClose : api.sftpClose
-  const initialPathRef = useRef(isLocal ? process.env.HOME || '/' : '/')
+  const initialPathRef = useRef('/')
+  const localHomeDirRef = useRef('/')
 
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [currentPath, setCurrentPath] = useState(initialPathRef.current)
@@ -109,7 +111,13 @@ export function FileBrowser({
     setLoading(true)
     setError(null)
     try {
-      const result = isLocal ? await api.localFsConnect() : await api.sftpConnect(hostId)
+      const result: FileSessionConnectResult = isLocal
+        ? await api.localFsConnect()
+        : await api.sftpConnect(hostId)
+      if (isLocal && result.homeDir) {
+        localHomeDirRef.current = result.homeDir
+        setCurrentPath(result.homeDir)
+      }
       setSessionId(result.sessionId)
     } catch (err: unknown) {
       setError(getErrorMessage(err) || '连接失败')
@@ -152,8 +160,8 @@ export function FileBrowser({
   }, [connect])
 
   useEffect(() => {
-    if (sessionId) void loadDirectory(initialPathRef.current)
-  }, [sessionId, loadDirectory])
+    if (sessionId) void loadDirectory(isLocal ? localHomeDirRef.current : initialPathRef.current)
+  }, [sessionId, loadDirectory, isLocal])
 
   const navigateTo = (path: string): void => {
     void loadDirectory(path)
@@ -204,7 +212,7 @@ export function FileBrowser({
   const handleDownload = async (): Promise<void> => {
     if (!selectedItem || !sessionId) return
     const remotePath = currentPath === '/' ? `/${selectedItem}` : `${currentPath}/${selectedItem}`
-    const localPath = `${process.env.HOME || '~'}/Downloads/${selectedItem}`
+    const localPath = `~/Downloads/${selectedItem}`
     setLoading(true)
     setError(null)
     try {

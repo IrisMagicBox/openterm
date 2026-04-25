@@ -1,5 +1,7 @@
 import { Client } from 'ssh2'
 import { ipcMain } from 'electron'
+import os from 'node:os'
+import path from 'node:path'
 import { hostDB } from './db'
 import { createReadStream, createWriteStream } from 'fs'
 import { logger } from './logger'
@@ -7,11 +9,53 @@ import { buildSSHConfig } from './utils/ssh-config'
 
 interface SFTPSession {
   client: Client
-  sftp: any
+  sftp: SFTPClient
   hostId: string
 }
 
+interface SFTPAttrs {
+  isDirectory(): boolean
+  mode: number
+  mtime: number
+  size: number
+}
+
+interface SFTPDirEntry {
+  attrs: SFTPAttrs
+  filename: string
+}
+
+interface SFTPFileItem {
+  modifyTime: number
+  name: string
+  permissions: number
+  size: number
+  type: 'directory' | 'file'
+}
+
+interface SFTPClient {
+  createReadStream(remotePath: string): NodeJS.ReadableStream
+  createWriteStream(remotePath: string): NodeJS.WritableStream
+  mkdir(remotePath: string, callback: (err?: Error | null) => void): void
+  readdir(
+    remotePath: string,
+    callback: (err: Error | null | undefined, list: SFTPDirEntry[]) => void
+  ): void
+  rmdir(remotePath: string, callback: (err?: Error | null) => void): void
+  stat(
+    remotePath: string,
+    callback: (err: Error | null | undefined, stats: SFTPAttrs) => void
+  ): void
+  unlink(remotePath: string, callback: (err?: Error | null) => void): void
+}
+
 const sessions = new Map<string, SFTPSession>()
+
+function expandLocalPath(filePath: string): string {
+  if (filePath === '~') return os.homedir()
+  if (filePath.startsWith('~/')) return path.join(os.homedir(), filePath.slice(2))
+  return filePath
+}
 
 export async function createSFTPSession(hostId: string): Promise<string> {
   const host = hostDB.getHostById(hostId)
@@ -30,7 +74,7 @@ export async function createSFTPSession(hostId: string): Promise<string> {
             return
           }
           const sessionId = `sftp-${hostId}-${Date.now()}`
-          sessions.set(sessionId, { client, sftp, hostId })
+          sessions.set(sessionId, { client, sftp: sftp as SFTPClient, hostId })
           logger.info('SFTP', `Session created: ${sessionId}`)
           resolve(sessionId)
         })
@@ -40,7 +84,7 @@ export async function createSFTPSession(hostId: string): Promise<string> {
   })
 }
 
-export function listDirectory(sessionId: string, remotePath: string): Promise<any[]> {
+export function listDirectory(sessionId: string, remotePath: string): Promise<SFTPFileItem[]> {
   return new Promise((resolve, reject) => {
     const session = sessions.get(sessionId)
     if (!session) {
@@ -51,7 +95,7 @@ export function listDirectory(sessionId: string, remotePath: string): Promise<an
       if (err) reject(err)
       else
         resolve(
-          list.map((item: any) => ({
+          list.map((item) => ({
             name: item.filename,
             type: item.attrs.isDirectory() ? 'directory' : 'file',
             size: item.attrs.size,
@@ -74,7 +118,7 @@ export function uploadFile(
       reject(new Error('SFTP session not found'))
       return
     }
-    const readStream = createReadStream(localPath)
+    const readStream = createReadStream(expandLocalPath(localPath))
     const writeStream = session.sftp.createWriteStream(remotePath)
     writeStream.on('close', resolve).on('error', reject)
     readStream.on('error', reject)
@@ -94,7 +138,7 @@ export function downloadFile(
       return
     }
     const readStream = session.sftp.createReadStream(remotePath)
-    const writeStream = createWriteStream(localPath)
+    const writeStream = createWriteStream(expandLocalPath(localPath))
     writeStream.on('close', resolve).on('error', reject)
     readStream.on('error', reject)
     readStream.pipe(writeStream)
@@ -212,7 +256,9 @@ export async function transferBetweenHosts(
   } finally {
     try {
       await fs.unlink(tmpFile)
-    } catch {}
+    } catch {
+      // Temporary-file cleanup should not mask the transfer result.
+    }
   }
 }
 
