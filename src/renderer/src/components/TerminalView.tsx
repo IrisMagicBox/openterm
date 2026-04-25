@@ -5,12 +5,17 @@ import { ClipboardAddon } from '@xterm/addon-clipboard'
 import { Sparkles, X } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 import { FileDragData } from './terminal/FileBrowser'
+import type { TerminalCommandCompletionUiEvent } from '../../../shared/terminal-command-assist'
 import type { TerminalSessionRole, TerminalTakeoverMode } from '../../../shared/types'
 import {
   buildTerminalModelCompletion,
+  getTerminalShiftTabCompletionAction,
   updateTerminalInputBuffer,
   type TerminalCompletionResult
 } from '../lib/terminal-completion'
+
+const TERMINAL_COMPLETION_PREFETCH_DEBOUNCE_MS = 900
+const TERMINAL_COMPLETION_PREFETCH_MIN_INTERVAL_MS = 1200
 
 interface TerminalViewProps {
   id: string
@@ -83,8 +88,11 @@ export function TerminalView({
   const onFocusSessionRef = useRef(onFocusSession)
   const inputBufferRef = useRef('')
   const completionRef = useRef<TerminalCompletionResult | null>(null)
+  const completionVisibleRef = useRef(false)
+  const completionPendingRef = useRef(false)
   const completionTimerRef = useRef<number | null>(null)
   const completionRequestRef = useRef(0)
+  const completionLastRequestAtRef = useRef(0)
   const updateAnchorRef = useRef<() => void>(() => undefined)
   const sendTerminalInputRef = useRef<(data: string) => void>(() => undefined)
   const terminalContextRef = useRef({ hostAlias, terminalName, terminalRole })
@@ -180,11 +188,50 @@ export function TerminalView({
     }
     updateAnchorRef.current = updateCompletionAnchor
 
-    const setNextCompletion = (next: TerminalCompletionResult | null): void => {
+    const logCompletionUiEvent = (
+      event: Omit<TerminalCommandCompletionUiEvent, 'sessionId' | 'topicId'>
+    ): void => {
+      window.api.logTerminalCompletionUiEvent({
+        ...event,
+        sessionId: id,
+        topicId
+      })
+    }
+
+    const setNextCompletion = (
+      next: TerminalCompletionResult | null,
+      options: { visible?: boolean; trigger?: 'prefetch' | 'manual'; reason?: string } = {}
+    ): void => {
+      const visible = Boolean(next && options.visible)
+      const previous = completionRef.current
       completionRef.current = next
-      setCompletion(next)
+      completionVisibleRef.current = visible
+      setCompletion(visible ? next : null)
+      completionPendingRef.current = false
       setCompletionPending(false)
-      if (next) updateCompletionAnchor()
+      if (next && visible) updateCompletionAnchor()
+      if (next) {
+        logCompletionUiEvent({
+          event: 'candidate-stored',
+          trigger: options.trigger,
+          visible,
+          pending: false,
+          input: next.input,
+          candidate: next.value,
+          confidence: next.confidence,
+          reason: options.reason
+        })
+      } else if (previous) {
+        logCompletionUiEvent({
+          event: 'candidate-cleared',
+          visible: false,
+          pending: false,
+          input: inputBufferRef.current,
+          candidate: previous.value,
+          confidence: previous.confidence,
+          reason: options.reason
+        })
+      }
     }
 
     const hideCompletion = (): void => {
@@ -193,24 +240,58 @@ export function TerminalView({
         completionTimerRef.current = null
       }
       completionRequestRef.current += 1
+      completionPendingRef.current = false
       setCompletionPending(false)
       setNextCompletion(null)
     }
 
     const acceptCompletion = (next: TerminalCompletionResult): void => {
+      logCompletionUiEvent({
+        event: 'candidate-accepted',
+        visible: completionVisibleRef.current,
+        pending: false,
+        input: next.input,
+        candidate: next.value,
+        confidence: next.confidence
+      })
       sendTerminalInput(next.insertText)
       inputBufferRef.current = next.value
       hideCompletion()
       requestAnimationFrame(updateCompletionAnchor)
     }
 
+    const preserveCurrentCompletionIfUseful = (): boolean => {
+      const existingCompletion = completionRef.current
+      if (!existingCompletion) return false
+
+      const currentInput = inputBufferRef.current
+      if (!existingCompletion.value.startsWith(currentInput)) return false
+      const suffix = existingCompletion.value.slice(currentInput.length)
+      if (!suffix) return false
+
+      const refreshedCompletion: TerminalCompletionResult = {
+        ...existingCompletion,
+        input: currentInput,
+        suffix,
+        insertText: suffix,
+        mode: 'append'
+      }
+
+      setNextCompletion(refreshedCompletion, {
+        visible: completionVisibleRef.current,
+        reason: 'preserve-current-input'
+      })
+      return true
+    }
+
     const runCompletionRequest = (
       input: string,
       requestId: number,
-      options: { showPending?: boolean } = {}
+      options: { showPending?: boolean; trigger: 'prefetch' | 'manual' }
     ): void => {
       completionTimerRef.current = null
       if (options.showPending) {
+        completionPendingRef.current = true
         setCompletionPending(true)
         updateCompletionAnchor()
       }
@@ -232,9 +313,11 @@ export function TerminalView({
 
         try {
           const terminalContext = terminalContextRef.current
+          completionLastRequestAtRef.current = Date.now()
           const result = await window.api.completeTerminalCommand({
             topicId,
             currentInput: input,
+            trigger: options.trigger,
             session: {
               id,
               hostId: hostId || (isLocal ? 'local' : 'remote'),
@@ -245,17 +328,37 @@ export function TerminalView({
             historyCommands,
             screen
           })
-          if (completionRequestRef.current !== requestId) return
-          setNextCompletion(
-            buildTerminalModelCompletion(input, result.command, result.confidence || 'medium')
+          const isLatestRequest = completionRequestRef.current === requestId
+          if (!isLatestRequest) return
+
+          const nextCompletion = buildTerminalModelCompletion(
+            input,
+            result.command,
+            result.confidence || 'medium'
           )
+
+          if (!nextCompletion) {
+            if (preserveCurrentCompletionIfUseful()) return
+            setNextCompletion(null, { trigger: options.trigger, reason: result.reason })
+            return
+          }
+
+          setNextCompletion(nextCompletion, {
+            visible: true,
+            trigger: options.trigger,
+            reason: result.reason
+          })
         } catch {
           if (completionRequestRef.current !== requestId) return
-          setNextCompletion(null)
+          if (!preserveCurrentCompletionIfUseful()) {
+            setNextCompletion(null, { trigger: options.trigger, reason: 'request-error' })
+          }
         }
       })().catch(() => {
         if (completionRequestRef.current === requestId) {
-          setNextCompletion(null)
+          if (!preserveCurrentCompletionIfUseful()) {
+            setNextCompletion(null, { trigger: options.trigger, reason: 'request-error' })
+          }
         }
       })
     }
@@ -270,19 +373,24 @@ export function TerminalView({
       const requestId = completionRequestRef.current
 
       const trimmedInput = input.trim()
-      setNextCompletion(null)
 
       if (!trimmedInput || trimmedInput.length > 200) {
+        setNextCompletion(null, { reason: trimmedInput ? 'input-too-long' : 'empty-input' })
         return
       }
 
-      if (trimmedInput.length < 3) {
-        return
+      if (!preserveCurrentCompletionIfUseful()) {
+        setNextCompletion(null, { reason: 'input-changed' })
       }
 
+      const minIntervalDelay = Math.max(
+        0,
+        TERMINAL_COMPLETION_PREFETCH_MIN_INTERVAL_MS -
+          (Date.now() - completionLastRequestAtRef.current)
+      )
       completionTimerRef.current = window.setTimeout(
-        () => runCompletionRequest(input, requestId),
-        600
+        () => runCompletionRequest(input, requestId, { trigger: 'prefetch' }),
+        Math.max(TERMINAL_COMPLETION_PREFETCH_DEBOUNCE_MS, minIntervalDelay)
       )
     }
 
@@ -348,7 +456,6 @@ export function TerminalView({
       }
 
       if (data === '\t') {
-        inputBufferRef.current = ''
         hideCompletion()
         sendTerminalInput(data)
         return
@@ -369,26 +476,44 @@ export function TerminalView({
         !event.ctrlKey &&
         !event.metaKey
       ) {
-        if (!event.shiftKey) return true
+        if (!event.shiftKey) {
+          hideCompletion()
+          return true
+        }
 
         event.preventDefault()
         event.stopPropagation()
 
-        if (completionRef.current?.source === 'model') {
-          acceptCompletion(completionRef.current)
-          return false
-        }
-
         const pendingInput = inputBufferRef.current
-        const trimmedPendingInput = pendingInput.trim()
-        if (trimmedPendingInput.length >= 3 && trimmedPendingInput.length <= 200) {
+        const action = getTerminalShiftTabCompletionAction({
+          hasVisibleCompletion: completionVisibleRef.current,
+          hasCompletionCandidate: Boolean(completionRef.current),
+          completionPending: completionPendingRef.current,
+          input: pendingInput
+        })
+        logCompletionUiEvent({
+          event: 'shift-tab',
+          action,
+          visible: completionVisibleRef.current,
+          pending: completionPendingRef.current,
+          input: pendingInput,
+          candidate: completionRef.current?.value,
+          confidence: completionRef.current?.confidence
+        })
+
+        if (action === 'accept' && completionRef.current) {
+          acceptCompletion(completionRef.current)
+        } else if (action === 'request') {
           if (completionTimerRef.current) {
             window.clearTimeout(completionTimerRef.current)
             completionTimerRef.current = null
           }
           completionRequestRef.current += 1
-          runCompletionRequest(pendingInput, completionRequestRef.current, { showPending: true })
-        } else {
+          runCompletionRequest(pendingInput, completionRequestRef.current, {
+            showPending: true,
+            trigger: 'manual'
+          })
+        } else if (action === 'hide') {
           hideCompletion()
         }
         return false
@@ -432,6 +557,8 @@ export function TerminalView({
       if (completionTimerRef.current) window.clearTimeout(completionTimerRef.current)
       completionRequestRef.current += 1
       completionRef.current = null
+      completionVisibleRef.current = false
+      completionPendingRef.current = false
       updateAnchorRef.current = () => undefined
       sendTerminalInputRef.current = () => undefined
       terminalNode.removeEventListener('mousedown', handleMouseDown)
@@ -473,7 +600,10 @@ export function TerminalView({
     sendTerminalInputRef.current(draftInput)
     inputBufferRef.current = command
     completionRef.current = null
+    completionVisibleRef.current = false
+    completionPendingRef.current = false
     setCompletion(null)
+    setCompletionPending(false)
     commandAssist.onClose()
     xtermRef.current?.focus()
     requestAnimationFrame(updateAnchorRef.current)

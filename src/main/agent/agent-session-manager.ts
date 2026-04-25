@@ -116,7 +116,7 @@ export class AgentSessionManager {
     return allSessions
   }
 
-  async registerSession(session: AgentSession): Promise<void> {
+  async registerSession(session: AgentSession, options: { emit?: boolean } = {}): Promise<void> {
     let hostMap = this.topicSessions.get(session.topicId)
     if (!hostMap) {
       hostMap = new Map()
@@ -129,11 +129,28 @@ export class AgentSessionManager {
       hostMap.set(session.hostId, sessions)
     }
 
-    if (!sessions.find((s) => s.id === session.id)) {
+    const existingIndex = sessions.findIndex((s) => s.id === session.id)
+    let registeredSession = session
+    if (existingIndex === -1) {
       sessions.push(session)
+    } else {
+      registeredSession = {
+        ...sessions[existingIndex],
+        ...session,
+        visible: session.visible ?? sessions[existingIndex].visible,
+        paused: session.paused ?? sessions[existingIndex].paused,
+        takeoverMode: session.takeoverMode ?? sessions[existingIndex].takeoverMode ?? null
+      }
+      sessions[existingIndex] = registeredSession
     }
 
-    this.webContents?.send('agent:session-created', session)
+    if (registeredSession.visible !== undefined) {
+      terminalSessionDB.updateSessionVisibility(registeredSession.id, registeredSession.visible)
+    }
+
+    if (options.emit ?? true) {
+      this.webContents?.send('agent:session-created', this.withControlState(registeredSession))
+    }
   }
 
   async ensureSession(
@@ -149,13 +166,15 @@ export class AgentSessionManager {
 
     const reusableSession = this.findReusableSession(sessions, name, role)
     if (reusableSession) {
-      if (showInUI) this.webContents?.send('agent:session-created', reusableSession)
+      if (showInUI) {
+        reusableSession.visible = true
+        terminalSessionDB.updateSessionVisibility(reusableSession.id, true)
+        this.webContents?.send('agent:session-created', this.withControlState(reusableSession))
+      }
       return reusableSession
     }
 
-    const session = await this.createNewSession(topicId, hostId, hostAlias, name, true, role)
-    if (showInUI) this.webContents?.send('agent:session-created', session)
-    return session
+    return this.createNewSession(topicId, hostId, hostAlias, name, showInUI, role)
   }
 
   async setPaused(id: string, paused: boolean): Promise<void> {
@@ -228,7 +247,7 @@ export class AgentSessionManager {
       terminalSessionDB.updateSessionName(session.id, session.name)
     }
 
-    await this.registerSession(session)
+    await this.registerSession(session, { emit: showInUI })
     return session
   }
 

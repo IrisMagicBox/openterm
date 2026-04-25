@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Host, TerminalSession } from '../../../../shared/types'
+import { WORKSPACE_TERMINALS_TOPIC_ID } from '../../../../shared/constants'
 import {
   shouldMirrorSessionInTerminalTabs,
   terminalTabFromSession,
@@ -19,7 +20,7 @@ const remoteHost: Host = {
 function session(overrides: Partial<TerminalSession> = {}): TerminalSession {
   return {
     id: 'session-1',
-    topicId: 'topic-1',
+    topicId: WORKSPACE_TERMINALS_TOPIC_ID,
     hostId: 'host-1',
     hostAlias: 'remote',
     role: 'user',
@@ -39,6 +40,10 @@ describe('terminal tab helpers', () => {
   it('does not mirror hidden or agent command sessions', () => {
     expect(shouldMirrorSessionInTerminalTabs(session({ role: 'agent_command' }))).toBe(false)
     expect(shouldMirrorSessionInTerminalTabs(session({ visible: false }))).toBe(false)
+  })
+
+  it('does not mirror agent topic sessions into workspace terminal tabs', () => {
+    expect(shouldMirrorSessionInTerminalTabs(session({ topicId: 'topic-1' }))).toBe(false)
   })
 
   it('builds a tab from a known host session', () => {

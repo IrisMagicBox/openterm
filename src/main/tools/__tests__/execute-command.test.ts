@@ -117,7 +117,8 @@ describe('execute_command tool', () => {
 
     expect(mocks.run).not.toHaveBeenCalled()
     expect(mocks.ensureSession).toHaveBeenCalledWith('local', '本机', undefined, {
-      role: 'agent_command'
+      role: 'agent_command',
+      visible: true
     })
     expect(mocks.executeAgentCommand).toHaveBeenCalledWith(
       'session-1',

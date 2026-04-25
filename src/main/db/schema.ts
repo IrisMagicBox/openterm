@@ -39,6 +39,7 @@ export const BASE_SCHEMA_SQL = `
     apiKey TEXT NOT NULL,
     baseURL TEXT NOT NULL,
     model TEXT NOT NULL,
+    terminalCompletionMode TEXT NOT NULL DEFAULT 'prompt',
     updatedAt INTEGER NOT NULL
   );
 
@@ -200,6 +201,7 @@ export const BASE_SCHEMA_SQL = `
     hostId TEXT NOT NULL,
     hostAlias TEXT NOT NULL,
     role TEXT DEFAULT 'user',
+    visible INTEGER,
     status TEXT NOT NULL DEFAULT 'active',
     shellType TEXT,
     shellIntegrationReady INTEGER DEFAULT 0,

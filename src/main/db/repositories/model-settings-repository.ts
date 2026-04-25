@@ -2,6 +2,10 @@ import Database from 'better-sqlite3'
 import { ModelSettings } from '../../../shared/types'
 import { ModelSettingsRow } from '../row-types'
 import { DEFAULT_MODEL, DEFAULT_BASE_URL } from '../../../shared/constants'
+import {
+  DEFAULT_TERMINAL_COMPLETION_MODE,
+  normalizeTerminalCompletionMode
+} from '../../../shared/terminal-command-assist'
 import { BaseRepository } from '../base-repository'
 
 const DEFAULT_MODEL_SETTINGS: ModelSettings = {
@@ -9,6 +13,7 @@ const DEFAULT_MODEL_SETTINGS: ModelSettings = {
   apiKey: '',
   baseURL: DEFAULT_BASE_URL,
   model: DEFAULT_MODEL,
+  terminalCompletionMode: DEFAULT_TERMINAL_COMPLETION_MODE,
   updatedAt: Date.now()
 }
 
@@ -30,6 +35,7 @@ export class ModelSettingsRepository extends BaseRepository<ModelSettingsRow> {
       apiKey: row.apiKey,
       baseURL: row.baseURL,
       model: row.model,
+      terminalCompletionMode: normalizeTerminalCompletionMode(row.terminalCompletionMode),
       updatedAt: row.updatedAt
     }
   }
@@ -47,6 +53,7 @@ export class ModelSettingsRepository extends BaseRepository<ModelSettingsRow> {
         SET apiKey = COALESCE(?, apiKey),
             baseURL = COALESCE(?, baseURL),
             model = COALESCE(?, model),
+            terminalCompletionMode = COALESCE(?, terminalCompletionMode),
             updatedAt = ?
         WHERE id = ?
       `
@@ -54,20 +61,26 @@ export class ModelSettingsRepository extends BaseRepository<ModelSettingsRow> {
         settings.apiKey ?? null,
         settings.baseURL ?? null,
         settings.model ?? null,
+        settings.terminalCompletionMode
+          ? normalizeTerminalCompletionMode(settings.terminalCompletionMode)
+          : null,
         now,
         'default'
       )
     } else {
       this.stmt(
         `
-        INSERT INTO model_settings (id, apiKey, baseURL, model, updatedAt)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO model_settings (id, apiKey, baseURL, model, terminalCompletionMode, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?)
       `
       ).run(
         'default',
         settings.apiKey || DEFAULT_MODEL_SETTINGS.apiKey,
         settings.baseURL || DEFAULT_MODEL_SETTINGS.baseURL,
         settings.model || DEFAULT_MODEL_SETTINGS.model,
+        settings.terminalCompletionMode
+          ? normalizeTerminalCompletionMode(settings.terminalCompletionMode)
+          : DEFAULT_MODEL_SETTINGS.terminalCompletionMode,
         now
       )
     }

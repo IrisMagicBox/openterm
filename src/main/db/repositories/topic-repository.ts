@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import { v4 as uuidv4 } from 'uuid'
 import { Topic } from '../../../shared/types'
+import { WORKSPACE_TERMINALS_TOPIC_ID } from '../../../shared/constants'
 import { TopicRow } from '../row-types'
 import { mapTopicRow } from '../mappers'
 import { BaseRepository } from '../base-repository'
@@ -11,7 +12,9 @@ export class TopicRepository extends BaseRepository<TopicRow> {
   }
 
   getTopics(): Topic[] {
-    const rows = this.stmt('SELECT * FROM topics ORDER BY lastMessageAt DESC').all() as TopicRow[]
+    const rows = this.stmt('SELECT * FROM topics WHERE id != ? ORDER BY lastMessageAt DESC').all(
+      WORKSPACE_TERMINALS_TOPIC_ID
+    ) as TopicRow[]
     return rows.map(mapTopicRow)
   }
 
@@ -66,8 +69,8 @@ export class TopicRepository extends BaseRepository<TopicRow> {
 
   searchTopics(query: string): Topic[] {
     const rows = this.stmt(
-      'SELECT * FROM topics WHERE title LIKE ? OR id IN (SELECT topicId FROM tasks WHERE summary LIKE ? OR goal LIKE ?) ORDER BY lastMessageAt DESC LIMIT 10'
-    ).all(`%${query}%`, `%${query}%`, `%${query}%`) as TopicRow[]
+      'SELECT * FROM topics WHERE id != ? AND (title LIKE ? OR id IN (SELECT topicId FROM tasks WHERE summary LIKE ? OR goal LIKE ?)) ORDER BY lastMessageAt DESC LIMIT 10'
+    ).all(WORKSPACE_TERMINALS_TOPIC_ID, `%${query}%`, `%${query}%`, `%${query}%`) as TopicRow[]
     return rows.map(mapTopicRow)
   }
 }

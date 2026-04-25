@@ -200,7 +200,8 @@ export default define('execute_command', {
     }
 
     const sessionId = await ctx.ensureSession(host.id, host.alias, terminalName, {
-      role: 'agent_command'
+      role: 'agent_command',
+      visible: true
     })
     const visibleCommand = workdir ? `cd ${shellQuote(workdir)} && ${command}` : command
     ctx.updatePartMetadata?.({

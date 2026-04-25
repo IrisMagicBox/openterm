@@ -28,6 +28,7 @@ import type {
 import type {
   TerminalCommandCompletionRequest,
   TerminalCommandCompletionResult,
+  TerminalCommandCompletionUiEvent,
   TerminalCommandDraftRequest,
   TerminalCommandDraftResult
 } from '../shared/terminal-command-assist'
@@ -122,6 +123,7 @@ declare global {
         completeCommand: (
           request: TerminalCommandCompletionRequest
         ) => Promise<TerminalCommandCompletionResult>
+        logCompletionUiEvent: (event: TerminalCommandCompletionUiEvent) => void
       }
       settings: {
         getModelSettings: () => Promise<ModelSettings>
@@ -483,6 +485,7 @@ declare global {
       completeTerminalCommand: (
         request: TerminalCommandCompletionRequest
       ) => Promise<TerminalCommandCompletionResult>
+      logTerminalCompletionUiEvent: (event: TerminalCommandCompletionUiEvent) => void
 
       // Port Forwarding APIs
       pfCreate: (

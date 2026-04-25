@@ -5,7 +5,8 @@ export type CreateAgentSessionFn = (
   hostId: string,
   webContents: WebContents,
   topicId?: string,
-  role?: TerminalSessionRole
+  role?: TerminalSessionRole,
+  existingSessionId?: string
 ) => Promise<string>
 
 export interface AgentSession extends TerminalSession {

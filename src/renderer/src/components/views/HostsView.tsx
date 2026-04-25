@@ -2,17 +2,18 @@ import { Plus, Search, Server, Monitor } from 'lucide-react'
 import { useState } from 'react'
 import { HostCard } from '../hosts/HostCard'
 import { Host, Topic } from '../../../../shared/types'
+import { WORKSPACE_TERMINALS_TOPIC_ID } from '../../../../shared/constants'
 import { TerminalTab, View } from '../../types'
 import { LOCAL_HOST } from '../../constants'
 import { PortForwardingPanel } from '../terminal/PortForwardingPanel'
 import { Button, Dialog, DialogContent, IconButton, Input, PageHeader, Surface } from '../ui'
+import { upsertTerminalTab } from '../../lib/terminal-tabs'
 
 interface HostsViewProps {
   filteredHosts: Host[]
   searchQuery: string
   setSearchQuery: (q: string) => void
   setShowAddHost: (v: boolean) => void
-  selectedTopic: { id: string } | null
   setSelectedHost: (h: Host | null) => void
   setTerminalSessionId: (id: string | null) => void
   setTerminalTabs: React.Dispatch<React.SetStateAction<TerminalTab[]>>
@@ -33,7 +34,6 @@ export function HostsView({
   searchQuery,
   setSearchQuery,
   setShowAddHost,
-  selectedTopic,
   setSelectedHost,
   setTerminalSessionId,
   setTerminalTabs,
@@ -49,6 +49,15 @@ export function HostsView({
   onCreateLocalAgentTopic
 }: HostsViewProps): React.ReactElement {
   const [portForwardHost, setPortForwardHost] = useState<Host | null>(null)
+
+  const addTerminalTab = (tab: TerminalTab): void => {
+    setTerminalTabs((prev) => {
+      const next = upsertTerminalTab(prev, tab)
+      const tabIndex = next.findIndex((item) => item.sessionId === tab.sessionId)
+      setActiveTerminalTabIndex(tabIndex >= 0 ? tabIndex : 0)
+      return next
+    })
+  }
 
   return (
     <div className="flex-1 overflow-y-auto bg-transparent">
@@ -81,13 +90,10 @@ export function HostsView({
         <Surface
           onClick={async () => {
             try {
-              const session = await window.api.connectLocal(selectedTopic?.id || '')
+              const session = await window.api.connectLocal(WORKSPACE_TERMINALS_TOPIC_ID)
               setSelectedHost(LOCAL_HOST)
               setTerminalSessionId(session.id)
-              setTerminalTabs((prev) => {
-                setActiveTerminalTabIndex(prev.length)
-                return [...prev, { host: LOCAL_HOST, sessionId: session.id }]
-              })
+              addTerminalTab({ host: LOCAL_HOST, sessionId: session.id })
               setActiveView('terminal')
             } catch (e) {
               console.error('Local terminal connection failed:', e)
@@ -147,14 +153,13 @@ export function HostsView({
                 }}
                 onConnect={async () => {
                   try {
-                    const topicId = selectedTopic?.id || ''
-                    const sessionId = await window.api.connectSSH(host.id, topicId)
+                    const sessionId = await window.api.connectSSH(
+                      host.id,
+                      WORKSPACE_TERMINALS_TOPIC_ID
+                    )
                     setSelectedHost(host)
                     setTerminalSessionId(sessionId)
-                    setTerminalTabs((prev) => {
-                      setActiveTerminalTabIndex(prev.length)
-                      return [...prev, { host, sessionId }]
-                    })
+                    addTerminalTab({ host, sessionId })
                     setActiveView('terminal')
                   } catch (e) {
                     console.error('SSH connection failed:', e)

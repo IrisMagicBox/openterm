@@ -24,6 +24,7 @@ class FakeStatement {
         hostId,
         hostAlias,
         role,
+        visible,
         status,
         shellType,
         shellIntegrationReady,
@@ -36,6 +37,7 @@ class FakeStatement {
         hostId: String(hostId),
         hostAlias: String(hostAlias),
         role: role == null ? null : String(role),
+        visible: visible == null ? null : Number(visible),
         status: String(status),
         shellType: shellType == null ? null : String(shellType),
         shellIntegrationReady: Number(shellIntegrationReady),
@@ -54,6 +56,12 @@ class FakeStatement {
       const [name, id] = params
       const row = this.rows.find((item) => item.id === id)
       if (row) row.name = String(name)
+    }
+
+    if (this.sql.includes('UPDATE terminal_sessions SET visible = ? WHERE id = ?')) {
+      const [visible, id] = params
+      const row = this.rows.find((item) => item.id === id)
+      if (row) row.visible = Number(visible)
     }
   }
 
@@ -87,5 +95,26 @@ describe('TerminalSessionRepository', () => {
 
     expect(repo.getSessionById('session-1')?.name).toBe('renamed')
     expect(repo.getSessionsByHost('local')[0].name).toBe('renamed')
+  })
+
+  it('persists explicit terminal visibility', () => {
+    const repo = createRepo()
+    repo.createSession({
+      id: 'session-2',
+      topicId: 'topic-1',
+      hostId: 'local',
+      hostAlias: '本地终端',
+      role: 'agent_command',
+      visible: true,
+      status: 'active',
+      shellIntegrationReady: false,
+      createdAt: 1
+    })
+
+    expect(repo.getSessionById('session-2')?.visible).toBe(true)
+
+    repo.updateSessionVisibility('session-2', false)
+
+    expect(repo.getSessionById('session-2')?.visible).toBe(false)
   })
 })

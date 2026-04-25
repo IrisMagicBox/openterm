@@ -116,7 +116,8 @@ export const createAgentSession = (
   hostId: string,
   webContents: WebContents,
   topicId?: string,
-  role: TerminalSessionRole = 'agent_command'
+  role: TerminalSessionRole = 'agent_command',
+  existingSessionId?: string
 ): Promise<string> => {
   const { host, config } = getHostAndConfig(hostId)
 
@@ -131,7 +132,7 @@ export const createAgentSession = (
             return reject(err)
           }
 
-          const sessionId = generateSessionId(hostId)
+          const sessionId = existingSessionId || generateSessionId(hostId)
           const session: SSHSession = {
             client,
             stream: stream as unknown as TerminalStream,

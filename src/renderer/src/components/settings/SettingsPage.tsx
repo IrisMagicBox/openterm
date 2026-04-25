@@ -1,20 +1,45 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Bot, ShieldAlert, ChevronLeft, Server, Shield } from 'lucide-react'
 import { ProviderList } from './ProviderList'
 import { ProviderSettings } from './ProviderSettings'
 import { useProvider } from '../../hooks/useProvider'
 import { usePermissions } from '../../hooks/usePermissions'
 import { isSystemProviderId } from '../../config/providers'
-import type { Provider } from '../../../../shared/types'
+import type { Provider, TerminalCompletionBackendMode } from '../../../../shared/types'
+import {
+  DEFAULT_TERMINAL_COMPLETION_MODE,
+  normalizeTerminalCompletionMode
+} from '../../lib/terminal-command-assist'
 import { Badge, IconButton, PageHeader, Surface, Switch } from '../ui'
 
 interface SettingsPageProps {
   onBack?: () => void
 }
 
+const TERMINAL_COMPLETION_MODE_OPTIONS: Array<{
+  value: TerminalCompletionBackendMode
+  label: string
+  description: string
+}> = [
+  {
+    value: 'prompt',
+    label: '提示词',
+    description: '兼容不支持函数调用的模型'
+  },
+  {
+    value: 'function',
+    label: '函数',
+    description: '使用模型原生 tool call'
+  }
+]
+
 export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement {
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'providers' | 'general' | 'permissions'>('providers')
+  const [terminalCompletionMode, setTerminalCompletionMode] =
+    useState<TerminalCompletionBackendMode>(DEFAULT_TERMINAL_COMPLETION_MODE)
+  const [completionSettingsLoading, setCompletionSettingsLoading] = useState(true)
+  const [completionSettingsSaving, setCompletionSettingsSaving] = useState(false)
 
   const {
     providers,
@@ -37,6 +62,30 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
   } = usePermissions()
 
   const selectedProvider = providers.find((p) => p.id === selectedProviderId) || null
+
+  useEffect(() => {
+    let cancelled = false
+
+    window.api
+      .getModelSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setTerminalCompletionMode(
+            normalizeTerminalCompletionMode(settings.terminalCompletionMode)
+          )
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setTerminalCompletionMode(DEFAULT_TERMINAL_COMPLETION_MODE)
+      })
+      .finally(() => {
+        if (!cancelled) setCompletionSettingsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleResetProvider = async (id: string): Promise<void> => {
     if (isSystemProviderId(id)) {
@@ -69,6 +118,23 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
     modelId?: string
   ): Promise<{ ok: boolean; message: string }> => {
     return window.api.testProviderConnection(provider, modelId)
+  }
+
+  const handleTerminalCompletionModeChange = async (
+    mode: TerminalCompletionBackendMode
+  ): Promise<void> => {
+    if (mode === terminalCompletionMode || completionSettingsSaving) return
+
+    const previousMode = terminalCompletionMode
+    setTerminalCompletionMode(mode)
+    setCompletionSettingsSaving(true)
+    try {
+      await window.api.saveModelSettings({ terminalCompletionMode: mode })
+    } catch {
+      setTerminalCompletionMode(previousMode)
+    } finally {
+      setCompletionSettingsSaving(false)
+    }
   }
 
   return (
@@ -186,6 +252,47 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
                     服务， 包括 OpenAI、Anthropic、Gemini、DeepSeek、Silicon Flow 等 20+
                     个内置提供商。
                   </p>
+                </Surface>
+
+                <Surface className="flex items-start justify-between gap-5">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-bold text-foreground">大模型补全</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      默认使用提示词解析；函数模式适合支持 tool call 的模型。
+                    </p>
+                  </div>
+                  <div className="inline-flex shrink-0 rounded-lg border border-border bg-white/65 p-1 shadow-sm">
+                    {TERMINAL_COMPLETION_MODE_OPTIONS.map((option) => {
+                      const selected = terminalCompletionMode === option.value
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          aria-pressed={selected}
+                          disabled={completionSettingsLoading || completionSettingsSaving}
+                          onClick={() => {
+                            void handleTerminalCompletionModeChange(option.value)
+                          }}
+                          className={`min-w-20 rounded-md px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                            selected
+                              ? 'bg-accent text-white shadow-sm'
+                              : 'text-muted-foreground hover:bg-white hover:text-foreground'
+                          }`}
+                        >
+                          <span className="block text-sm font-semibold leading-tight">
+                            {option.label}
+                          </span>
+                          <span
+                            className={`mt-0.5 block text-xs leading-tight ${
+                              selected ? 'text-white/75' : 'text-muted-foreground'
+                            }`}
+                          >
+                            {option.description}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
                 </Surface>
 
                 <div className="space-y-4">

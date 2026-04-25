@@ -9,3 +9,6 @@ export const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
 
 // SSH default port (used in both main and renderer)
 export const DEFAULT_SSH_PORT = 22
+
+// Internal topic used to persist standalone workspace terminals.
+export const WORKSPACE_TERMINALS_TOPIC_ID = '__workspace_terminals__'

@@ -154,13 +154,6 @@ export function ChatPanel({
     removeQueuedMessage,
     clearQueue
   } = useChatMessages(topic.id, thinking)
-  const visibleSessions = useMemo(() => agentSessions.filter((s) => s.visible), [agentSessions])
-  const terminalPreviews = useTerminalPreviews(visibleSessions)
-  const terminalStage = useTerminalStageState(visibleSessions, activeParts)
-  const terminalActivities = useMemo(
-    () => deriveTerminalActivities(visibleSessions, activeParts, terminalPreviews),
-    [activeParts, terminalPreviews, visibleSessions]
-  )
   const derivedActiveRunId = useMemo(() => {
     const activePart = [...activeParts]
       .reverse()
@@ -177,6 +170,18 @@ export function ChatPanel({
     useCommandPalette()
   const realHosts = hosts.filter((h) => topic.hostIds.includes(h.id))
   const topicHosts = topic.hostIds.includes('local') ? [LOCAL_HOST, ...realHosts] : realHosts
+  const topicHostIds = useMemo(() => new Set(topic.hostIds), [topic.hostIds])
+  const topicSessions = useMemo(
+    () => agentSessions.filter((session) => topicHostIds.has(session.hostId)),
+    [agentSessions, topicHostIds]
+  )
+  const visibleSessions = useMemo(() => topicSessions.filter((s) => s.visible), [topicSessions])
+  const terminalPreviews = useTerminalPreviews(visibleSessions)
+  const terminalStage = useTerminalStageState(visibleSessions, activeParts)
+  const terminalActivities = useMemo(
+    () => deriveTerminalActivities(visibleSessions, activeParts, terminalPreviews),
+    [activeParts, terminalPreviews, visibleSessions]
+  )
   const filteredHosts = topicHosts.filter(
     (h) =>
       h.alias.toLowerCase().includes(mentionFilter.toLowerCase()) || h.ip.includes(mentionFilter)
@@ -561,7 +566,7 @@ export function ChatPanel({
           <TopicHub
             topicId={topic.id}
             hosts={topicHosts}
-            sessions={agentSessions}
+            sessions={visibleSessions}
             onAddHost={onManageHosts}
             onRemoveHost={onRemoveHostFromTopic}
             onCreateTerminal={onCreateTerminal}

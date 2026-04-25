@@ -24,6 +24,15 @@ interface UseAgentSessionsResult {
   handleResolveAuth: (approved: boolean, alwaysAllow?: boolean) => Promise<void>
 }
 
+function normalizeSessionForState(session: TerminalSession): TerminalSession {
+  return {
+    ...session,
+    visible: session.visible ?? session.role !== 'agent_command',
+    paused: session.paused ?? false,
+    takeoverMode: session.takeoverMode ?? null
+  }
+}
+
 export function useAgentSessions({
   selectedTopic
 }: {
@@ -35,6 +44,9 @@ export function useAgentSessions({
   const agentSessionIds = agentSessions.map((session) => session.id).join(',')
 
   useEffect(() => {
+    let cancelled = false
+    const selectedTopicId = selectedTopic?.id
+
     const unlistenAuth = window.api.onAgentAuthRequest(
       (requestId, command, riskLevel, reason, metadata) =>
         setPendingAuth({ requestId, command, riskLevel, reason, metadata })
@@ -50,6 +62,7 @@ export function useAgentSessions({
     })
 
     const unlistenTerminalShow = window.api.onAgentTerminalShow((data) => {
+      if (selectedTopicId && data.topicId !== selectedTopicId) return
       setAgentSessions((prev) => {
         const exists = prev.find((s) => s.id === data.id)
         if (exists) {
@@ -82,18 +95,12 @@ export function useAgentSessions({
     })
 
     const unlistenSessionCreated = window.api.onAgentSessionCreated((data) => {
+      if (selectedTopicId && data.topicId !== selectedTopicId) return
       setAgentSessions((prev) => {
         const exists = prev.find((s) => s.id === data.id)
-        if (exists) return prev
-        return [
-          ...prev,
-          {
-            ...data,
-            visible: true,
-            paused: data.paused ?? false,
-            takeoverMode: data.takeoverMode ?? null
-          }
-        ]
+        const nextSession = normalizeSessionForState(data)
+        if (exists) return prev.map((s) => (s.id === data.id ? { ...s, ...nextSession } : s))
+        return [...prev, nextSession]
       })
     })
 
@@ -101,10 +108,22 @@ export function useAgentSessions({
       setAgentSessions((prev) => prev.filter((s) => s.id !== id))
     })
 
-    const resetTimer = window.setTimeout(() => setAgentSessions([]), 0)
+    if (selectedTopicId) {
+      window.api
+        .getAgentSessions(selectedTopicId)
+        .then((sessions) => {
+          if (cancelled) return
+          setAgentSessions(sessions.map(normalizeSessionForState))
+        })
+        .catch(() => {
+          if (!cancelled) setAgentSessions([])
+        })
+    } else {
+      setAgentSessions([])
+    }
 
     return () => {
-      window.clearTimeout(resetTimer)
+      cancelled = true
       unlistenAuth()
       unlistenThinking()
       unlistenTerminalShow()
@@ -200,24 +219,7 @@ export function useAgentSessions({
   const handleCreateTerminal = useCallback(
     async (hostId: string) => {
       if (!selectedTopic) return
-      if (hostId === 'local') {
-        const session = await window.api.connectLocal(selectedTopic.id)
-        setAgentSessions((prev) => {
-          const exists = prev.find((s) => s.id === session.id)
-          if (exists) return prev
-          return [
-            ...prev,
-            {
-              ...session,
-              visible: true,
-              paused: session.paused ?? false,
-              takeoverMode: session.takeoverMode ?? null
-            }
-          ]
-        })
-      } else {
-        await window.api.createAgentTerminal(selectedTopic.id, hostId)
-      }
+      await window.api.createAgentTerminal(selectedTopic.id, hostId)
     },
     [selectedTopic]
   )

@@ -33,6 +33,7 @@ import type {
 } from '../shared/ipc/channels'
 import type {
   TerminalCommandCompletionRequest,
+  TerminalCommandCompletionUiEvent,
   TerminalCommandDraftRequest
 } from '../shared/terminal-command-assist'
 
@@ -469,6 +470,8 @@ const api: Record<string, unknown> = {
     ipcRenderer.invoke('terminal-command-assist:draft', request),
   completeTerminalCommand: (request: TerminalCommandCompletionRequest) =>
     ipcRenderer.invoke('terminal-command-assist:complete', request),
+  logTerminalCompletionUiEvent: (event: TerminalCommandCompletionUiEvent) =>
+    ipcRenderer.send('terminal-command-assist:ui-event', event),
 
   pfCreate: (hostId: string, localPort: number, remoteHost: string, remotePort: number) =>
     ipcRenderer.invoke('pf:create', hostId, localPort, remoteHost, remotePort),
@@ -544,7 +547,9 @@ flatApi.terminal = {
   draftCommand: (request: TerminalCommandDraftRequest) =>
     typedIpc.invoke('terminal-command-assist:draft', request),
   completeCommand: (request: TerminalCommandCompletionRequest) =>
-    typedIpc.invoke('terminal-command-assist:complete', request)
+    typedIpc.invoke('terminal-command-assist:complete', request),
+  logCompletionUiEvent: (event: TerminalCommandCompletionUiEvent) =>
+    ipcRenderer.send('terminal-command-assist:ui-event', event)
 }
 
 flatApi.settings = {

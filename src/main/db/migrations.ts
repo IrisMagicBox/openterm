@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import { SYSTEM_MODELS, SYSTEM_PROVIDERS, getModelApiId } from '../../shared/provider-presets'
+import { WORKSPACE_TERMINALS_TOPIC_ID } from '../../shared/constants'
 import { BASE_SCHEMA_SQL } from './schema'
 
 type Migration = {
@@ -202,6 +203,34 @@ const migrations: Migration[] = [
           )
       `
       ).run()
+    }
+  },
+  {
+    id: '011_terminal_completion_mode',
+    run: (db) => {
+      addColumnIfMissing(db, 'model_settings', 'terminalCompletionMode', "TEXT DEFAULT 'prompt'")
+      db.prepare(
+        "UPDATE model_settings SET terminalCompletionMode = 'prompt' WHERE terminalCompletionMode IS NULL OR terminalCompletionMode = ''"
+      ).run()
+    }
+  },
+  {
+    id: '012_terminal_session_visibility',
+    run: (db) => {
+      addColumnIfMissing(db, 'terminal_sessions', 'visible', 'INTEGER')
+      db.prepare(
+        "UPDATE terminal_sessions SET visible = CASE WHEN role = 'agent_command' THEN 0 ELSE 1 END WHERE visible IS NULL"
+      ).run()
+    }
+  },
+  {
+    id: '013_workspace_terminals_topic',
+    run: (db) => {
+      const now = Date.now()
+      db.prepare(
+        `INSERT OR IGNORE INTO topics (id, title, hostIds, lastMessageAt, createdAt)
+         VALUES (?, ?, ?, ?, ?)`
+      ).run(WORKSPACE_TERMINALS_TOPIC_ID, 'Workspace Terminals', '[]', now, now)
     }
   }
 ]

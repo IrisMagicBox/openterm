@@ -1,6 +1,8 @@
 export {
   buildTerminalCommandCompletionMessages,
   buildTerminalCommandDraftMessages,
+  DEFAULT_TERMINAL_COMPLETION_MODE,
+  normalizeTerminalCompletionMode,
   sanitizeTerminalCommandCompletion,
   sanitizeTerminalCommandDraft
 } from '../../../shared/terminal-command-assist'

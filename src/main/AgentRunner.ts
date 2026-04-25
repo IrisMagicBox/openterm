@@ -37,7 +37,7 @@ export interface AgentContext {
     hostId: string,
     hostAlias: string,
     name?: string,
-    options?: { role?: TerminalSessionRole }
+    options?: { role?: TerminalSessionRole; visible?: boolean }
   ) => Promise<string>
   requestAuthorization: (
     command: string,

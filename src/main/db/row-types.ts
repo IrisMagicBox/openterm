@@ -159,6 +159,7 @@ export interface TerminalSessionRow {
   hostId: string
   hostAlias: string
   role: string | null
+  visible: number | null
   status: string
   shellType: string | null
   shellIntegrationReady: number // 0 or 1
@@ -236,6 +237,7 @@ export interface ModelSettingsRow {
   apiKey: string
   baseURL: string
   model: string
+  terminalCompletionMode?: string | null
   updatedAt: number
 }
 

@@ -1,9 +1,14 @@
 import type { Host, TerminalSession } from '../../../shared/types'
+import { WORKSPACE_TERMINALS_TOPIC_ID } from '../../../shared/constants'
 import { LOCAL_HOST } from '../constants'
 import type { TerminalTab } from '../types'
 
 export function shouldMirrorSessionInTerminalTabs(session: TerminalSession): boolean {
-  return (session.role ?? 'agent_command') !== 'agent_command' && session.visible !== false
+  return (
+    session.topicId === WORKSPACE_TERMINALS_TOPIC_ID &&
+    (session.role ?? 'agent_command') !== 'agent_command' &&
+    session.visible !== false
+  )
 }
 
 export function terminalTabFromSession(session: TerminalSession, hosts: Host[]): TerminalTab {

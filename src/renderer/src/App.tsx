@@ -250,7 +250,6 @@ export default function App(): JSX.Element {
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
               setShowAddHost={setShowAddHost}
-              selectedTopic={selectedTopic}
               setSelectedHost={setSelectedHost}
               setTerminalSessionId={setTerminalSessionId}
               setTerminalTabs={setTerminalTabs}

@@ -224,6 +224,7 @@ export const mapTerminalSessionRow = (row: TerminalSessionRow): TerminalSession 
   hostId: row.hostId,
   hostAlias: row.hostAlias,
   role: (row.role as TerminalSession['role']) ?? 'user',
+  visible: row.visible == null ? row.role !== 'agent_command' : row.visible === 1,
   name: row.name ?? undefined,
   status: row.status as TerminalSession['status'],
   shellType: row.shellType ?? undefined,

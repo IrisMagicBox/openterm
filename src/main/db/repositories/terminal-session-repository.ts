@@ -11,14 +11,29 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
 
   createSession(session: TerminalSession): void {
     this.stmt(
-      `INSERT INTO terminal_sessions (id, topicId, hostId, hostAlias, role, status, shellType, shellIntegrationReady, createdAt, name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO terminal_sessions (id, topicId, hostId, hostAlias, role, visible, status, shellType, shellIntegrationReady, createdAt, name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` +
+        ` ON CONFLICT(id) DO UPDATE SET
+            topicId = excluded.topicId,
+            hostId = excluded.hostId,
+            hostAlias = excluded.hostAlias,
+            role = excluded.role,
+            visible = COALESCE(excluded.visible, terminal_sessions.visible, CASE WHEN excluded.role = 'agent_command' THEN 0 ELSE 1 END),
+            status = excluded.status,
+            shellType = COALESCE(excluded.shellType, terminal_sessions.shellType),
+            shellIntegrationReady = excluded.shellIntegrationReady,
+            closedAt = NULL,
+            name = COALESCE(excluded.name, terminal_sessions.name),
+            isDeleted = 0,
+            deletedAt = NULL,
+            deletedBy = NULL`
     ).run(
       session.id,
       session.topicId,
       session.hostId,
       session.hostAlias,
       session.role || 'user',
+      session.visible == null ? null : session.visible ? 1 : 0,
       session.status,
       session.shellType || null,
       session.shellIntegrationReady ? 1 : 0,
@@ -79,6 +94,10 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
 
   updateSessionName(id: string, name: string): void {
     this.stmt('UPDATE terminal_sessions SET name = ? WHERE id = ?').run(name, id)
+  }
+
+  updateSessionVisibility(id: string, visible: boolean): void {
+    this.stmt('UPDATE terminal_sessions SET visible = ? WHERE id = ?').run(visible ? 1 : 0, id)
   }
 
   closeSession(id: string, deletedBy: 'user' | 'agent' | 'system' = 'agent'): void {

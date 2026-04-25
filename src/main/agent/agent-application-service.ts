@@ -147,12 +147,13 @@ export class AgentApplicationService {
       webContents: this.webContents,
       agentService: this.getAgentService(),
       ensureSession: async (hostId, hostAlias, name, options) => {
+        const role = options?.role ?? 'agent_command'
         const session = await this.sessions.ensureSession(
           topicId,
           hostId,
           hostAlias,
           name,
-          true,
+          options?.visible ?? role !== 'agent_command',
           options
         )
         return session.id

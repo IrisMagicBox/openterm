@@ -38,7 +38,7 @@ describe('terminal command assist prompt', () => {
     expect(sanitizeTerminalCommandDraft('$ git status\n')).toBe('git status')
   })
 
-  it('builds a model-backed tab completion prompt for the current input', () => {
+  it('builds a prompt-mode model completion prompt for the current input', () => {
     const messages = buildTerminalCommandCompletionMessages({
       currentInput: 'kuebclt ge',
       session: {
@@ -49,32 +49,169 @@ describe('terminal command assist prompt', () => {
         role: 'user'
       },
       historyCommands: ['kubectl get pods -n default'],
+      executionContext: [
+        {
+          command: 'kubectl get pods -n default',
+          source: 'user',
+          output: 'web-7d9f Running\napi-55c CrashLoopBackOff',
+          exitCode: 0,
+          cwd: '/Users/dev/app'
+        }
+      ],
       screen: 'dev@local % kubectl get pods'
     })
     const prompt = messages.map((message) => message.content).join('\n')
 
-    expect(prompt).toContain('Tab 命令补全引擎')
+    expect(prompt).toContain('terminal command completion engine')
     expect(prompt).toContain('currentInput:')
     expect(prompt).toContain('kuebclt ge')
-    expect(prompt).toContain('kuebclt ge -> kubectl get pods')
-    expect(prompt).toContain('docker im -> docker images')
-    expect(prompt).toContain('{"command":"...","confidence":"high","reason":"..."}')
-    expect(prompt).toContain('{"command":"","confidence":"low","reason":"uncertain"}')
+    expect(prompt).toContain('currentInput=kuebclt ge')
+    expect(prompt).toContain('currentInput=docker im')
+    expect(prompt).toContain('Return exactly one terminal completion XML block')
+    expect(prompt).toContain('<terminal_completion>')
+    expect(prompt).toContain('<command>kubectl get pods</command>')
+    expect(prompt).toContain('最近终端执行上下文')
+    expect(prompt).toContain('api-55c CrashLoopBackOff')
+    expect(prompt).toContain('cwd=/Users/dev/app')
+    expect(prompt).toContain('Return only the XML block')
+  })
+
+  it('builds a function-mode model completion prompt for the current input', () => {
+    const messages = buildTerminalCommandCompletionMessages(
+      {
+        currentInput: 'docker im',
+        historyCommands: ['docker images'],
+        screen: 'dev@local % docker im'
+      },
+      'function'
+    )
+    const prompt = messages.map((message) => message.content).join('\n')
+
+    expect(prompt).toContain('Use the complete_terminal_command function')
+    expect(prompt).toContain('return exactly one JSON object')
+    expect(prompt).toContain('Use the function call when available')
   })
 
   it('extracts structured model completion output', () => {
     expect(
       sanitizeTerminalCommandCompletion(
-        '```json\n{"command":"kubectl get pods","confidence":"high","reason":"kubectl context"}\n```'
+        '{"command":"kubectl get pods","confidence":"high","reason":"kubectl context"}',
+        'kubectl get'
       )
     ).toEqual({
       command: 'kubectl get pods',
       confidence: 'high',
       reason: 'kubectl context'
     })
+    expect(
+      sanitizeTerminalCommandCompletion(
+        '<terminal_completion><command>docker images</command><confidence>high</confidence><reason>history</reason></terminal_completion>',
+        'docker im'
+      )
+    ).toEqual({
+      command: 'docker images',
+      confidence: 'high',
+      reason: 'history'
+    })
+    expect(sanitizeTerminalCommandCompletion('git status', 'git st')).toEqual({
+      command: '',
+      confidence: 'low',
+      reason: 'invalid-format'
+    })
     expect(sanitizeTerminalCommandCompletion('not sure')).toEqual({
-      command: 'not sure',
-      confidence: 'medium'
+      command: '',
+      confidence: 'low',
+      reason: 'invalid-format'
+    })
+    expect(sanitizeTerminalCommandCompletion('Let me analyze the context:')).toEqual({
+      command: '',
+      confidence: 'low',
+      reason: 'invalid-format'
+    })
+    expect(
+      sanitizeTerminalCommandCompletion(
+        '用户正在输入 "docker image"，这是 Docker 命令的一部分。用户的历史命令中有多次 `docker images`。',
+        'docker image'
+      )
+    ).toEqual({
+      command: '',
+      confidence: 'low',
+      reason: 'invalid-format'
+    })
+    expect(
+      sanitizeTerminalCommandCompletion(
+        'The goal is to complete the command to the most likely intended command, which is `docker images`.',
+        'docker im'
+      )
+    ).toEqual({
+      command: '',
+      confidence: 'low',
+      reason: 'invalid-format'
+    })
+    expect(
+      sanitizeTerminalCommandCompletion(
+        'Given the history, the user might be trying to type `docker` or a command related to Docker.',
+        'doc'
+      )
+    ).toEqual({
+      command: '',
+      confidence: 'low',
+      reason: 'invalid-format'
+    })
+    expect(
+      sanitizeTerminalCommandCompletion(
+        'The user typed `g`, which is likely the start of a command like `grep`.',
+        'docker images | g'
+      )
+    ).toEqual({
+      command: '',
+      confidence: 'low',
+      reason: 'invalid-format'
+    })
+    expect(
+      sanitizeTerminalCommandCompletion(
+        '```json\n{"command":"docker images","confidence":"high"}\n```',
+        'docker im'
+      )
+    ).toEqual({
+      command: '',
+      confidence: 'low',
+      reason: 'invalid-format'
+    })
+    expect(
+      sanitizeTerminalCommandCompletion(
+        '{"command":"用户正在输入 \\"docker image\\"，这是 Docker 命令的一部分。","confidence":"medium"}',
+        'docker image'
+      )
+    ).toEqual({
+      command: '',
+      confidence: 'low',
+      reason: 'invalid-command'
+    })
+  })
+
+  it('parses function-mode tool-call arguments with JSON only', () => {
+    expect(
+      sanitizeTerminalCommandCompletion(
+        '{"command":"docker images","confidence":"high","reason":"tool call"}',
+        'docker im',
+        { formats: ['json'] }
+      )
+    ).toEqual({
+      command: 'docker images',
+      confidence: 'high',
+      reason: 'tool call'
+    })
+    expect(
+      sanitizeTerminalCommandCompletion(
+        '<terminal_completion><command>docker images</command><confidence>high</confidence></terminal_completion>',
+        'docker im',
+        { formats: ['json'] }
+      )
+    ).toEqual({
+      command: '',
+      confidence: 'low',
+      reason: 'invalid-format'
     })
   })
 })

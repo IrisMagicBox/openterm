@@ -316,11 +316,14 @@ export interface StructuredObservation {
   diskPath?: string
 }
 
+export type TerminalCompletionBackendMode = 'prompt' | 'function'
+
 export interface ModelSettings {
   id: string
   apiKey: string
   baseURL: string
   model: string
+  terminalCompletionMode: TerminalCompletionBackendMode
   updatedAt: number
 }
 
