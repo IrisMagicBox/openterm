@@ -131,7 +131,9 @@ export interface AgentThinkingPayload {
 
 export interface TopicUpdatedPayload {
   topicId: string
-  title: string
+  title?: string
+  topic?: Topic
+  deleted?: boolean
 }
 
 export interface HostUpdatedPayload {

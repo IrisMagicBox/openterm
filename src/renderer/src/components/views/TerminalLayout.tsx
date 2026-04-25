@@ -64,15 +64,25 @@ export function TerminalLayout({
   const syncedSessionIds = useRef<Set<string>>(new Set())
   const openTerminalRef = useRef(paneManager.openTerminal)
   const registerTerminalRef = useRef(paneManager.registerTab)
+  const closeTerminalRef = useRef(paneManager.closeTerminalTab)
   const lastFocusRequestId = useRef<number | null>(null)
   const lastCloseRequestId = useRef<number | null>(null)
 
   useEffect(() => {
     openTerminalRef.current = paneManager.openTerminal
     registerTerminalRef.current = paneManager.registerTab
-  }, [paneManager.openTerminal, paneManager.registerTab])
+    closeTerminalRef.current = paneManager.closeTerminalTab
+  }, [paneManager.openTerminal, paneManager.registerTab, paneManager.closeTerminalTab])
 
   useEffect(() => {
+    const nextSessionIds = new Set(legacyTabs.map((tab) => tab.sessionId))
+    for (const sessionId of Array.from(syncedSessionIds.current)) {
+      if (!nextSessionIds.has(sessionId)) {
+        syncedSessionIds.current.delete(sessionId)
+        closeTerminalRef.current(sessionId)
+      }
+    }
+
     for (const tab of legacyTabs) {
       if (!syncedSessionIds.current.has(tab.sessionId)) {
         syncedSessionIds.current.add(tab.sessionId)

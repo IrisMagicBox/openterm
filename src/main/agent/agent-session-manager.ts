@@ -1,6 +1,6 @@
 import type { WebContents } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
-import { hostDB, memoryDB, topicDB } from '../db'
+import { hostDB, memoryDB, terminalSessionDB, topicDB } from '../db'
 import { commandExecutor } from '../terminal'
 import { createLocalSession } from '../local-terminal'
 import type { AgentSession, CreateAgentSessionFn } from './agent-service-types'
@@ -78,7 +78,11 @@ export class AgentSessionManager {
 
   async renameTerminal(id: string, name: string): Promise<void> {
     const session = this.findSession(id)
-    if (session) session.name = name
+    if (session) {
+      session.name = name
+      this.webContents?.send('agent:session-created', this.withControlState(session))
+    }
+    terminalSessionDB.updateSessionName(id, name)
   }
 
   async toggleTerminalPin(id: string, isPinned: boolean): Promise<void> {
@@ -220,6 +224,10 @@ export class AgentSessionManager {
       }
     }
 
+    if (session.name) {
+      terminalSessionDB.updateSessionName(session.id, session.name)
+    }
+
     await this.registerSession(session)
     return session
   }
@@ -258,7 +266,9 @@ export class AgentSessionManager {
     local: boolean
   ): string {
     if (role === 'agent_command') {
-      return existingCount > 0 ? `Agent 执行-${hostAlias}-${existingCount + 1}` : `Agent 执行-${hostAlias}`
+      return existingCount > 0
+        ? `Agent 执行-${hostAlias}-${existingCount + 1}`
+        : `Agent 执行-${hostAlias}`
     }
     if (role === 'interactive') return `交互终端-${existingCount + 1}`
     return local ? `本地终端-${existingCount + 1}` : `终端-${existingCount + 1}`

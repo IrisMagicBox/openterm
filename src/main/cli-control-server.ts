@@ -48,6 +48,7 @@ import {
   type CliControlRequest,
   type CliControlResponse
 } from './cli-control-protocol'
+import type { Topic } from '../shared/types'
 
 let server: net.Server | null = null
 
@@ -139,46 +140,46 @@ async function handleRequest(
       hostDB.deleteHost(readString(args, 'id'))
       return { ok: true }
     case 'topics.create':
-      return topicDB.createTopic(
-        readString(args, 'title'),
-        readStringArray(args, 'hostIds', ['local'])
+      return notifyTopicUpdated(
+        agentService,
+        topicDB.createTopic(readString(args, 'title'), readStringArray(args, 'hostIds', ['local']))
       )
-    case 'topics.rename':
-      topicDB.updateTopicTitle(resolveTopicId(readString(args, 'id')), readString(args, 'title'))
-      return topicDB.getTopicById(resolveTopicId(readString(args, 'id')))
-    case 'topics.delete':
-      topicDB.deleteTopic(resolveTopicId(readString(args, 'id')))
+    case 'topics.rename': {
+      const topicId = resolveTopicId(readString(args, 'id'))
+      topicDB.updateTopicTitle(topicId, readString(args, 'title'))
+      return notifyTopicUpdated(agentService, topicDB.getTopicById(topicId))
+    }
+    case 'topics.delete': {
+      const topicId = resolveTopicId(readString(args, 'id'))
+      topicDB.deleteTopic(topicId)
+      agentService.notifyTopicUpdated({ topicId, deleted: true })
       return { ok: true }
-    case 'topics.model.set':
-      topicDB.updateTopicModel(
-        resolveTopicId(readString(args, 'id')),
-        readString(args, 'providerId'),
-        readString(args, 'modelId')
-      )
-      return topicDB.getTopicById(resolveTopicId(readString(args, 'id')))
+    }
+    case 'topics.model.set': {
+      const topicId = resolveTopicId(readString(args, 'id'))
+      topicDB.updateTopicModel(topicId, readString(args, 'providerId'), readString(args, 'modelId'))
+      return notifyTopicUpdated(agentService, topicDB.getTopicById(topicId))
+    }
     case 'topics.hosts.list':
       return agentService.getTopicHosts(resolveTopicId(readString(args, 'topicId')))
-    case 'topics.hosts.add':
-      await agentService.addHostToTopic(
-        resolveTopicId(readString(args, 'topicId')),
-        readString(args, 'hostId')
-      )
-      return topicDB.getTopicById(resolveTopicId(readString(args, 'topicId')))
-    case 'topics.hosts.remove':
-      await agentService.removeHostFromTopic(
-        resolveTopicId(readString(args, 'topicId')),
-        readString(args, 'hostId')
-      )
-      return topicDB.getTopicById(resolveTopicId(readString(args, 'topicId')))
-    case 'topics.hosts.set':
-      topicDB.updateTopicHosts(
-        resolveTopicId(readString(args, 'topicId')),
-        readStringArray(args, 'hostIds')
-      )
-      return topicDB.getTopicById(resolveTopicId(readString(args, 'topicId')))
+    case 'topics.hosts.add': {
+      const topicId = resolveTopicId(readString(args, 'topicId'))
+      await agentService.addHostToTopic(topicId, readString(args, 'hostId'))
+      return notifyTopicUpdated(agentService, topicDB.getTopicById(topicId))
+    }
+    case 'topics.hosts.remove': {
+      const topicId = resolveTopicId(readString(args, 'topicId'))
+      await agentService.removeHostFromTopic(topicId, readString(args, 'hostId'))
+      return notifyTopicUpdated(agentService, topicDB.getTopicById(topicId))
+    }
+    case 'topics.hosts.set': {
+      const topicId = resolveTopicId(readString(args, 'topicId'))
+      topicDB.updateTopicHosts(topicId, readStringArray(args, 'hostIds'))
+      return notifyTopicUpdated(agentService, topicDB.getTopicById(topicId))
+    }
     case 'chat.send': {
       const content = readString(args, 'content')
-      const topicId = getOrCreateTopicId(args)
+      const topicId = getOrCreateTopicId(args, agentService)
       return agentService.handleMessage(topicId, content)
     }
     case 'runs.list':
@@ -683,7 +684,17 @@ function getTopicIds(topicIdInput: unknown): string[] {
   return topicDB.getTopics().map((topic) => topic.id)
 }
 
-function getOrCreateTopicId(args: Record<string, unknown>): string {
+function notifyTopicUpdated<T extends Topic | undefined | null>(
+  agentService: AgentService,
+  topic: T
+): T {
+  if (topic) {
+    agentService.notifyTopicUpdated({ topicId: topic.id, title: topic.title, topic })
+  }
+  return topic
+}
+
+function getOrCreateTopicId(args: Record<string, unknown>, agentService: AgentService): string {
   const topicId = typeof args.topicId === 'string' ? args.topicId : undefined
   if (topicId && topicId !== 'latest') return topicId
   if (topicId === 'latest') {
@@ -699,7 +710,9 @@ function getOrCreateTopicId(args: Record<string, unknown>): string {
   const hostIds = Array.isArray(args.hostIds)
     ? args.hostIds.filter((hostId): hostId is string => typeof hostId === 'string')
     : ['local']
-  return topicDB.createTopic(title, hostIds.length > 0 ? hostIds : ['local']).id
+  const topic = topicDB.createTopic(title, hostIds.length > 0 ? hostIds : ['local'])
+  notifyTopicUpdated(agentService, topic)
+  return topic.id
 }
 
 function resolveSessionId(args: Record<string, unknown>): string {

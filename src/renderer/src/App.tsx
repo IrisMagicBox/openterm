@@ -15,6 +15,11 @@ import { useHosts } from './hooks/useHosts'
 import { useTopics } from './hooks/useTopics'
 import { useAgentSessions } from './hooks/useAgentSessions'
 import { useTerminalManager } from './hooks/useTerminalManager'
+import {
+  shouldMirrorSessionInTerminalTabs,
+  terminalTabFromSession,
+  upsertTerminalTab
+} from './lib/terminal-tabs'
 import { View, WorkspaceWindowItem } from './types'
 import type { Topic } from '../../shared/types'
 
@@ -122,6 +127,40 @@ export default function App(): JSX.Element {
     loadHosts()
     loadTopics()
   }, [loadHosts, loadTopics])
+
+  useEffect(() => {
+    const unlistenCreated = window.api.onAgentSessionCreated((session) => {
+      if (!shouldMirrorSessionInTerminalTabs(session)) return
+
+      const tab = terminalTabFromSession(session, hosts)
+      setSelectedHost(tab.host)
+      setTerminalSessionId(session.id)
+      setTerminalTabs((prev) => {
+        const next = upsertTerminalTab(prev, tab)
+        const tabIndex = next.findIndex((item) => item.sessionId === session.id)
+        setActiveTerminalTabIndex(tabIndex >= 0 ? tabIndex : 0)
+        return next
+      })
+    })
+
+    const unlistenClosed = window.api.onAgentSessionClosed(({ id }) => {
+      setTerminalTabs((prev) => {
+        const next = prev.filter((tab) => tab.sessionId !== id)
+        if (next.length !== prev.length) {
+          setActiveTerminalTabIndex((index) =>
+            next.length === 0 ? 0 : Math.min(index, next.length - 1)
+          )
+        }
+        return next
+      })
+      setTerminalSessionId((prev) => (prev === id ? null : prev))
+    })
+
+    return () => {
+      unlistenCreated()
+      unlistenClosed()
+    }
+  }, [hosts, setActiveTerminalTabIndex, setSelectedHost, setTerminalSessionId, setTerminalTabs])
 
   const terminalWindows = useMemo<WorkspaceWindowItem[]>(
     () =>

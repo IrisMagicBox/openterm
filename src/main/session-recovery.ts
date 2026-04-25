@@ -3,7 +3,7 @@ import { createAgentSession } from './ssh'
 import { createLocalSession } from './local-terminal'
 import { getErrorMessage } from '../shared/errors'
 import { logger } from './logger'
-import type { TerminalSession } from '../shared/types'
+import type { TerminalSession, TerminalSessionRole } from '../shared/types'
 import { WebContents } from 'electron'
 import { agentService } from './agent'
 import { v4 as uuidv4 } from 'uuid'
@@ -31,15 +31,25 @@ export async function recoverSessions(webContents: WebContents): Promise<Recover
   for (const session of activeSessions) {
     try {
       let newSessionId: string | null = null
+      const role: TerminalSessionRole = session.role ?? 'agent_command'
 
       if (session.hostId === 'local') {
-        newSessionId = await createLocalSession(uuidv4(), session.topicId, webContents, true)
+        newSessionId = await createLocalSession(
+          uuidv4(),
+          session.topicId,
+          webContents,
+          role === 'agent_command',
+          role
+        )
           .then((s) => s.id)
           .catch(() => null)
       } else {
-        newSessionId = await createAgentSession(session.hostId, webContents, session.topicId).catch(
-          () => null
-        )
+        newSessionId = await createAgentSession(
+          session.hostId,
+          webContents,
+          session.topicId,
+          role
+        ).catch(() => null)
       }
 
       if (newSessionId) {
@@ -78,17 +88,20 @@ export function handleSessionRecovery(webContents: WebContents): void {
     const failed = results.filter((r) => !r.recovered)
     for (const res of recovered) {
       if (res.newSessionId) {
+        const role: TerminalSessionRole = res.originalSession.role ?? 'agent_command'
         agentService.registerSession({
           id: res.newSessionId,
           topicId: res.originalSession.topicId,
           hostId: res.originalSession.hostId,
           hostAlias: res.originalSession.hostAlias,
           status: 'active',
+          role,
           shellType: res.originalSession.shellType,
           shellIntegrationReady: false,
           createdAt: Date.now(),
           paused: false,
-          name: res.originalSession.name
+          name: res.originalSession.name,
+          visible: res.originalSession.visible ?? role !== 'agent_command'
         })
       }
     }

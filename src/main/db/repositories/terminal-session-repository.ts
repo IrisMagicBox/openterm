@@ -11,8 +11,8 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
 
   createSession(session: TerminalSession): void {
     this.stmt(
-      `INSERT INTO terminal_sessions (id, topicId, hostId, hostAlias, role, status, shellType, shellIntegrationReady, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO terminal_sessions (id, topicId, hostId, hostAlias, role, status, shellType, shellIntegrationReady, createdAt, name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       session.id,
       session.topicId,
@@ -22,7 +22,8 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
       session.status,
       session.shellType || null,
       session.shellIntegrationReady ? 1 : 0,
-      session.createdAt
+      session.createdAt,
+      session.name || null
     )
   }
 
@@ -31,18 +32,7 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
       | TerminalSessionRow
       | undefined
     if (!row) return undefined
-    return {
-      id: row.id,
-      topicId: row.topicId,
-      hostId: row.hostId,
-      hostAlias: row.hostAlias,
-      role: (row.role as TerminalSession['role']) ?? 'user',
-      status: row.status as TerminalSessionStatus,
-      shellType: row.shellType ?? undefined,
-      shellIntegrationReady: row.shellIntegrationReady === 1,
-      createdAt: row.createdAt,
-      closedAt: row.closedAt ?? undefined
-    }
+    return mapTerminalSessionRow(row)
   }
 
   getSessionsByTopic(topicId: string, includeDeleted = false): TerminalSession[] {
@@ -73,18 +63,7 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
     const rows = this.stmt(
       'SELECT * FROM terminal_sessions WHERE hostId = ? ORDER BY createdAt DESC'
     ).all(hostId) as TerminalSessionRow[]
-    return rows.map((row) => ({
-      id: row.id,
-      topicId: row.topicId,
-      hostId: row.hostId,
-      hostAlias: row.hostAlias,
-      role: (row.role as TerminalSession['role']) ?? 'user',
-      status: row.status as TerminalSessionStatus,
-      shellType: row.shellType ?? undefined,
-      shellIntegrationReady: row.shellIntegrationReady === 1,
-      createdAt: row.createdAt,
-      closedAt: row.closedAt ?? undefined
-    }))
+    return rows.map(mapTerminalSessionRow)
   }
 
   updateSessionStatus(id: string, status: TerminalSessionStatus): void {

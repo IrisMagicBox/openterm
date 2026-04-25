@@ -307,7 +307,14 @@ declare global {
         approved: boolean,
         alwaysAllow?: boolean
       ) => Promise<void>
-      onTopicUpdated: (callback: (data: { topicId: string; title: string }) => void) => () => void
+      onTopicUpdated: (
+        callback: (data: {
+          topicId: string
+          title?: string
+          topic?: Topic
+          deleted?: boolean
+        }) => void
+      ) => () => void
       onAgentStep: (callback: (step: Message) => void) => () => void
       onAgentRunCreated: (callback: (run: AgentRun) => void) => () => void
       onAgentRunUpdated: (callback: (run: AgentRun) => void) => () => void

@@ -1,11 +1,35 @@
 import { useState, useEffect, useCallback } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import type { Topic } from '../../../shared/types'
 
 interface UseTopicsConfig {
   loadHosts: () => Promise<void>
 }
 
-export function useTopics(config: UseTopicsConfig) {
+interface UseTopicsResult {
+  topics: Topic[]
+  setTopics: Dispatch<SetStateAction<Topic[]>>
+  selectedTopic: Topic | null
+  setSelectedTopic: Dispatch<SetStateAction<Topic | null>>
+  editingTopicId: string | null
+  setEditingTopicId: Dispatch<SetStateAction<string | null>>
+  editingTopicTitle: string
+  setEditingTopicTitle: Dispatch<SetStateAction<string>>
+  showManageHosts: boolean
+  setShowManageHosts: Dispatch<SetStateAction<boolean>>
+  prefilledText: string
+  setPrefilledText: Dispatch<SetStateAction<string>>
+  loadTopics: () => Promise<void>
+  handleCreateTopic: (initialText?: string, initialHostIds?: string[]) => Promise<Topic>
+  handleStartRenameTopic: (topic: Topic) => void
+  handleCommitRenameTopic: () => Promise<void>
+  handleDeleteTopic: (topicId: string) => Promise<void>
+  handleAddHostToTopic: (hostId: string) => Promise<void>
+  handleRemoveHostFromTopic: (hostId: string) => Promise<void>
+  handleUpdateTopicModel: (topicId: string, providerId: string, modelId: string) => Promise<void>
+}
+
+export function useTopics(config: UseTopicsConfig): UseTopicsResult {
   const { loadHosts } = config
 
   const [topics, setTopics] = useState<Topic[]>([])
@@ -104,17 +128,38 @@ export function useTopics(config: UseTopicsConfig) {
     async (topicId: string, providerId: string, modelId: string) => {
       await window.api.updateTopicModel(topicId, providerId, modelId)
       setTopics((prev) =>
-        prev.map((t) => (t.id === topicId ? { ...t, selectedProviderId: providerId, selectedModelId: modelId } : t))
+        prev.map((t) =>
+          t.id === topicId ? { ...t, selectedProviderId: providerId, selectedModelId: modelId } : t
+        )
       )
       if (selectedTopic?.id === topicId) {
-        setSelectedTopic((prev) => (prev ? { ...prev, selectedProviderId: providerId, selectedModelId: modelId } : null))
+        setSelectedTopic((prev) =>
+          prev ? { ...prev, selectedProviderId: providerId, selectedModelId: modelId } : null
+        )
       }
     },
     [selectedTopic]
   )
 
   useEffect(() => {
-    const unlistenTopic = window.api.onTopicUpdated(({ topicId, title }) => {
+    const unlistenTopic = window.api.onTopicUpdated(({ topicId, title, topic, deleted }) => {
+      if (deleted) {
+        setTopics((prev) => prev.filter((t) => t.id !== topicId))
+        setSelectedTopic((prev) => (prev?.id === topicId ? null : prev))
+        return
+      }
+
+      if (topic) {
+        setTopics((prev) => {
+          const exists = prev.some((t) => t.id === topic.id)
+          if (exists) return prev.map((t) => (t.id === topic.id ? topic : t))
+          return [topic, ...prev]
+        })
+        if (selectedTopic?.id === topic.id) setSelectedTopic(topic)
+        return
+      }
+
+      if (!title) return
       setTopics((prev) => prev.map((t) => (t.id === topicId ? { ...t, title } : t)))
       if (selectedTopic?.id === topicId) {
         setSelectedTopic((prev) => (prev ? { ...prev, title } : null))

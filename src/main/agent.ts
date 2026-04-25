@@ -1,5 +1,6 @@
 import type { WebContents } from 'electron'
 import type { AgentRun, Host, Message, TerminalSessionRole } from '../shared/types'
+import type { TopicUpdatedPayload } from '../shared/ipc/channels'
 import type { IAgentService } from './AgentRunner'
 import { AgentApplicationService } from './agent/agent-application-service'
 import { AgentIpcController } from './agent/agent-ipc-controller'
@@ -10,6 +11,7 @@ import type { AgentSession, CreateAgentSessionFn } from './agent/agent-service-t
 export type { AgentSession } from './agent/agent-service-types'
 
 export class AgentService implements IAgentService {
+  private webContents?: WebContents
   private readonly sessions = new AgentSessionManager()
   private readonly approvals = new ApprovalBroker()
   private readonly application = new AgentApplicationService(
@@ -20,9 +22,14 @@ export class AgentService implements IAgentService {
   private readonly ipc = new AgentIpcController(this)
 
   setWebContents(webContents: WebContents): void {
+    this.webContents = webContents
     this.sessions.setWebContents(webContents)
     this.approvals.setWebContents(webContents)
     this.application.setWebContents(webContents)
+  }
+
+  notifyTopicUpdated(payload: TopicUpdatedPayload): void {
+    this.webContents?.send('topic:updated', payload)
   }
 
   setCreateAgentSession(fn: CreateAgentSessionFn | null): void {
