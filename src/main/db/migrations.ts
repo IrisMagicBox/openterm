@@ -187,6 +187,22 @@ const migrations: Migration[] = [
     run: (db) => {
       addColumnIfMissing(db, 'agent_runs', 'metadata', 'TEXT')
     }
+  },
+  {
+    id: '010_remove_coreshub_preset_models',
+    run: (db) => {
+      db.prepare(
+        `
+        DELETE FROM models
+        WHERE providerId = 'coreshub'
+          AND (
+            (id = 'coreshub:gpt-4o-mini' AND providerModelId = 'gpt-4o-mini' AND name = 'GPT-4o mini')
+            OR
+            (id = 'coreshub:deepseek-chat' AND providerModelId = 'deepseek-chat' AND name = 'DeepSeek Chat')
+          )
+      `
+      ).run()
+    }
   }
 ]
 

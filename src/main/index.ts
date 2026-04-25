@@ -57,6 +57,23 @@ function createWindow(): void {
     shell.openExternal(details.url)
     return { action: 'deny' as const }
   })
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (!input.meta && !input.control) return
+    if (input.alt) return
+
+    const key = input.key.toLowerCase()
+    const code = input.code
+    const isZoomIn = key === '=' || key === '+' || code === 'Equal' || code === 'NumpadAdd'
+    const isZoomOut = key === '-' || key === '_' || code === 'Minus' || code === 'NumpadSubtract'
+    const isZoomReset = key === '0' || code === 'Digit0' || code === 'Numpad0'
+
+    if (!isZoomIn && !isZoomOut && !isZoomReset) return
+
+    event.preventDefault()
+    mainWindow.webContents.send('app:zoom-shortcut', {
+      direction: isZoomIn ? 'in' : isZoomOut ? 'out' : 'reset'
+    })
+  })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL'])
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])

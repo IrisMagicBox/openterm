@@ -21,6 +21,12 @@ import type {
   GlobalMemoryFact,
   GlobalMemoryFactCategory
 } from '../types'
+import type {
+  TerminalCommandCompletionRequest,
+  TerminalCommandCompletionResult,
+  TerminalCommandDraftRequest,
+  TerminalCommandDraftResult
+} from '../terminal-command-assist'
 
 export interface SSHAgentExecuteResult {
   content: string
@@ -338,6 +344,14 @@ export interface IpcInvokeChannels {
   'sftp:close': { payload: [sessionId: string]; result: boolean }
 
   'search-commands': { payload: [query: string, limit?: number]; result: CommandSearchResult[] }
+  'terminal-command-assist:draft': {
+    payload: [request: TerminalCommandDraftRequest]
+    result: TerminalCommandDraftResult
+  }
+  'terminal-command-assist:complete': {
+    payload: [request: TerminalCommandCompletionRequest]
+    result: TerminalCommandCompletionResult
+  }
 
   'pf:create': {
     payload: [hostId: string, localPort: number, remoteHost: string, remotePort: number]

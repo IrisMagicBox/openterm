@@ -28,6 +28,9 @@
     --workspace-border: 226 228 224;
     --workspace-foreground: 33 37 43;
     --workspace-muted-foreground: 119 124 128;
+
+    --chat-text-size: 14px;
+    --chat-line-height: 25px;
   }
 
   * {

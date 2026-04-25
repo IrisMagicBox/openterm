@@ -25,6 +25,12 @@ import type {
   RecoverableSession,
   TerminalControlStatePayload
 } from '../shared/ipc/channels'
+import type {
+  TerminalCommandCompletionRequest,
+  TerminalCommandCompletionResult,
+  TerminalCommandDraftRequest,
+  TerminalCommandDraftResult
+} from '../shared/terminal-command-assist'
 
 declare global {
   interface Window {
@@ -112,6 +118,10 @@ declare global {
         ) => () => void
         onSSHData: (id: string, callback: (data: string) => void) => () => void
         onSSHClosed: (id: string, callback: () => void) => () => void
+        draftCommand: (request: TerminalCommandDraftRequest) => Promise<TerminalCommandDraftResult>
+        completeCommand: (
+          request: TerminalCommandCompletionRequest
+        ) => Promise<TerminalCommandCompletionResult>
       }
       settings: {
         getModelSettings: () => Promise<ModelSettings>
@@ -320,6 +330,9 @@ declare global {
       onAgentRunUpdated: (callback: (run: AgentRun) => void) => () => void
       onAgentPartCreated: (callback: (part: AgentPart) => void) => () => void
       onAgentPartUpdated: (callback: (part: AgentPart) => void) => () => void
+      onZoomShortcut: (
+        callback: (data: { direction: 'in' | 'out' | 'reset' }) => void
+      ) => () => void
       onAgentThinking: (
         callback: (data: { topicId: string; thinking: boolean }) => void
       ) => () => void
@@ -464,6 +477,12 @@ declare global {
         query: string,
         limit?: number
       ) => Promise<{ content: string; source: string; hostId: string; timestamp: number }[]>
+      draftTerminalCommand: (
+        request: TerminalCommandDraftRequest
+      ) => Promise<TerminalCommandDraftResult>
+      completeTerminalCommand: (
+        request: TerminalCommandCompletionRequest
+      ) => Promise<TerminalCommandCompletionResult>
 
       // Port Forwarding APIs
       pfCreate: (

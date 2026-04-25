@@ -30,7 +30,7 @@ vi.mock('../logger', () => ({
 }))
 
 import { classifyTerminalScreen, commandExecutor } from '../terminal'
-import { terminalSessionDB } from '../db'
+import { terminalIODB, terminalSessionDB } from '../db'
 
 function createFakeStream(): { write: (data: string) => void } {
   return {
@@ -128,6 +128,57 @@ describe('CommandExecutor shell integration parsing', () => {
     })
   })
 
+  it('passes tab input through to the shell for native completion', async () => {
+    const sessionId = `session-${Date.now()}-tab-completion`
+    const stream = createFakeStream()
+
+    await commandExecutor.createSession(
+      sessionId,
+      'topic-1',
+      'local',
+      'Local',
+      stream as never,
+      undefined,
+      false
+    )
+
+    commandExecutor.handleUserInput(sessionId, 'gi', 'topic-1')
+    commandExecutor.handleUserInput(sessionId, '\t', 'topic-1')
+
+    expect(stream.write).toHaveBeenCalledWith('gi')
+    expect(stream.write).toHaveBeenCalledWith('\t')
+  })
+
+  it('records a command draft inserted after clearing the current line', async () => {
+    const sessionId = `session-${Date.now()}-command-draft`
+    const stream = createFakeStream()
+    vi.mocked(terminalIODB.createIO).mockClear()
+
+    await commandExecutor.createSession(
+      sessionId,
+      'topic-1',
+      'local',
+      'Local',
+      stream as never,
+      undefined,
+      false
+    )
+
+    commandExecutor.handleUserInput(sessionId, 'partial', 'topic-1')
+    commandExecutor.handleUserInput(sessionId, '\x15npm test', 'topic-1')
+    commandExecutor.handleUserInput(sessionId, '\r', 'topic-1')
+
+    expect(stream.write).toHaveBeenCalledWith('\x15npm test')
+    expect(terminalIODB.createIO).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId,
+        topicId: 'topic-1',
+        source: 'user',
+        content: 'npm test'
+      })
+    )
+  })
+
   it('blocks agent input during manual pause until the user resumes', async () => {
     const sessionId = `session-${Date.now()}-manual-pause`
     const stream = createFakeStream()
@@ -207,9 +258,16 @@ describe('CommandExecutor shell integration parsing', () => {
       false
     )
 
-    const result = await commandExecutor.executeAgentCommand(sessionId, 'sleep 10', 'topic-1', undefined, undefined, {
-      timeoutMs: 50
-    })
+    const result = await commandExecutor.executeAgentCommand(
+      sessionId,
+      'sleep 10',
+      'topic-1',
+      undefined,
+      undefined,
+      {
+        timeoutMs: 50
+      }
+    )
 
     expect(stream.write).toHaveBeenCalledWith('sleep 10\n')
     expect(stream.write).toHaveBeenCalledWith('\x03')

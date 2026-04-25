@@ -4,8 +4,7 @@ import {
   Terminal as TerminalIcon,
   CheckCircle2,
   Zap,
-  Bot,
-  User
+  Loader2
 } from 'lucide-react'
 import { Message, Host } from '../../../../shared/types'
 import logo from '../../assets/logo.png'
@@ -25,120 +24,111 @@ export function MessageBubble({
   onToggleThought
 }: MessageBubbleProps): React.ReactElement {
   const msg = message
+  const isExpanded = !!expandedThoughts[msg.id]
+
+  if (msg.role === 'user') {
+    return (
+      <div className="mx-auto flex w-full max-w-[920px] justify-end">
+        <div className="max-w-[74%] cursor-auto select-text rounded-[24px] bg-black/[0.055] px-5 py-3 text-[var(--chat-text-size)] leading-[var(--chat-line-height)] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] no-drag">
+          <div className="whitespace-pre-wrap">{msg.content}</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (msg.role === 'tool') {
+    return (
+      <div className="mx-auto w-full max-w-[860px]">
+        <button
+          onClick={() => onToggleThought(msg.id)}
+          className="flex w-full items-center gap-2 py-1.5 text-left text-sm text-muted-foreground transition hover:text-foreground no-drag"
+        >
+          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <TerminalIcon size={14} />
+          <span className="font-medium">终端输出</span>
+          {msg.metadata?.isVerifying && (
+            <span className="rounded-full bg-success-soft px-2 py-0.5 text-xs font-semibold text-success">
+              已验证
+            </span>
+          )}
+        </button>
+        {isExpanded ? (
+          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-surface-muted px-3 py-2 font-mono text-xs leading-relaxed text-muted-foreground">
+            {msg.content}
+          </pre>
+        ) : (
+          <p className="pl-6 text-xs text-muted-foreground/70">输出已同步到终端视图</p>
+        )}
+      </div>
+    )
+  }
 
   return (
-    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[82%] flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end gap-2.5`}
-      >
-        <div
-          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl shadow-sm ${msg.role === 'user' ? 'bg-accent text-white shadow-accent/20' : 'border border-black/[0.06] bg-white text-muted-foreground shadow-[0_1px_2px_rgba(15,23,42,0.04)]'}`}
-        >
-          {msg.role === 'user' ? <User size={14} /> : <Bot size={14} />}
+    <div className="mx-auto w-full max-w-[860px] cursor-auto select-text no-drag">
+      <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+        <span className="shrink-0 font-medium">
+          {msg.role === 'system' ? '系统' : '已处理'} {formatMessageClock(msg.timestamp)}
+        </span>
+        <div className="h-px flex-1 bg-border/80" />
+      </div>
+
+      <div className="space-y-4 text-[var(--chat-text-size)] leading-[var(--chat-line-height)] text-foreground">
+        <div className="space-y-3">
+          {msg.metadata?.memoryRecalled && (
+            <Badge variant="accent" className="mb-1 w-fit">
+              <Zap size={10} /> 已调取记忆
+            </Badge>
+          )}
+          {msg.metadata?.isVerifying && (
+            <Badge variant="success" className="mb-1 w-fit">
+              <CheckCircle2 size={10} /> 已验证
+            </Badge>
+          )}
+          <MarkdownRenderer content={msg.content} />
         </div>
-        <div className="flex flex-col gap-2 min-w-0">
-          {msg.thought && (
-            <div className="overflow-hidden rounded-xl border border-warning/20 bg-warning-soft">
-              <button
-                onClick={() => onToggleThought(msg.id)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-warning transition hover:bg-warning/10"
-              >
-                {expandedThoughts[msg.id] ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                <Zap size={11} />
-                助手推理
-              </button>
-              {expandedThoughts[msg.id] && (
-                <div className="border-t border-warning/20 px-3 pb-3 text-xs leading-relaxed text-warning">
-                  {msg.thought}
+
+        {msg.toolCalls && msg.toolCalls.length > 0 && (
+          <div className="space-y-1.5 text-sm text-muted-foreground">
+            {msg.toolCalls.map((tool) => {
+              let cmd = ''
+              try {
+                cmd = JSON.parse(tool.function.arguments).command
+              } catch {
+                cmd = tool.function.name
+              }
+              return (
+                <div key={tool.id} className="flex min-w-0 items-center gap-2">
+                  <TerminalIcon size={14} className="shrink-0" />
+                  <span className="shrink-0">调用</span>
+                  <code className="truncate rounded bg-surface-muted px-1.5 py-0.5 font-mono text-[13px] text-foreground">
+                    {cmd || tool.function.name}
+                  </code>
+                  <CheckCircle2 size={13} className="shrink-0 text-success" />
                 </div>
-              )}
-            </div>
-          )}
+              )
+            })}
+          </div>
+        )}
 
-          {msg.metadata?.taskId && <AgentRunTimeline taskId={msg.metadata.taskId} />}
+        {msg.metadata?.taskId && <AgentRunTimeline taskId={msg.metadata.taskId} />}
 
-          {msg.toolCalls && msg.toolCalls.length > 0 && (
-            <div className="space-y-1.5">
-              {msg.toolCalls.map((tool) => {
-                let cmd = ''
-                try {
-                  cmd = JSON.parse(tool.function.arguments).command
-                } catch {
-                  cmd = tool.function.name
-                }
-                return (
-                  <div
-                    key={tool.id}
-                    className="flex items-center gap-2.5 rounded-md border border-success/20 bg-success-soft px-3 py-2 font-mono text-xs font-semibold text-success"
-                  >
-                    <TerminalIcon size={11} className="flex-shrink-0 text-success" />
-                    <span className="truncate">{cmd || tool.function.name}</span>
-                    <CheckCircle2 size={11} className="ml-auto flex-shrink-0 text-success" />
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          <div
-            className={`cursor-auto select-text rounded-2xl px-4 py-3 text-sm leading-relaxed no-drag ${
-              msg.role === 'user'
-                ? 'rounded-br-md bg-accent text-white shadow-sm shadow-accent/15'
-                : msg.role === 'tool'
-                  ? 'max-w-full overflow-x-auto rounded-bl-md border border-workspace-border bg-workspace/85 text-workspace-foreground'
-                  : 'rounded-bl-md border border-black/[0.06] bg-white text-foreground shadow-[0_12px_30px_rgba(15,23,42,0.04)]'
-            } ${msg.metadata?.isVerifying ? 'ring-2 ring-success/20' : ''}`}
-          >
-            {msg.role === 'user' ? (
-              <div className="whitespace-pre-wrap">{msg.content}</div>
-            ) : msg.role === 'tool' ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => onToggleThought(msg.id)}
-                    className="flex items-center gap-2 text-xs font-semibold text-success transition hover:text-success/80 no-drag"
-                  >
-                    {expandedThoughts[msg.id] ? (
-                      <ChevronDown size={10} />
-                    ) : (
-                      <ChevronRight size={10} />
-                    )}
-                    终端原始输出
-                  </button>
-                  {msg.metadata?.isVerifying && (
-                    <span className="rounded-full bg-success-soft px-2 py-0.5 text-xs font-semibold text-success">
-                      验证凭证
-                    </span>
-                  )}
-                </div>
-                {expandedThoughts[msg.id] && (
-                  <div className="mt-2 whitespace-pre-wrap break-all border-t border-workspace-border pt-2 font-mono text-xs text-success">
-                    {msg.content}
-                  </div>
-                )}
-                {!expandedThoughts[msg.id] && (
-                  <div className="text-xs text-success/65">
-                    输出内容已提纯并同步至终端视图。点击查看原始文本...
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {msg.metadata?.memoryRecalled && (
-                  <Badge variant="accent" className="mb-1 w-fit">
-                    <Zap size={10} /> 已调取经验记忆
-                  </Badge>
-                )}
-                {msg.metadata?.isVerifying && (
-                  <Badge variant="success" className="mb-1 w-fit">
-                    <CheckCircle2 size={10} /> 任务目标验证通过
-                  </Badge>
-                )}
-                <MarkdownRenderer content={msg.content} />
+        {msg.thought && (
+          <div>
+            <button
+              onClick={() => onToggleThought(msg.id)}
+              className="flex items-center gap-2 py-1 text-sm font-medium text-muted-foreground transition hover:text-foreground no-drag"
+            >
+              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <Zap size={13} />
+              推理
+            </button>
+            {isExpanded && (
+              <div className="mt-2 whitespace-pre-wrap rounded-lg bg-surface-muted px-3 py-2 text-sm leading-7 text-muted-foreground">
+                {msg.thought}
               </div>
             )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   )
@@ -146,19 +136,10 @@ export function MessageBubble({
 
 export function ThinkingIndicator({ animationKey }: { animationKey: number }): React.ReactElement {
   return (
-    <div key={`thinking-${animationKey}`} className="flex justify-start">
-      <div className="flex items-end gap-2.5">
-        <div className="flex h-8 w-8 animate-pulse items-center justify-center rounded-xl border border-black/[0.06] bg-white text-accent shadow-sm">
-          <Bot size={14} />
-        </div>
-        <div className="flex items-center gap-2 rounded-2xl rounded-bl-md border border-black/[0.06] bg-white px-4 py-3 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-          <div className="flex gap-1">
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent/55 [animation-delay:0ms]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent/75 [animation-delay:150ms]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:300ms]" />
-          </div>
-          <span className="ml-1 text-xs font-semibold text-accent/60">思考并分析中...</span>
-        </div>
+    <div key={`thinking-${animationKey}`} className="mx-auto w-full max-w-[860px]">
+      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+        <Loader2 size={15} className="animate-spin" />
+        <span>正在处理</span>
       </div>
     </div>
   )
@@ -198,4 +179,11 @@ export function EmptyState({
       )}
     </div>
   )
+}
+
+function formatMessageClock(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }

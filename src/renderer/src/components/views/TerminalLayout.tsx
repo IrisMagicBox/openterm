@@ -7,9 +7,9 @@ import { View } from '../../types'
 import { SplitPane } from '../SplitPane'
 import { PaneLeaf } from '../../types/pane'
 import { useTerminalPaneManager, TerminalTab } from '../../hooks/useTerminalPaneManager'
-import { useConfirm } from '../../hooks/useConfirm'
 import { useFileTransfer } from '../../hooks/useFileTransfer'
 import { FileTransferToast } from '../FileTransferToast'
+import { ConfirmActionButton } from '../ui'
 import {
   paneDropPreviewClass,
   resolvePaneDropEdgeFromPoint,
@@ -26,7 +26,6 @@ interface TerminalLayoutProps {
   terminalSessionId: string | null
   setTerminalSessionId: (id: string | null) => void
   terminalFontSize: number
-  setTerminalFontSize: (s: number) => void
   setActiveView: (v: View) => void
   fileBrowserHostId: string | null
   setFileBrowserHostId: (id: string | null) => void
@@ -45,7 +44,6 @@ export function TerminalLayout({
   terminalSessionId,
   setTerminalSessionId,
   terminalFontSize,
-  setTerminalFontSize,
   setActiveView,
   fileBrowserHostId,
   setFileBrowserHostId,
@@ -55,7 +53,6 @@ export function TerminalLayout({
   closeTerminalRequest
 }: TerminalLayoutProps): React.ReactElement {
   const paneManager = useTerminalPaneManager()
-  const { confirm, ConfirmDialogComponent } = useConfirm()
   const { transfers, startTransfer, removeTransfer } = useFileTransfer()
   const [showTerminalList, setShowTerminalList] = useState(false)
   const [dragOverPaneId, setDragOverPaneId] = useState<string | null>(null)
@@ -177,17 +174,10 @@ export function TerminalLayout({
   )
 
   const handleCloseTab = useCallback(
-    async (tabId: string) => {
-      const ok = await confirm({
-        title: '关闭终端',
-        message: '确定关闭终端标签页？',
-        confirmText: '关闭',
-        variant: 'danger'
-      })
-      if (!ok) return
+    (tabId: string) => {
       closeTerminalTab(tabId)
     },
-    [confirm, closeTerminalTab]
+    [closeTerminalTab]
   )
 
   useEffect(() => {
@@ -197,14 +187,7 @@ export function TerminalLayout({
     closeTerminalTab(closeTerminalRequest.sessionId)
   }, [closeTerminalRequest, closeTerminalTab])
 
-  const handleDisconnectAll = useCallback(async () => {
-    const ok = await confirm({
-      title: '断开全部',
-      message: '确定断开所有终端连接？',
-      confirmText: '断开',
-      variant: 'danger'
-    })
-    if (!ok) return
+  const handleDisconnectAll = useCallback(() => {
     for (const tab of paneManager.getAllTabs()) {
       paneManager.closeTerminalTab(tab.sessionId)
       syncedSessionIds.current.delete(tab.sessionId)
@@ -213,7 +196,7 @@ export function TerminalLayout({
     setActiveView('hosts')
     setSelectedHost(null)
     setTerminalSessionId(null)
-  }, [confirm, paneManager, setLegacyTabs, setActiveView, setSelectedHost, setTerminalSessionId])
+  }, [paneManager, setLegacyTabs, setActiveView, setSelectedHost, setTerminalSessionId])
 
   const handleTabDragStart = useCallback((e: React.DragEvent, tabId: string) => {
     e.dataTransfer.setData('text/plain', tabId)
@@ -294,15 +277,16 @@ export function TerminalLayout({
                 >
                   <TerminalIcon size={10} />
                   <span>{tab.title || tab.host.alias}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleCloseTab(tab.sessionId)
-                    }}
+                  <ConfirmActionButton
+                    aria-label="关闭终端标签页"
+                    onConfirm={() => handleCloseTab(tab.sessionId)}
+                    stopPropagation
                     className="ml-1 rounded p-0.5 text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-workspace-foreground"
+                    confirmClassName="hover:bg-danger-strong"
+                    confirmingTitle="关闭"
                   >
                     <X size={9} />
-                  </button>
+                  </ConfirmActionButton>
                 </div>
               ))}
             </div>
@@ -324,6 +308,7 @@ export function TerminalLayout({
                 <TerminalView
                   id={tab.sessionId}
                   hostId={tab.host.id}
+                  hostAlias={tab.host.alias}
                   fontSize={terminalFontSize}
                   onClose={() => handleCloseTab(tab.sessionId)}
                   onFocusSession={() => focusTerminalTab(tab.sessionId)}
@@ -390,23 +375,6 @@ export function TerminalLayout({
               </span>
             </div>
             <div className="flex items-center gap-2 no-drag">
-              <div className="mr-1 flex overflow-hidden rounded-lg border border-workspace-border bg-workspace/80 shadow-sm">
-                <button
-                  onClick={() => setTerminalFontSize(Math.max(terminalFontSize - 1, 6))}
-                  className="px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition-colors hover:bg-workspace-border hover:text-workspace-foreground"
-                  title="缩小"
-                >
-                  -
-                </button>
-                <div className="w-px bg-workspace-border" />
-                <button
-                  onClick={() => setTerminalFontSize(Math.min(terminalFontSize + 1, 30))}
-                  className="px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition-colors hover:bg-workspace-border hover:text-workspace-foreground"
-                  title="放大"
-                >
-                  +
-                </button>
-              </div>
               {allTabs.length > 0 && (
                 <div className="flex gap-1">
                   {(() => {
@@ -454,12 +422,19 @@ export function TerminalLayout({
               >
                 <Folder size={12} /> 文件
               </button>
-              <button
-                onClick={handleDisconnectAll}
+              <ConfirmActionButton
+                aria-label="断开全部终端"
+                onConfirm={handleDisconnectAll}
                 className="flex items-center gap-1.5 rounded-md border border-workspace-border bg-workspace px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-danger/10 hover:text-danger"
+                confirmChildren={
+                  <>
+                    <X size={12} /> 断开
+                  </>
+                }
+                confirmingTitle="断开全部"
               >
                 <X size={12} /> 断开全部
-              </button>
+              </ConfirmActionButton>
             </div>
           </div>
         </div>
@@ -549,7 +524,6 @@ export function TerminalLayout({
         </div>
       )}
 
-      {ConfirmDialogComponent}
       <FileTransferToast transfers={transfers} onRemove={removeTransfer} />
     </div>
   )

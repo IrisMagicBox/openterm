@@ -8,7 +8,6 @@ import {
   Grid2X2,
   ListTree,
   Loader2,
-  Minus,
   Monitor,
   Pause,
   Play,
@@ -19,9 +18,8 @@ import {
 } from 'lucide-react'
 import { TerminalView } from '../TerminalView'
 import type { AgentPart, TerminalSession } from '../../../../shared/types'
-import { useConfirm } from '../../hooks/useConfirm'
 import type { TerminalFocusOptions } from '../../hooks/useTerminalStageState'
-import { Badge, Button, IconButton, Switch } from '../ui'
+import { Badge, ConfirmActionButton, IconButton, Tooltip } from '../ui'
 import { cn } from '../../lib/utils'
 import {
   agentPartSessionId,
@@ -47,18 +45,29 @@ interface TerminalStageProps {
   isResizing: boolean
   topicId: string
   topicHosts: { id: string; alias: string }[]
+  commandAssist?: TerminalStageCommandAssist | null
   onCloseAgentTerminal: (id: string) => void
   onToggleAgentTerminalPaused: (id: string, paused: boolean) => Promise<void>
   onCloseTerminal: (id: string) => Promise<void>
-  onOpenCommandPalette: () => void
+  onOpenCommandPalette: (sessionId?: string) => void
   onCreateTerminal: (hostId: string) => Promise<void>
-  onSetTerminalFontSize: (size: number) => void
   onSetResizing: (resizing: boolean) => void
   onSetMode: (mode: TerminalStageMode) => void
   onSetFollowAgent: (followAgent: boolean) => void
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
   onRevealTerminal: (sessionId: string, partId?: string) => void
   onOpenPortForward?: (session: TerminalSession) => void
+}
+
+interface TerminalStageCommandAssist {
+  sessionId: string | null
+  value: string
+  historyCommands: string[]
+  busy?: boolean
+  error?: string | null
+  onChange: (value: string) => void
+  onSubmit: (context?: { currentInput: string }) => Promise<string | null>
+  onClose: () => void
 }
 
 function statusTone(
@@ -79,9 +88,7 @@ function statusLabel(status: TerminalActivity['status']): string {
   return '空闲'
 }
 
-function takeoverBadge(
-  session: TerminalSession
-): { label: string; variant: 'warning' } | null {
+function takeoverBadge(session: TerminalSession): { label: string; variant: 'warning' } | null {
   if (session.paused && session.takeoverMode === 'manual') {
     return { label: '人工接管', variant: 'warning' }
   }
@@ -140,46 +147,19 @@ function commandPreview(activity?: TerminalActivity): string {
 
 function TerminalControls({
   session,
-  terminalFontSize,
   onTogglePaused,
   onClose,
-  onSetTerminalFontSize,
   onOpenCommandPalette,
   onOpenPortForward
 }: {
   session: TerminalSession
-  terminalFontSize: number
   onTogglePaused: () => void
   onClose: () => void
-  onSetTerminalFontSize: (size: number) => void
   onOpenCommandPalette: () => void
   onOpenPortForward?: () => void
 }): React.ReactElement {
   return (
     <div className="flex shrink-0 items-center gap-1.5">
-      <div className="flex overflow-hidden rounded-md border border-white/70 bg-white/55 backdrop-blur-xl">
-        <button
-          onClick={(event) => {
-            event.stopPropagation()
-            onSetTerminalFontSize(Math.max(terminalFontSize - 1, 6))
-          }}
-          className="px-2 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-white/75 hover:text-foreground"
-          title="缩小 (Cmd -)"
-        >
-          <Minus size={12} />
-        </button>
-        <div className="w-px bg-border" />
-        <button
-          onClick={(event) => {
-            event.stopPropagation()
-            onSetTerminalFontSize(Math.min(terminalFontSize + 1, 30))
-          }}
-          className="px-2 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-white/75 hover:text-foreground"
-          title="放大 (Cmd +)"
-        >
-          <Plus size={12} />
-        </button>
-      </div>
       <IconButton
         aria-label="打开命令入口"
         onClick={(event) => {
@@ -217,16 +197,18 @@ function TerminalControls({
       >
         {session.paused ? <Play size={13} /> : <Pause size={13} />}
       </IconButton>
-      <IconButton
+      <ConfirmActionButton
         aria-label="关闭终端"
-        onClick={(event) => {
-          event.stopPropagation()
+        onConfirm={() => {
           onClose()
         }}
-        className="h-7 w-7 text-danger"
+        stopPropagation
+        className="blue-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-danger no-drag hover:bg-white/60"
+        confirmClassName="hover:bg-danger-strong"
+        confirmingTitle="关闭"
       >
         <X size={13} />
-      </IconButton>
+      </ConfirmActionButton>
     </div>
   )
 }
@@ -261,8 +243,8 @@ function ActivityRail({
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
 }): React.ReactElement {
   return (
-    <div className="border-b border-white/70 bg-white/45 px-3 py-2 backdrop-blur-2xl">
-      <div className="flex gap-2 overflow-x-auto pb-1">
+    <div className="border-b border-black/[0.05] bg-white/45 px-2.5 py-1.5 backdrop-blur-2xl">
+      <div className="flex gap-1.5 overflow-x-auto">
         {activities.map((activity) => {
           const session = sessionsById.get(activity.sessionId)
           if (!session) return null
@@ -273,35 +255,29 @@ function ActivityRail({
           return (
             <button
               key={activity.sessionId}
+              title={commandPreview(activity)}
               onClick={() => onFocusSession(activity.sessionId, { userInitiated: true })}
               className={cn(
-                'glass-control flex min-w-[168px] max-w-[240px] shrink-0 flex-col gap-1 rounded-lg px-3 py-2 text-left transition-all',
-                focused && 'border-accent/35 bg-accent-soft/65 shadow-sm shadow-accent/10',
+                'flex h-8 min-w-[150px] max-w-[220px] shrink-0 items-center gap-2 rounded-md px-2 text-left text-xs transition-colors',
+                focused
+                  ? 'bg-accent-soft/70 text-foreground'
+                  : 'text-muted-foreground hover:bg-black/[0.035] hover:text-foreground',
                 highlighted && 'ring-2 ring-accent/25'
               )}
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <ActivityDot status={activity.status} />
-                  <span className="truncate text-xs font-bold text-foreground">
-                    {session.name || activity.hostAlias}
-                  </span>
-                </div>
-                <span className="shrink-0 text-[11px] font-semibold text-muted-foreground">
-                  {duration || statusLabel(activity.status)}
+              <ActivityDot status={activity.status} />
+              <div className="min-w-0 flex-1 truncate">
+                <span className="font-bold text-foreground">
+                  {session.name || activity.hostAlias}
+                </span>
+                <span className="mx-1 text-muted-foreground/55">/</span>
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {commandPreview(activity)}
                 </span>
               </div>
-              <div className="truncate text-[11px] font-semibold text-muted-foreground">
-                {activity.hostAlias}
-              </div>
-              <div className="hidden truncate font-mono text-[11px] text-muted-foreground xl:block">
-                {commandPreview(activity)}
-              </div>
-              {activity.lastLine && (
-                <div className="hidden truncate text-[11px] text-muted-foreground/80 2xl:block">
-                  {activity.lastLine}
-                </div>
-              )}
+              <span className="shrink-0 text-[11px] font-semibold text-muted-foreground">
+                {duration || statusLabel(activity.status)}
+              </span>
             </button>
           )
         })}
@@ -319,10 +295,10 @@ function StageTerminalPane({
   onCloseTerminal,
   onToggleAgentTerminalPaused,
   onCloseWithConfirm,
-  onSetTerminalFontSize,
   onOpenCommandPalette,
   onOpenPortForward,
-  onFocusSession
+  onFocusSession,
+  commandAssist
 }: {
   session: TerminalSession | undefined
   activity?: TerminalActivity
@@ -332,10 +308,10 @@ function StageTerminalPane({
   onCloseTerminal: (id: string) => Promise<void>
   onToggleAgentTerminalPaused: (id: string, paused: boolean) => Promise<void>
   onCloseWithConfirm: (id: string) => void
-  onSetTerminalFontSize: (size: number) => void
-  onOpenCommandPalette: () => void
+  onOpenCommandPalette: (sessionId?: string) => void
   onOpenPortForward?: (session: TerminalSession) => void
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
+  commandAssist?: TerminalStageCommandAssist | null
 }): React.ReactElement {
   if (!session) {
     return (
@@ -380,14 +356,10 @@ function StageTerminalPane({
           </div>
           <TerminalControls
             session={session}
-            terminalFontSize={terminalFontSize}
             onTogglePaused={() => onToggleAgentTerminalPaused(session.id, !session.paused)}
             onClose={() => onCloseWithConfirm(session.id)}
-            onSetTerminalFontSize={onSetTerminalFontSize}
-            onOpenCommandPalette={onOpenCommandPalette}
-            onOpenPortForward={
-              onOpenPortForward ? () => onOpenPortForward(session) : undefined
-            }
+            onOpenCommandPalette={() => onOpenCommandPalette(session.id)}
+            onOpenPortForward={onOpenPortForward ? () => onOpenPortForward(session) : undefined}
           />
         </div>
 
@@ -397,6 +369,9 @@ function StageTerminalPane({
             id={session.id}
             topicId={topicId}
             hostId={session.hostId}
+            hostAlias={session.hostAlias}
+            terminalName={session.name}
+            terminalRole={session.role}
             fontSize={terminalFontSize}
             onFocusSession={() => onFocusSession(session.id, { userInitiated: true })}
             onClose={() => onCloseTerminal(session.id)}
@@ -406,6 +381,21 @@ function StageTerminalPane({
             paused={session.paused}
             lockedBy={session.lockedBy}
             takeoverMode={session.takeoverMode}
+            commandAssist={
+              commandAssist?.sessionId === session.id
+                ? {
+                    open: true,
+                    value: commandAssist.value,
+                    targetLabel: `${session.hostAlias} / ${session.name || '终端'}`,
+                    historyCommands: commandAssist.historyCommands,
+                    busy: commandAssist.busy,
+                    error: commandAssist.error,
+                    onChange: commandAssist.onChange,
+                    onSubmit: commandAssist.onSubmit,
+                    onClose: commandAssist.onClose
+                  }
+                : null
+            }
           />
         </div>
       </div>
@@ -422,10 +412,10 @@ function GridMode({
   onCloseTerminal,
   onToggleAgentTerminalPaused,
   onCloseWithConfirm,
-  onSetTerminalFontSize,
   onOpenCommandPalette,
   onOpenPortForward,
-  onFocusSession
+  onFocusSession,
+  commandAssist
 }: {
   sessions: TerminalSession[]
   activitiesById: Map<string, TerminalActivity>
@@ -435,10 +425,10 @@ function GridMode({
   onCloseTerminal: (id: string) => Promise<void>
   onToggleAgentTerminalPaused: (id: string, paused: boolean) => Promise<void>
   onCloseWithConfirm: (id: string) => void
-  onSetTerminalFontSize: (size: number) => void
-  onOpenCommandPalette: () => void
+  onOpenCommandPalette: (sessionId?: string) => void
   onOpenPortForward?: (session: TerminalSession) => void
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
+  commandAssist?: TerminalStageCommandAssist | null
 }): React.ReactElement {
   return (
     <div className="grid min-h-0 flex-1 auto-rows-[minmax(270px,1fr)] grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-3 overflow-y-auto p-3">
@@ -468,7 +458,9 @@ function GridMode({
                   </span>
                   {session.role === 'agent_command' && <Badge variant="accent">Agent</Badge>}
                   {session.commandSource === 'user' && <Badge variant="neutral">用户</Badge>}
-                  {controlBadge && <Badge variant={controlBadge.variant}>{controlBadge.label}</Badge>}
+                  {controlBadge && (
+                    <Badge variant={controlBadge.variant}>{controlBadge.label}</Badge>
+                  )}
                   {focused && <Badge variant="accent">当前</Badge>}
                   {activity && <Badge variant={tone}>{statusLabel(activity.status)}</Badge>}
                 </div>
@@ -478,17 +470,13 @@ function GridMode({
               </div>
               <TerminalControls
                 session={session}
-                terminalFontSize={terminalFontSize}
                 onTogglePaused={() => onToggleAgentTerminalPaused(session.id, !session.paused)}
                 onClose={() => onCloseWithConfirm(session.id)}
-                onSetTerminalFontSize={onSetTerminalFontSize}
                 onOpenCommandPalette={() => {
                   onFocusSession(session.id, { userInitiated: true })
-                  onOpenCommandPalette()
+                  onOpenCommandPalette(session.id)
                 }}
-                onOpenPortForward={
-                  onOpenPortForward ? () => onOpenPortForward(session) : undefined
-                }
+                onOpenPortForward={onOpenPortForward ? () => onOpenPortForward(session) : undefined}
               />
             </div>
             <div className="relative min-h-0 flex-1 bg-white">
@@ -496,6 +484,9 @@ function GridMode({
                 id={session.id}
                 topicId={topicId}
                 hostId={session.hostId}
+                hostAlias={session.hostAlias}
+                terminalName={session.name}
+                terminalRole={session.role}
                 fontSize={terminalFontSize}
                 onFocusSession={() => onFocusSession(session.id, { userInitiated: true })}
                 onClose={() => onCloseTerminal(session.id)}
@@ -505,6 +496,21 @@ function GridMode({
                 paused={session.paused}
                 lockedBy={session.lockedBy}
                 takeoverMode={session.takeoverMode}
+                commandAssist={
+                  commandAssist?.sessionId === session.id
+                    ? {
+                        open: true,
+                        value: commandAssist.value,
+                        targetLabel: `${session.hostAlias} / ${session.name || '终端'}`,
+                        historyCommands: commandAssist.historyCommands,
+                        busy: commandAssist.busy,
+                        error: commandAssist.error,
+                        onChange: commandAssist.onChange,
+                        onSubmit: commandAssist.onSubmit,
+                        onClose: commandAssist.onClose
+                      }
+                    : null
+                }
               />
             </div>
           </div>
@@ -527,9 +533,9 @@ function TimelineMode({
   onCloseTerminal,
   onToggleAgentTerminalPaused,
   onCloseWithConfirm,
-  onSetTerminalFontSize,
   onOpenCommandPalette,
-  onOpenPortForward
+  onOpenPortForward,
+  commandAssist
 }: {
   parts: AgentPart[]
   focusedPartId: string | null
@@ -543,9 +549,9 @@ function TimelineMode({
   onCloseTerminal: (id: string) => Promise<void>
   onToggleAgentTerminalPaused: (id: string, paused: boolean) => Promise<void>
   onCloseWithConfirm: (id: string) => void
-  onSetTerminalFontSize: (size: number) => void
-  onOpenCommandPalette: () => void
+  onOpenCommandPalette: (sessionId?: string) => void
   onOpenPortForward?: (session: TerminalSession) => void
+  commandAssist?: TerminalStageCommandAssist | null
 }): React.ReactElement {
   const timelineParts = sortedParts(parts)
   const selectedPart =
@@ -644,10 +650,10 @@ function TimelineMode({
         onCloseTerminal={onCloseTerminal}
         onToggleAgentTerminalPaused={onToggleAgentTerminalPaused}
         onCloseWithConfirm={onCloseWithConfirm}
-        onSetTerminalFontSize={onSetTerminalFontSize}
         onOpenCommandPalette={onOpenCommandPalette}
         onOpenPortForward={onOpenPortForward}
         onFocusSession={onFocusSession}
+        commandAssist={commandAssist}
       />
     </div>
   )
@@ -667,12 +673,12 @@ export function TerminalStage({
   isResizing,
   topicId,
   topicHosts,
+  commandAssist,
   onCloseAgentTerminal,
   onToggleAgentTerminalPaused,
   onCloseTerminal,
   onOpenCommandPalette,
   onCreateTerminal,
-  onSetTerminalFontSize,
   onSetResizing,
   onSetMode,
   onSetFollowAgent,
@@ -680,7 +686,6 @@ export function TerminalStage({
   onRevealTerminal,
   onOpenPortForward
 }: TerminalStageProps): React.ReactElement {
-  const { confirm, ConfirmDialogComponent } = useConfirm()
   const [highlightedSessionId, setHighlightedSessionId] = useState<string | null>(null)
 
   const activitiesById = useMemo(
@@ -706,19 +711,15 @@ export function TerminalStage({
 
   useEffect(() => {
     if (!focusedSessionId) return
-    setHighlightedSessionId(focusedSessionId)
-    const timeout = window.setTimeout(() => setHighlightedSessionId(null), 1200)
-    return () => window.clearTimeout(timeout)
+    const showTimeout = window.setTimeout(() => setHighlightedSessionId(focusedSessionId), 0)
+    const hideTimeout = window.setTimeout(() => setHighlightedSessionId(null), 1200)
+    return () => {
+      window.clearTimeout(showTimeout)
+      window.clearTimeout(hideTimeout)
+    }
   }, [focusedSessionId, focusedPartId])
 
-  const closeWithConfirm = async (sessionId: string): Promise<void> => {
-    const ok = await confirm({
-      title: '关闭终端',
-      message: '确定关闭此终端？',
-      confirmText: '关闭',
-      variant: 'danger'
-    })
-    if (!ok) return
+  const closeWithConfirm = (sessionId: string): void => {
     onCloseAgentTerminal(sessionId)
   }
 
@@ -745,27 +746,29 @@ export function TerminalStage({
       >
         <div
           className={cn(
-            'space-y-3 border-b border-white/70 bg-white/60 px-4 py-3 backdrop-blur-2xl',
-            highlightedSessionId && 'shadow-[inset_0_-1px_0_rgba(37,99,235,0.2)]'
+            'flex min-h-12 items-center justify-between gap-2 border-b border-black/[0.05] bg-white/60 px-3 py-2 backdrop-blur-2xl',
+            highlightedSessionId && 'shadow-[inset_0_-1px_0_rgba(37,99,235,0.18)]'
           )}
         >
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Monitor size={14} className="shrink-0 text-accent" />
             <div className="min-w-0">
-              <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
-                <Monitor size={13} className="text-accent" />
-                终端舞台
-              </h3>
-              <div className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+              <div className="flex min-w-0 items-center gap-2">
+                <h3 className="truncate text-sm font-bold text-foreground">终端</h3>
+                <span className="shrink-0 rounded-full bg-accent-soft px-1.5 py-0.5 text-[11px] font-bold text-accent">
+                  {visibleSessions.length}
+                </span>
+              </div>
+              <div className="truncate text-[11px] font-semibold text-muted-foreground">
                 {focusedSession
                   ? `${focusedSession.hostAlias} / ${focusedSession.name || '终端'}`
-                  : '暂无聚焦终端'}
+                  : '暂无聚焦'}
               </div>
             </div>
-            <Badge variant="accent">{visibleSessions.length} 个终端</Badge>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="glass-control flex items-center rounded-lg p-1">
+          <div className="flex shrink-0 items-center gap-1">
+            <div className="flex items-center rounded-lg bg-black/[0.035] p-0.5">
               {[
                 { id: 'stage' as const, label: '舞台', icon: Monitor },
                 { id: 'grid' as const, label: '网格', icon: Grid2X2 },
@@ -773,36 +776,54 @@ export function TerminalStage({
               ].map((item) => {
                 const Icon = item.icon
                 return (
-                  <button
-                    key={item.id}
-                    onClick={() => onSetMode(item.id)}
-                    className={cn(
-                      'flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-semibold transition',
-                      mode === item.id
-                        ? 'bg-white text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:bg-white/70 hover:text-foreground'
-                    )}
-                  >
-                    <Icon size={12} />
-                    <span>{item.label}</span>
-                  </button>
+                  <Tooltip key={item.id} content={item.label} side="bottom">
+                    <button
+                      aria-label={item.label}
+                      onClick={() => onSetMode(item.id)}
+                      className={cn(
+                        'blue-ring flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-semibold transition',
+                        mode === item.id
+                          ? 'bg-white text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:bg-white/70 hover:text-foreground'
+                      )}
+                    >
+                      <Icon size={12} />
+                    </button>
+                  </Tooltip>
                 )
               })}
             </div>
 
-            <div className="flex items-center gap-2">
-              <label className="glass-control flex h-8 items-center gap-2 rounded-md px-2 text-xs font-semibold text-muted-foreground">
-                <Switch checked={followAgent} onCheckedChange={onSetFollowAgent} />
-                跟随 Agent
-              </label>
-              <Button onClick={onOpenCommandPalette} variant="primary" size="sm" title="Command+K">
-                <Command size={13} />
-                Cmd+K
-              </Button>
+            <Tooltip content={followAgent ? '取消跟随 Agent' : '跟随 Agent'} side="bottom">
+              <button
+                aria-label={followAgent ? '取消跟随 Agent' : '跟随 Agent'}
+                aria-pressed={followAgent}
+                onClick={() => onSetFollowAgent(!followAgent)}
+                className={cn(
+                  'blue-ring flex h-8 items-center gap-1 rounded-md px-2 text-[11px] font-semibold transition',
+                  followAgent
+                    ? 'bg-accent-soft text-accent'
+                    : 'text-muted-foreground hover:bg-black/[0.04] hover:text-foreground'
+                )}
+              >
+                <Eye size={12} />
+              </button>
+            </Tooltip>
+            <Tooltip content="命令入口 Command+K" side="bottom">
+              <button
+                aria-label="打开命令入口"
+                onClick={() => onOpenCommandPalette(focusedSession?.id)}
+                className="blue-ring flex h-8 items-center gap-1 rounded-md bg-accent px-2.5 text-[11px] font-bold text-white shadow-sm transition hover:bg-accent-strong"
+              >
+                <Command size={12} />
+                <span>⌘K</span>
+              </button>
+            </Tooltip>
+            <Tooltip content="新建终端" side="bottom">
               <IconButton aria-label="新建终端" onClick={createTerminal} className="h-8 w-8">
                 <Plus size={14} />
               </IconButton>
-            </div>
+            </Tooltip>
           </div>
         </div>
 
@@ -824,10 +845,10 @@ export function TerminalStage({
               onCloseTerminal={onCloseTerminal}
               onToggleAgentTerminalPaused={onToggleAgentTerminalPaused}
               onCloseWithConfirm={closeWithConfirm}
-              onSetTerminalFontSize={onSetTerminalFontSize}
               onOpenCommandPalette={onOpenCommandPalette}
               onOpenPortForward={onOpenPortForward}
               onFocusSession={onFocusSession}
+              commandAssist={commandAssist}
             />
           </>
         )}
@@ -842,10 +863,10 @@ export function TerminalStage({
             onCloseTerminal={onCloseTerminal}
             onToggleAgentTerminalPaused={onToggleAgentTerminalPaused}
             onCloseWithConfirm={closeWithConfirm}
-            onSetTerminalFontSize={onSetTerminalFontSize}
             onOpenCommandPalette={onOpenCommandPalette}
             onOpenPortForward={onOpenPortForward}
             onFocusSession={onFocusSession}
+            commandAssist={commandAssist}
           />
         )}
 
@@ -863,13 +884,12 @@ export function TerminalStage({
             onCloseTerminal={onCloseTerminal}
             onToggleAgentTerminalPaused={onToggleAgentTerminalPaused}
             onCloseWithConfirm={closeWithConfirm}
-            onSetTerminalFontSize={onSetTerminalFontSize}
             onOpenCommandPalette={onOpenCommandPalette}
             onOpenPortForward={onOpenPortForward}
+            commandAssist={commandAssist}
           />
         )}
       </div>
-      {ConfirmDialogComponent}
     </>
   )
 }

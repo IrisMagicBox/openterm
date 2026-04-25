@@ -4,7 +4,6 @@ import { HostCard } from '../hosts/HostCard'
 import { Host, Topic } from '../../../../shared/types'
 import { TerminalTab, View } from '../../types'
 import { LOCAL_HOST } from '../../constants'
-import { useConfirm } from '../../hooks/useConfirm'
 import { PortForwardingPanel } from '../terminal/PortForwardingPanel'
 import { Button, Dialog, DialogContent, IconButton, Input, PageHeader, Surface } from '../ui'
 
@@ -49,7 +48,6 @@ export function HostsView({
   handleDeleteHost,
   onCreateLocalAgentTopic
 }: HostsViewProps): React.ReactElement {
-  const { confirm, ConfirmDialogComponent } = useConfirm()
   const [portForwardHost, setPortForwardHost] = useState<Host | null>(null)
 
   return (
@@ -145,15 +143,7 @@ export function HostsView({
                 key={host.id}
                 host={host}
                 onDelete={async () => {
-                  const ok = await confirm({
-                    title: '删除主机',
-                    message: `确定要删除主机 "${host.alias}" 吗？此操作不可恢复。`,
-                    confirmText: '删除',
-                    variant: 'danger'
-                  })
-                  if (ok) {
-                    await handleDeleteHost(host.id)
-                  }
+                  await handleDeleteHost(host.id)
                 }}
                 onConnect={async () => {
                   try {
@@ -200,7 +190,6 @@ export function HostsView({
           </DialogContent>
         </Dialog>
       )}
-      {ConfirmDialogComponent}
     </div>
   )
 }

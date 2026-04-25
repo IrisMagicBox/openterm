@@ -1,6 +1,8 @@
 import { useState, useEffect, type Dispatch, type SetStateAction } from 'react'
 import type { TerminalTab } from '../types'
 
+type ZoomDirection = 'in' | 'out' | 'reset'
+
 interface TerminalManagerState {
   terminalTabs: TerminalTab[]
   setTerminalTabs: Dispatch<SetStateAction<TerminalTab[]>>
@@ -34,11 +36,25 @@ export function useTerminalManager(): TerminalManagerState {
   const [fileBrowserHostAlias, setFileBrowserHostAlias] = useState('')
 
   useEffect(() => {
+    const applyTerminalZoom = (direction: ZoomDirection): void => {
+      if (document.documentElement.dataset.zoomTarget !== 'terminal') return
+      if (direction === 'in') {
+        setTerminalFontSize((s) => Math.min(s + 1, 30))
+        return
+      }
+      if (direction === 'out') {
+        setTerminalFontSize((s) => Math.max(s - 1, 6))
+        return
+      }
+      setTerminalFontSize(13)
+    }
+
     const handleZoomKey = (e: KeyboardEvent): void => {
+      if (document.documentElement.dataset.zoomTarget !== 'terminal') return
       if (e.metaKey || e.ctrlKey) {
         if (e.key === '=' || e.key === '+' || e.code === 'Equal' || e.code === 'NumpadAdd') {
           e.preventDefault()
-          setTerminalFontSize((s) => Math.min(s + 1, 30))
+          applyTerminalZoom('in')
         } else if (
           e.key === '-' ||
           e.key === '_' ||
@@ -46,10 +62,10 @@ export function useTerminalManager(): TerminalManagerState {
           e.code === 'NumpadSubtract'
         ) {
           e.preventDefault()
-          setTerminalFontSize((s) => Math.max(s - 1, 6))
+          applyTerminalZoom('out')
         } else if (e.key === '0' || e.code === 'Digit0' || e.code === 'Numpad0') {
           e.preventDefault()
-          setTerminalFontSize(13)
+          applyTerminalZoom('reset')
         }
       }
     }
@@ -63,8 +79,12 @@ export function useTerminalManager(): TerminalManagerState {
 
     window.addEventListener('keydown', handleZoomKey)
     window.addEventListener('keydown', handleCommandHistoryKey)
+    const unlistenZoomShortcut = window.api.onZoomShortcut(({ direction }) =>
+      applyTerminalZoom(direction)
+    )
 
     return () => {
+      unlistenZoomShortcut()
       window.removeEventListener('keydown', handleZoomKey)
       window.removeEventListener('keydown', handleCommandHistoryKey)
     }

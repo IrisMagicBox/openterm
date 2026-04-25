@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import type { TerminalSession, Topic } from '../../../shared/types'
 
 interface PendingAuth {
@@ -9,10 +10,29 @@ interface PendingAuth {
   metadata?: Record<string, unknown>
 }
 
-export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | null }) {
+interface UseAgentSessionsResult {
+  agentSessions: TerminalSession[]
+  setAgentSessions: Dispatch<SetStateAction<TerminalSession[]>>
+  thinkingTopics: Set<string>
+  pendingAuth: PendingAuth | null
+  setPendingAuth: Dispatch<SetStateAction<PendingAuth | null>>
+  handleCreateTerminal: (hostId: string) => Promise<void>
+  handleCloseTerminal: (id: string) => Promise<void>
+  handleRenameTerminal: (id: string, name: string) => Promise<void>
+  handleToggleTerminalPin: (id: string, isPinned: boolean) => Promise<void>
+  handleToggleAgentTerminalPaused: (id: string, paused: boolean) => Promise<void>
+  handleResolveAuth: (approved: boolean, alwaysAllow?: boolean) => Promise<void>
+}
+
+export function useAgentSessions({
+  selectedTopic
+}: {
+  selectedTopic: Topic | null
+}): UseAgentSessionsResult {
   const [agentSessions, setAgentSessions] = useState<TerminalSession[]>([])
   const [thinkingTopics, setThinkingTopics] = useState<Set<string>>(new Set())
   const [pendingAuth, setPendingAuth] = useState<PendingAuth | null>(null)
+  const agentSessionIds = agentSessions.map((session) => session.id).join(',')
 
   useEffect(() => {
     const unlistenAuth = window.api.onAgentAuthRequest(
@@ -81,10 +101,10 @@ export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | nul
       setAgentSessions((prev) => prev.filter((s) => s.id !== id))
     })
 
-    // Reset sessions when topic changes to avoid stale data
-    setAgentSessions([])
+    const resetTimer = window.setTimeout(() => setAgentSessions([]), 0)
 
     return () => {
+      window.clearTimeout(resetTimer)
       unlistenAuth()
       unlistenThinking()
       unlistenTerminalShow()
@@ -97,82 +117,85 @@ export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | nul
   useEffect(() => {
     const unsubscribers: Array<() => void> = []
 
-    agentSessions.forEach((session) => {
-      const unsubStart = window.api.onTerminalCommandStart(session.id, (data) => {
-        setAgentSessions((prev) =>
-          prev.map((s) =>
-            s.id === session.id
-              ? {
-                  ...s,
-                  command: data.command,
-                  commandSource: data.source === 'user' ? 'user' : 'agent',
-                  commandStatus: 'running',
-                  commandStartTime: Date.now(),
-                  commandExitCode: undefined,
-                  commandDurationMs: undefined
-                }
-              : s
+    agentSessionIds
+      .split(',')
+      .filter(Boolean)
+      .forEach((sessionId) => {
+        const unsubStart = window.api.onTerminalCommandStart(sessionId, (data) => {
+          setAgentSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionId
+                ? {
+                    ...s,
+                    command: data.command,
+                    commandSource: data.source === 'user' ? 'user' : 'agent',
+                    commandStatus: 'running',
+                    commandStartTime: Date.now(),
+                    commandExitCode: undefined,
+                    commandDurationMs: undefined
+                  }
+                : s
+            )
           )
-        )
-      })
+        })
 
-      const unsubEnd = window.api.onTerminalCommandEnd(session.id, (data) => {
-        setAgentSessions((prev) =>
-          prev.map((s) =>
-            s.id === session.id
-              ? {
-                  ...s,
-                  commandStatus: data.exitCode === 0 ? 'completed' : 'failed',
-                  commandExitCode: data.exitCode,
-                  commandDurationMs: data.durationMs
-                }
-              : s
+        const unsubEnd = window.api.onTerminalCommandEnd(sessionId, (data) => {
+          setAgentSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionId
+                ? {
+                    ...s,
+                    commandStatus: data.exitCode === 0 ? 'completed' : 'failed',
+                    commandExitCode: data.exitCode,
+                    commandDurationMs: data.durationMs
+                  }
+                : s
+            )
           )
-        )
-      })
+        })
 
-      const unsubTakeover = window.api.onTerminalUserTakeover(session.id, () => {
-        setAgentSessions((prev) =>
-          prev.map((s) =>
-            s.id === session.id
-              ? {
-                  ...s,
-                  commandStatus:
-                    s.commandStatus === 'running' || s.commandSource === 'agent'
-                      ? 'failed'
-                      : s.commandStatus,
-                  commandSource:
-                    s.commandStatus === 'running' || s.commandSource === 'agent'
-                      ? 'user'
-                      : s.commandSource
-                }
-              : s
+        const unsubTakeover = window.api.onTerminalUserTakeover(sessionId, () => {
+          setAgentSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionId
+                ? {
+                    ...s,
+                    commandStatus:
+                      s.commandStatus === 'running' || s.commandSource === 'agent'
+                        ? 'failed'
+                        : s.commandStatus,
+                    commandSource:
+                      s.commandStatus === 'running' || s.commandSource === 'agent'
+                        ? 'user'
+                        : s.commandSource
+                  }
+                : s
+            )
           )
-        )
-      })
+        })
 
-      const unsubControlState = window.api.onTerminalControlState(session.id, (state) => {
-        setAgentSessions((prev) =>
-          prev.map((s) =>
-            s.id === session.id
-              ? {
-                  ...s,
-                  paused: state.paused,
-                  lockedBy: state.lockedBy,
-                  takeoverMode: state.takeoverMode
-                }
-              : s
+        const unsubControlState = window.api.onTerminalControlState(sessionId, (state) => {
+          setAgentSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionId
+                ? {
+                    ...s,
+                    paused: state.paused,
+                    lockedBy: state.lockedBy,
+                    takeoverMode: state.takeoverMode
+                  }
+                : s
+            )
           )
-        )
-      })
+        })
 
-      unsubscribers.push(unsubStart, unsubEnd, unsubTakeover, unsubControlState)
-    })
+        unsubscribers.push(unsubStart, unsubEnd, unsubTakeover, unsubControlState)
+      })
 
     return () => {
       unsubscribers.forEach((fn) => fn())
     }
-  }, [agentSessions.map((s) => s.id).join(',')])
+  }, [agentSessionIds])
 
   const handleCreateTerminal = useCallback(
     async (hostId: string) => {
@@ -214,9 +237,44 @@ export function useAgentSessions({ selectedTopic }: { selectedTopic: Topic | nul
     setAgentSessions((prev) => prev.map((s) => (s.id === id ? { ...s, isPinned } : s)))
   }, [])
 
-  const handleToggleAgentTerminalPaused = useCallback(async (id: string, paused: boolean) => {
-    await window.api.setAgentSessionPaused(id, paused)
-  }, [])
+  const handleToggleAgentTerminalPaused = useCallback(
+    async (id: string, paused: boolean) => {
+      const previous = agentSessions.find((session) => session.id === id)
+      setAgentSessions((prev) =>
+        prev.map((session) =>
+          session.id === id
+            ? {
+                ...session,
+                paused,
+                lockedBy: paused ? 'user' : null,
+                takeoverMode: paused ? 'manual' : null
+              }
+            : session
+        )
+      )
+
+      try {
+        await window.api.setAgentSessionPaused(id, paused)
+      } catch (error) {
+        if (previous) {
+          setAgentSessions((prev) =>
+            prev.map((session) =>
+              session.id === id
+                ? {
+                    ...session,
+                    paused: previous.paused ?? false,
+                    lockedBy: previous.lockedBy ?? null,
+                    takeoverMode: previous.takeoverMode ?? null
+                  }
+                : session
+            )
+          )
+        }
+        throw error
+      }
+    },
+    [agentSessions]
+  )
 
   const handleResolveAuth = useCallback(
     async (approved: boolean, alwaysAllow = false) => {

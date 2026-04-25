@@ -2,15 +2,24 @@ import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { ClipboardAddon } from '@xterm/addon-clipboard'
+import { Sparkles, X } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 import { FileDragData } from './terminal/FileBrowser'
-import type { TerminalTakeoverMode } from '../../../shared/types'
+import type { TerminalSessionRole, TerminalTakeoverMode } from '../../../shared/types'
+import {
+  buildTerminalModelCompletion,
+  updateTerminalInputBuffer,
+  type TerminalCompletionResult
+} from '../lib/terminal-completion'
 
 interface TerminalViewProps {
   id: string
   onClose: () => void
   topicId?: string
   hostId?: string
+  hostAlias?: string
+  terminalName?: string
+  terminalRole?: TerminalSessionRole
   onFocusSession?: () => void
   fontSize?: number
   command?: string
@@ -26,6 +35,19 @@ interface TerminalViewProps {
     destHostId: string,
     destPath: string
   ) => void
+  commandAssist?: TerminalCommandAssistProps | null
+}
+
+interface TerminalCommandAssistProps {
+  open: boolean
+  value: string
+  targetLabel?: string
+  historyCommands: string[]
+  busy?: boolean
+  error?: string | null
+  onChange: (value: string) => void
+  onSubmit: (context?: { currentInput: string }) => Promise<string | null>
+  onClose: () => void
 }
 
 export function TerminalView({
@@ -33,6 +55,9 @@ export function TerminalView({
   onClose,
   topicId,
   hostId,
+  hostAlias,
+  terminalName,
+  terminalRole,
   onFocusSession,
   fontSize = 13,
   commandStatus,
@@ -41,15 +66,28 @@ export function TerminalView({
   lockedBy = null,
   takeoverMode = null,
   onFileDrop,
-}: TerminalViewProps) {
+  commandAssist
+}: TerminalViewProps): React.ReactElement {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const commandAssistInputRef = useRef<HTMLTextAreaElement>(null)
+  const initialFontSizeRef = useRef(fontSize)
   const [isDragOver, setIsDragOver] = useState(false)
   const [isAgentExecuting, setIsAgentExecuting] = useState(false)
+  const [completion, setCompletion] = useState<TerminalCompletionResult | null>(null)
+  const [completionPending, setCompletionPending] = useState(false)
+  const [completionAnchor, setCompletionAnchor] = useState({ left: 12, top: 12 })
 
   const onCloseRef = useRef(onClose)
   const onFocusSessionRef = useRef(onFocusSession)
+  const inputBufferRef = useRef('')
+  const completionRef = useRef<TerminalCompletionResult | null>(null)
+  const completionTimerRef = useRef<number | null>(null)
+  const completionRequestRef = useRef(0)
+  const updateAnchorRef = useRef<() => void>(() => undefined)
+  const sendTerminalInputRef = useRef<(data: string) => void>(() => undefined)
+  const terminalContextRef = useRef({ hostAlias, terminalName, terminalRole })
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -57,11 +95,16 @@ export function TerminalView({
   }, [onClose, onFocusSession])
 
   useEffect(() => {
-    if (!terminalRef.current) return
+    terminalContextRef.current = { hostAlias, terminalName, terminalRole }
+  }, [hostAlias, terminalName, terminalRole])
+
+  useEffect(() => {
+    const terminalNode = terminalRef.current
+    if (!terminalNode) return
 
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: fontSize,
+      fontSize: initialFontSizeRef.current,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: {
         background: '#ffffff',
@@ -92,23 +135,158 @@ export function TerminalView({
     const clipboardAddon = new ClipboardAddon()
     term.loadAddon(fitAddon)
     term.loadAddon(clipboardAddon)
-    term.open(terminalRef.current)
+    term.open(terminalNode)
     fitAddonRef.current = fitAddon
 
-    const handleMouseDown = () => {
+    const handleMouseDown = (): void => {
       term.focus()
       onFocusSessionRef.current?.()
     }
-    terminalRef.current.addEventListener('mousedown', handleMouseDown)
+    terminalNode.addEventListener('mousedown', handleMouseDown)
 
     xtermRef.current = term
 
     const isLocal = hostId === 'local'
 
-    let cleanupAgentExecuting: (() => void) | undefined
-    cleanupAgentExecuting = window.api.onTerminalAgentExecuting(id, setIsAgentExecuting)
+    const cleanupAgentExecuting = window.api.onTerminalAgentExecuting(id, setIsAgentExecuting)
 
-    const doFitAndResize = () => {
+    const sendTerminalInput = (data: string): void => {
+      onFocusSessionRef.current?.()
+      if (isLocal) {
+        window.api.sendLocalInput(id, data)
+      } else {
+        window.api.sendSSHInput(id, data, topicId || '')
+      }
+    }
+    sendTerminalInputRef.current = sendTerminalInput
+
+    const updateCompletionAnchor = (): void => {
+      const outerNode = terminalNode.parentElement
+      if (!outerNode || term.cols <= 0 || term.rows <= 0) return
+
+      const terminalRect = terminalNode.getBoundingClientRect()
+      const outerRect = outerNode.getBoundingClientRect()
+      const cellWidth = terminalRect.width / Math.max(term.cols, 1)
+      const cellHeight = terminalRect.height / Math.max(term.rows, 1)
+      const preferredLeft =
+        terminalRect.left - outerRect.left + term.buffer.active.cursorX * cellWidth + 8
+      const preferredTop =
+        terminalRect.top - outerRect.top + (term.buffer.active.cursorY + 1) * cellHeight + 6
+
+      setCompletionAnchor({
+        left: Math.max(8, Math.min(preferredLeft, outerRect.width - 280)),
+        top: Math.max(8, Math.min(preferredTop, outerRect.height - 48))
+      })
+    }
+    updateAnchorRef.current = updateCompletionAnchor
+
+    const setNextCompletion = (next: TerminalCompletionResult | null): void => {
+      completionRef.current = next
+      setCompletion(next)
+      setCompletionPending(false)
+      if (next) updateCompletionAnchor()
+    }
+
+    const hideCompletion = (): void => {
+      if (completionTimerRef.current) {
+        window.clearTimeout(completionTimerRef.current)
+        completionTimerRef.current = null
+      }
+      completionRequestRef.current += 1
+      setCompletionPending(false)
+      setNextCompletion(null)
+    }
+
+    const acceptCompletion = (next: TerminalCompletionResult): void => {
+      sendTerminalInput(next.insertText)
+      inputBufferRef.current = next.value
+      hideCompletion()
+      requestAnimationFrame(updateCompletionAnchor)
+    }
+
+    const runCompletionRequest = (
+      input: string,
+      requestId: number,
+      options: { showPending?: boolean } = {}
+    ): void => {
+      completionTimerRef.current = null
+      if (options.showPending) {
+        setCompletionPending(true)
+        updateCompletionAnchor()
+      }
+
+      void (async (): Promise<void> => {
+        const trimmedInput = input.trim()
+        const [historyResult, screenResult] = await Promise.allSettled([
+          window.api.searchCommands(trimmedInput, 12),
+          isLocal ? window.api.getLocalBuffer(id) : window.api.getSSHBuffer(id)
+        ])
+
+        if (completionRequestRef.current !== requestId) return
+
+        const historyCommands =
+          historyResult.status === 'fulfilled'
+            ? historyResult.value.map((entry) => entry.content)
+            : []
+        const screen = screenResult.status === 'fulfilled' ? screenResult.value : ''
+
+        try {
+          const terminalContext = terminalContextRef.current
+          const result = await window.api.completeTerminalCommand({
+            topicId,
+            currentInput: input,
+            session: {
+              id,
+              hostId: hostId || (isLocal ? 'local' : 'remote'),
+              hostAlias: terminalContext.hostAlias || (isLocal ? '本机' : hostId || '远程主机'),
+              name: terminalContext.terminalName,
+              role: terminalContext.terminalRole
+            },
+            historyCommands,
+            screen
+          })
+          if (completionRequestRef.current !== requestId) return
+          setNextCompletion(
+            buildTerminalModelCompletion(input, result.command, result.confidence || 'medium')
+          )
+        } catch {
+          if (completionRequestRef.current !== requestId) return
+          setNextCompletion(null)
+        }
+      })().catch(() => {
+        if (completionRequestRef.current === requestId) {
+          setNextCompletion(null)
+        }
+      })
+    }
+
+    const refreshCompletion = (input: string): void => {
+      if (completionTimerRef.current) {
+        window.clearTimeout(completionTimerRef.current)
+        completionTimerRef.current = null
+      }
+
+      completionRequestRef.current += 1
+      const requestId = completionRequestRef.current
+
+      const trimmedInput = input.trim()
+      setNextCompletion(null)
+
+      if (!trimmedInput || trimmedInput.length > 200) {
+        return
+      }
+
+      if (trimmedInput.length < 3) {
+        return
+      }
+
+      completionTimerRef.current = window.setTimeout(
+        () => runCompletionRequest(input, requestId),
+        600
+      )
+    }
+
+    const doFitAndResize = (): void => {
       try {
         fitAddon.fit()
         if (term.cols > 0 && term.rows > 0) {
@@ -161,13 +339,65 @@ export function TerminalView({
       onCloseRef.current?.()
     })
 
-    term.onData((data) => {
-      onFocusSessionRef.current?.()
-      if (isLocal) {
-        window.api.sendLocalInput(id, data)
-      } else {
-        window.api.sendSSHInput(id, data, topicId || '')
+    const handleTerminalInput = (data: string): void => {
+      if (data.startsWith('\x1b')) {
+        inputBufferRef.current = ''
+        hideCompletion()
+        sendTerminalInput(data)
+        return
       }
+
+      if (data === '\t') {
+        inputBufferRef.current = ''
+        hideCompletion()
+        sendTerminalInput(data)
+        return
+      }
+
+      const nextInput = updateTerminalInputBuffer(inputBufferRef.current, data)
+      inputBufferRef.current = nextInput
+      sendTerminalInput(data)
+      requestAnimationFrame(updateCompletionAnchor)
+      refreshCompletion(nextInput)
+    }
+
+    term.attachCustomKeyEventHandler((event) => {
+      if (
+        event.type === 'keydown' &&
+        event.key === 'Tab' &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey
+      ) {
+        if (!event.shiftKey) return true
+
+        event.preventDefault()
+        event.stopPropagation()
+
+        if (completionRef.current?.source === 'model') {
+          acceptCompletion(completionRef.current)
+          return false
+        }
+
+        const pendingInput = inputBufferRef.current
+        const trimmedPendingInput = pendingInput.trim()
+        if (trimmedPendingInput.length >= 3 && trimmedPendingInput.length <= 200) {
+          if (completionTimerRef.current) {
+            window.clearTimeout(completionTimerRef.current)
+            completionTimerRef.current = null
+          }
+          completionRequestRef.current += 1
+          runCompletionRequest(pendingInput, completionRequestRef.current, { showPending: true })
+        } else {
+          hideCompletion()
+        }
+        return false
+      }
+      return true
+    })
+
+    term.onData((data) => {
+      handleTerminalInput(data)
     })
 
     term.onResize(({ cols, rows }) => {
@@ -181,16 +411,14 @@ export function TerminalView({
     const resizeObserver = new ResizeObserver(() => {
       try {
         fitAddon.fit()
-      } catch (err) {
+      } catch {
         // Ignore fit errors when element is not visible
       }
     })
 
-    if (terminalRef.current) {
-      resizeObserver.observe(terminalRef.current)
-    }
+    resizeObserver.observe(terminalNode)
 
-    const handleResize = () => {
+    const handleResize = (): void => {
       fitAddon.fit()
     }
     window.addEventListener('resize', handleResize)
@@ -201,10 +429,21 @@ export function TerminalView({
       cleanupData()
       cleanupClosed()
       cleanupAgentExecuting?.()
-      terminalRef.current?.removeEventListener('mousedown', handleMouseDown)
+      if (completionTimerRef.current) window.clearTimeout(completionTimerRef.current)
+      completionRequestRef.current += 1
+      completionRef.current = null
+      updateAnchorRef.current = () => undefined
+      sendTerminalInputRef.current = () => undefined
+      terminalNode.removeEventListener('mousedown', handleMouseDown)
       term.dispose()
     }
-  }, [id, topicId])
+  }, [hostId, id, topicId])
+
+  useEffect(() => {
+    if (!commandAssist?.open) return
+    updateAnchorRef.current()
+    window.setTimeout(() => commandAssistInputRef.current?.focus(), 0)
+  }, [commandAssist?.open])
 
   useEffect(() => {
     if (xtermRef.current) {
@@ -223,19 +462,36 @@ export function TerminalView({
   const isAutoTakeover = lockedBy === 'user' && takeoverMode === 'auto' && !paused
   const isManualTakeover = paused && takeoverMode === 'manual'
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleCommandAssistSubmit = async (): Promise<void> => {
+    if (!commandAssist?.open || commandAssist.busy || !commandAssist.value.trim()) return
+
+    const currentInput = inputBufferRef.current
+    const command = await commandAssist.onSubmit({ currentInput })
+    if (!command) return
+
+    const draftInput = `${currentInput.trim() ? '\x15' : ''}${command}`
+    sendTerminalInputRef.current(draftInput)
+    inputBufferRef.current = command
+    completionRef.current = null
+    setCompletion(null)
+    commandAssist.onClose()
+    xtermRef.current?.focus()
+    requestAnimationFrame(updateAnchorRef.current)
+  }
+
+  const handleDragOver = (e: React.DragEvent): void => {
     if (!e.dataTransfer.types.includes('application/json')) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
     setIsDragOver(true)
   }
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = (e: React.DragEvent): void => {
     if (e.currentTarget.contains(e.relatedTarget as Node)) return
     setIsDragOver(false)
   }
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent): void => {
     e.preventDefault()
     setIsDragOver(false)
 
@@ -261,6 +517,15 @@ export function TerminalView({
 
   return (
     <div
+      data-terminal-view
+      onMouseEnter={() => {
+        document.documentElement.dataset.zoomTarget = 'terminal'
+      }}
+      onMouseLeave={() => {
+        if (document.documentElement.dataset.zoomTarget === 'terminal') {
+          delete document.documentElement.dataset.zoomTarget
+        }
+      }}
       className="relative h-full w-full overflow-hidden rounded-xl bg-white"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -273,14 +538,14 @@ export function TerminalView({
           </span>
         </div>
       )}
-      {((isAgentExecuting || (commandStatus === 'running' && commandSource === 'agent')) &&
+      {(isAgentExecuting || (commandStatus === 'running' && commandSource === 'agent')) &&
         !isAutoTakeover &&
-        !isManualTakeover) && (
-        <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-white shadow-sm shadow-accent/20">
-          <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-          Agent 执行中...
-        </div>
-      )}
+        !isManualTakeover && (
+          <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-white shadow-sm shadow-accent/20">
+            <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            Agent 执行中...
+          </div>
+        )}
       {isAutoTakeover && (
         <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 rounded-full bg-warning px-2.5 py-1 text-xs font-semibold text-white shadow-sm shadow-warning/20">
           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -303,6 +568,114 @@ export function TerminalView({
             />
           </svg>
           人工接管中
+        </div>
+      )}
+      {(completion || completionPending) && !commandAssist?.open && (
+        <div
+          className="pointer-events-none absolute z-20 flex max-w-[min(420px,calc(100%-24px))] items-center gap-2 rounded-lg border border-black/[0.08] bg-white/95 px-2.5 py-1.5 text-xs shadow-[0_12px_34px_rgba(15,23,42,0.12)] backdrop-blur-xl"
+          style={{ left: completionAnchor.left, top: completionAnchor.top }}
+        >
+          <kbd className="rounded border border-black/[0.08] bg-black/[0.035] px-1.5 py-0.5 font-mono text-[10px] font-bold text-muted-foreground">
+            Shift+Tab
+          </kbd>
+          {completion ? (
+            <span className="min-w-0 truncate font-mono">
+              {completion.mode === 'replace' ? (
+                <>
+                  <span className="text-muted-foreground/55 line-through">{completion.input}</span>
+                  <span className="px-1 text-muted-foreground/60">→</span>
+                  <span className="font-semibold text-foreground">{completion.value}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-muted-foreground/70">{completion.input}</span>
+                  <span className="font-semibold text-foreground">{completion.suffix}</span>
+                </>
+              )}
+            </span>
+          ) : (
+            <span className="min-w-0 truncate font-medium text-muted-foreground">
+              正在生成智能补全
+            </span>
+          )}
+          <span className="shrink-0 rounded-full bg-black/[0.035] px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+            {completion?.displayLabel || 'AI'}
+          </span>
+          {completion && completion.alternatives.length > 1 && (
+            <span className="shrink-0 text-[10px] font-semibold text-muted-foreground/70">
+              +{completion.alternatives.length - 1}
+            </span>
+          )}
+        </div>
+      )}
+      {commandAssist?.open && (
+        <div
+          className="absolute z-30 w-[min(460px,calc(100%-24px))] overflow-hidden rounded-xl border border-black/[0.08] bg-white/96 text-foreground shadow-[0_18px_48px_rgba(15,23,42,0.16)] backdrop-blur-2xl"
+          style={{ left: completionAnchor.left, top: completionAnchor.top }}
+        >
+          <div className="flex items-center gap-2 border-b border-black/[0.06] px-3 py-2">
+            <Sparkles size={13} className="shrink-0 text-accent" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-bold">命令草稿</div>
+              <div className="truncate text-[11px] font-semibold text-muted-foreground">
+                {commandAssist.targetLabel || '当前终端'}
+              </div>
+            </div>
+            <button
+              aria-label="关闭命令助手"
+              onClick={commandAssist.onClose}
+              className="blue-ring rounded-md p-1 text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <div className="px-3 py-2.5">
+            <textarea
+              ref={commandAssistInputRef}
+              value={commandAssist.value}
+              onChange={(event) => commandAssist.onChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  commandAssist.onClose()
+                  return
+                }
+                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault()
+                  void handleCommandAssistSubmit()
+                }
+              }}
+              placeholder="告诉这个终端要写什么命令..."
+              className="blue-ring min-h-20 w-full resize-none rounded-lg border border-black/[0.08] bg-black/[0.015] px-3 py-2 text-sm leading-6 outline-none placeholder:text-muted-foreground/45"
+            />
+            {commandAssist.historyCommands.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {commandAssist.historyCommands.slice(0, 3).map((command) => (
+                  <span
+                    key={command}
+                    className="max-w-full truncate rounded-md bg-black/[0.035] px-1.5 py-1 font-mono text-[10px] text-muted-foreground"
+                  >
+                    {command}
+                  </span>
+                ))}
+              </div>
+            )}
+            {commandAssist.error && (
+              <div className="mt-2 rounded-md bg-red-50 px-2.5 py-1.5 text-[11px] font-medium text-red-600">
+                {commandAssist.error}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-2 border-t border-black/[0.06] px-3 py-2 text-[11px] font-semibold text-muted-foreground">
+            <span>写入终端，Enter 执行</span>
+            <button
+              onClick={() => void handleCommandAssistSubmit()}
+              disabled={!commandAssist.value.trim() || commandAssist.busy}
+              className="blue-ring rounded-md bg-foreground px-2.5 py-1.5 text-xs font-bold text-white transition hover:bg-foreground/90 disabled:pointer-events-none disabled:bg-black/20"
+            >
+              {commandAssist.busy ? '生成中' : '写入'}
+            </button>
+          </div>
         </div>
       )}
       <div

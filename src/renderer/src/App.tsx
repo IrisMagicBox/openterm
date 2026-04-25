@@ -108,7 +108,6 @@ export default function App(): JSX.Element {
     terminalSessionId,
     setTerminalSessionId,
     terminalFontSize,
-    setTerminalFontSize,
     terminalWidth,
     setTerminalWidth,
     commandHistoryOpen,
@@ -279,7 +278,6 @@ export default function App(): JSX.Element {
               terminalSessionId={terminalSessionId}
               setTerminalSessionId={setTerminalSessionId}
               terminalFontSize={terminalFontSize}
-              setTerminalFontSize={setTerminalFontSize}
               setActiveView={setActiveView}
               fileBrowserHostId={fileBrowserHostId}
               setFileBrowserHostId={setFileBrowserHostId}
@@ -320,7 +318,6 @@ export default function App(): JSX.Element {
               terminalWidth={terminalWidth}
               setTerminalWidth={setTerminalWidth}
               terminalFontSize={terminalFontSize}
-              setTerminalFontSize={setTerminalFontSize}
               onRemoveHostFromTopic={handleRemoveHostFromTopic}
               onOpenFileBrowser={(host) => {
                 setFileBrowserHostId(host.id)

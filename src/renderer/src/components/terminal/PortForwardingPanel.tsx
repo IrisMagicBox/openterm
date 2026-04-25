@@ -1,8 +1,7 @@
 import { getErrorMessage } from '../../../../shared/errors'
 import { useState, useEffect, useCallback } from 'react'
 import { Globe, Plus, X, ArrowRight, Trash2, ExternalLink } from 'lucide-react'
-import { useConfirm } from '../../hooks/useConfirm'
-import { Button, IconButton, Input } from '../ui'
+import { Button, ConfirmActionButton, IconButton, Input } from '../ui'
 
 interface Tunnel {
   id: string
@@ -25,7 +24,6 @@ export function PortForwardingPanel({
   hostAlias,
   onClose
 }: PortForwardingPanelProps): React.ReactElement {
-  const { confirm, ConfirmDialogComponent } = useConfirm()
   const [tunnels, setTunnels] = useState<Tunnel[]>([])
   const [localPort, setLocalPort] = useState('')
   const [remoteHost, setRemoteHost] = useState('localhost')
@@ -77,13 +75,6 @@ export function PortForwardingPanel({
   }
 
   const handleClose = async (tunnelId: string): Promise<void> => {
-    const ok = await confirm({
-      title: '关闭隧道',
-      message: '确定关闭此端口转发隧道？',
-      confirmText: '关闭',
-      variant: 'danger'
-    })
-    if (!ok) return
     try {
       await window.api.pfClose(tunnelId)
       void refresh()
@@ -162,19 +153,20 @@ export function PortForwardingPanel({
                 >
                   <ExternalLink size={12} />
                 </IconButton>
-                <IconButton
+                <ConfirmActionButton
                   aria-label="关闭隧道"
-                  onClick={() => handleClose(tunnel.id)}
-                  className="h-7 w-7 hover:text-danger"
+                  onConfirm={() => handleClose(tunnel.id)}
+                  className="blue-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground no-drag hover:border-white/70 hover:bg-white/60 hover:text-danger hover:shadow-sm"
+                  confirmClassName="hover:bg-danger-strong"
+                  confirmingTitle="关闭隧道"
                 >
                   <Trash2 size={12} />
-                </IconButton>
+                </ConfirmActionButton>
               </div>
             ))}
           </div>
         )}
       </div>
-      {ConfirmDialogComponent}
     </div>
   )
 }

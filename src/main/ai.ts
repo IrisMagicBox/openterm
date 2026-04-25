@@ -154,6 +154,9 @@ export function resolveProviderSelection(
     (requestedModelId &&
       models.find((m) => m.id === requestedModelId || m.providerModelId === requestedModelId)) ||
     models[0]
+  if (!model && provider.id === 'coreshub') {
+    throw new Error('CoresHub 尚未配置模型。请先自动获取模型或手动添加模型。')
+  }
   const modelId = model ? getModelApiId(model) : DEFAULT_MODEL
   const capabilities = inferModelRuntimeCapabilities(
     modelId,
@@ -199,7 +202,7 @@ export const getCurrentModel = (options: ProviderSelectionOptions = {}): string 
   }
 }
 
-export const getEnabledProviders = () => {
+export const getEnabledProviders = (): Provider[] => {
   const providers = providerDB.getProviders()
   return providers.filter((p) => p.enabled)
 }
@@ -217,6 +220,34 @@ function createProviderModel(
     capabilities: inferModelCapabilities(providerModelId, provider.id, name),
     createdAt: Date.now()
   }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function readResponseError(data: unknown): string | undefined {
+  const error = asRecord(data).error
+  if (typeof error === 'string') return error
+  const message = asRecord(error).message
+  return readString(message)
+}
+
+function readModelIdentifier(item: unknown): string | undefined {
+  const record = asRecord(item)
+  return readString(record.id) || readString(record.name) || readString(record.model)
+}
+
+function supportsGenerateContent(item: unknown): boolean {
+  return asArray(asRecord(item).supportedGenerationMethods).includes('generateContent')
 }
 
 export async function fetchProviderModels(provider: Provider): Promise<Model[]> {
@@ -245,36 +276,33 @@ export async function fetchProviderModels(provider: Provider): Promise<Model[]> 
 
   try {
     const response = await fetch(url, { headers, signal: controller.signal })
-    const data: any = await response.json().catch(() => ({}))
+    const data: unknown = await response.json().catch(() => ({}))
+    const payload = asRecord(data)
     if (!response.ok) {
-      const errorMsg = data.error?.message || data.error || response.statusText
+      const errorMsg = readResponseError(data) || response.statusText
       throw new Error(`HTTP ${response.status}: ${errorMsg}`)
     }
 
     if (provider.type === 'ollama') {
-      const items = Array.isArray(data.models) ? data.models : []
+      const items = asArray(payload.models)
       return items
-        .map((item: any) => item.name || item.model)
+        .map(readModelIdentifier)
         .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
         .map((id) => createProviderModel(provider, id))
     }
 
     if (provider.type === 'gemini') {
-      const items = Array.isArray(data.models) ? data.models : []
+      const items = asArray(payload.models)
       return items
-        .filter((item: any) => item.supportedGenerationMethods?.includes?.('generateContent'))
-        .map((item: any) => String(item.name || '').replace(/^models\//, ''))
+        .filter(supportsGenerateContent)
+        .map((item) => readString(asRecord(item).name)?.replace(/^models\//, '') || '')
         .filter((id: string) => id.length > 0)
         .map((id: string) => createProviderModel(provider, id, id))
     }
 
-    const items = Array.isArray(data.data)
-      ? data.data
-      : Array.isArray(data.models)
-        ? data.models
-        : []
+    const items = asArray(payload.data).length > 0 ? asArray(payload.data) : asArray(payload.models)
     return items
-      .map((item: any) => item.id || item.name || item.model)
+      .map(readModelIdentifier)
       .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
       .map((id) => createProviderModel(provider, id))
   } finally {
@@ -378,7 +406,7 @@ export async function testProviderConnection(
       ...(provider.config?.extra_headers || {})
     }
 
-    let body: any = {}
+    let body: Record<string, unknown> = {}
 
     if (provider.type === 'anthropic') {
       headers['x-api-key'] = provider.apiKey || ''
@@ -401,8 +429,9 @@ export async function testProviderConnection(
           generationConfig: { maxOutputTokens: 5 }
         })
       })
-      const data: any = await response.json()
-      if (data.error) return { ok: false, message: data.error.message || 'Gemini API Error' }
+      const data: unknown = await response.json().catch(() => ({}))
+      const errorMessage = readResponseError(data)
+      if (errorMessage) return { ok: false, message: errorMessage || 'Gemini API Error' }
       return {
         ok: response.ok,
         message: response.ok ? 'Connection successful.' : `HTTP ${response.status}`
@@ -431,15 +460,16 @@ export async function testProviderConnection(
       })
       clearTimeout(timeoutId)
 
-      const data: any = await response.json().catch(() => ({}))
+      const data: unknown = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        const errorMsg = data.error?.message || data.error || response.statusText
+        const errorMsg = readResponseError(data) || response.statusText
         return { ok: false, message: `HTTP ${response.status}: ${errorMsg}` }
       }
 
-      if (data.error) {
-        return { ok: false, message: data.error.message || 'API error' }
+      const errorMessage = readResponseError(data)
+      if (errorMessage) {
+        return { ok: false, message: errorMessage || 'API error' }
       }
 
       return { ok: true, message: `连接成功！已通过模型 ${testModel} 完成对话测试。` }

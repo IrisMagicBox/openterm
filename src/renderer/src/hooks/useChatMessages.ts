@@ -10,6 +10,7 @@ interface UseChatMessagesResult {
   messages: Message[]
   activeSteps: Message[]
   activeParts: AgentPart[]
+  activeRunId: string | null
   messageQueue: ChatMessageQueueItem[]
   expandedThoughts: Record<string, boolean>
   sendMessage: (content: string) => Promise<void>
@@ -22,10 +23,15 @@ function sortParts(parts: AgentPart[]): AgentPart[] {
   return [...parts].sort((a, b) => a.orderIndex - b.orderIndex || a.createdAt - b.createdAt)
 }
 
+function isActiveRun(run: AgentRun): boolean {
+  return ['running', 'waiting_approval', 'retrying', 'compacting'].includes(run.status)
+}
+
 export function useChatMessages(topicId: string, thinking?: boolean): UseChatMessagesResult {
   const [messages, setMessages] = useState<Message[]>([])
   const [activeSteps, setActiveSteps] = useState<Message[]>([])
   const [activeParts, setActiveParts] = useState<AgentPart[]>([])
+  const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [messageQueue, setMessageQueue] = useState<ChatMessageQueueItem[]>([])
   const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({})
   const runCacheRef = useRef<Map<string, AgentRun | undefined>>(new Map())
@@ -36,6 +42,7 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
       setMessages(history)
       setActiveSteps([])
       setActiveParts([])
+      setActiveRunId(null)
       runCacheRef.current.clear()
     }
     fetchHistory()
@@ -90,12 +97,26 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
     const unlistenPartUpdated = window.api.onAgentPartUpdated((part) => {
       void upsertPart(part)
     })
+    const unlistenRunCreated = window.api.onAgentRunCreated((run) => {
+      if (run.topicId !== topicId || !isActiveRun(run)) return
+      setActiveRunId(run.id)
+    })
+    const unlistenRunUpdated = window.api.onAgentRunUpdated((run) => {
+      if (run.topicId !== topicId) return
+      if (isActiveRun(run)) {
+        setActiveRunId(run.id)
+        return
+      }
+      setActiveRunId((current) => (current === run.id ? null : current))
+    })
 
     return () => {
       disposed = true
       unlistenStep()
       unlistenPartCreated()
       unlistenPartUpdated()
+      unlistenRunCreated()
+      unlistenRunUpdated()
     }
   }, [topicId])
 
@@ -191,6 +212,7 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
     messages,
     activeSteps,
     activeParts,
+    activeRunId,
     messageQueue,
     expandedThoughts,
     sendMessage,

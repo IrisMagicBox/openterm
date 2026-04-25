@@ -5,45 +5,36 @@ interface AgentStepStreamProps {
   steps: Message[]
 }
 
-export function AgentStepStream({ steps }: AgentStepStreamProps) {
+export function AgentStepStream({ steps }: AgentStepStreamProps): React.ReactElement | null {
   if (steps.length === 0) return null
 
   return (
-    <div className="flex justify-start">
-      <div className="flex items-end gap-2.5">
-        <div className="flex h-8 w-8 animate-pulse items-center justify-center rounded-xl border border-black/[0.06] bg-white text-accent shadow-sm">
-          <Brain size={14} />
-        </div>
-        <div className="max-w-md rounded-2xl rounded-bl-md border border-black/[0.06] bg-white px-4 py-3 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-          <div className="space-y-2">
-            {steps.map((step, idx) => {
-              const status = step.metadata?.agentStatus as string
-              const isLast = idx === steps.length - 1
-              return (
-                <div
-                  key={step.id}
-                  className={`flex items-center gap-2 text-[11px] ${!isLast ? 'opacity-50' : ''}`}
-                >
-                  {status === 'thinking' && <Brain size={11} className="text-accent" />}
-                  {status === 'executing' && <Terminal size={11} className="text-success" />}
-                  {status === 'verifying' && <CheckCircle2 size={11} className="text-warning" />}
-                  <span
-                    className={`font-semibold ${status === 'executing' ? 'text-success' : status === 'verifying' ? 'text-warning' : 'text-accent'}`}
-                  >
-                    {status === 'thinking'
-                      ? '思考方案中...'
-                      : status === 'executing'
-                        ? '正在执行环境指令...'
-                        : status === 'verifying'
-                          ? '正在验证目标达成情况...'
-                          : '处理中...'}
-                  </span>
-                  {isLast && <Loader2 size={10} className="animate-spin text-muted-foreground" />}
-                </div>
-              )
-            })}
-          </div>
-        </div>
+    <div className="mx-auto w-full max-w-[860px]">
+      <div className="space-y-1.5">
+        {steps.map((step, idx) => {
+          const status = step.metadata?.agentStatus as string
+          const isLast = idx === steps.length - 1
+          return (
+            <div
+              key={step.id}
+              className={`flex items-center gap-2 text-sm text-muted-foreground ${!isLast ? 'opacity-55' : ''}`}
+            >
+              {status === 'thinking' && <Brain size={14} />}
+              {status === 'executing' && <Terminal size={14} />}
+              {status === 'verifying' && <CheckCircle2 size={14} />}
+              <span className="font-medium">
+                {status === 'thinking'
+                  ? '思考中'
+                  : status === 'executing'
+                    ? '正在运行'
+                    : status === 'verifying'
+                      ? '正在验证'
+                      : '处理中'}
+              </span>
+              {isLast && <Loader2 size={13} className="animate-spin" />}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

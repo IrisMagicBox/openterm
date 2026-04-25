@@ -15,8 +15,16 @@ import {
 } from 'lucide-react'
 import type { Provider, Model } from '../../../../shared/types'
 import { PROVIDER_URLS, inferModelCapabilities } from '../../config/providers'
-import { useConfirm } from '../../hooks/useConfirm'
-import { Badge, Button, FormField, IconButton, Input, Surface, Switch } from '../ui'
+import {
+  Badge,
+  Button,
+  ConfirmActionButton,
+  FormField,
+  IconButton,
+  Input,
+  Surface,
+  Switch
+} from '../ui'
 
 interface ProviderSettingsProps {
   provider: Provider | null
@@ -38,7 +46,6 @@ export function ProviderSettings({
   onAddModel,
   onRemoveModel
 }: ProviderSettingsProps): React.ReactElement {
-  const { confirm, ConfirmDialogComponent } = useConfirm()
   const [formData, setFormData] = useState<Partial<Provider>>({})
   const [showApiKey, setShowApiKey] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
@@ -388,22 +395,18 @@ export function ProviderSettings({
                         )}
                       </button>
                       {onRemoveModel && (
-                        <button
-                          onClick={async () => {
-                            const ok = await confirm({
-                              title: '删除模型',
-                              message: `确定删除模型"${apiModelId}"吗？`,
-                              confirmText: '删除',
-                              variant: 'danger'
-                            })
-                            if (!ok) return
+                        <ConfirmActionButton
+                          aria-label={`删除模型 ${apiModelId}`}
+                          onConfirm={() => {
                             onRemoveModel(model.providerId, model.id)
                           }}
                           className="p-1.5 text-muted-foreground hover:text-danger hover:bg-danger-soft rounded-md transition-colors"
+                          confirmClassName="hover:bg-danger-strong"
+                          confirmingTitle={`删除 ${apiModelId}`}
                           title="删除模型"
                         >
                           <Trash2 size={14} />
-                        </button>
+                        </ConfirmActionButton>
                       )}
                     </div>
                   </Surface>
@@ -429,7 +432,6 @@ export function ProviderSettings({
           </p>
         </Surface>
       )}
-      {ConfirmDialogComponent}
     </div>
   )
 }

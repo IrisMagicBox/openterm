@@ -27,6 +27,10 @@ describe('provider presets', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
+  it('does not ship preset models for CoresHub', () => {
+    expect(getSystemModels('coreshub')).toEqual([])
+  })
+
   it('infers agent-relevant capabilities from common model names', () => {
     expect(inferModelCapabilities('text-embedding-3-large')).toEqual(['embedding'])
     expect(inferModelCapabilities('jina-reranker-v2-base-multilingual')).toEqual(['rerank'])

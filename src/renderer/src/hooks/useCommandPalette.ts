@@ -1,20 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback, type Dispatch, type SetStateAction } from 'react'
 
-export function useCommandPalette() {
+export function useCommandPalette(): {
+  commandPaletteOpen: boolean
+  commandPaletteValue: string
+  setCommandPaletteOpen: Dispatch<SetStateAction<boolean>>
+  setCommandPaletteValue: Dispatch<SetStateAction<string>>
+  openCommandPalette: () => void
+} {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [commandPaletteValue, setCommandPaletteValue] = useState('')
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault()
-        setCommandPaletteOpen(true)
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
 
   const openCommandPalette = useCallback(() => {
     setCommandPaletteOpen(true)

@@ -15,8 +15,7 @@ import logo from '../assets/logo.png'
 import { NavItem } from './NavItem'
 import { View, WorkspaceWindowItem } from '../types'
 import { Topic } from '../../../shared/types'
-import { useConfirm } from '../hooks/useConfirm'
-import { Badge, IconButton, Surface, Tooltip } from './ui'
+import { Badge, ConfirmActionButton, IconButton, Surface, Tooltip } from './ui'
 import { cn } from '../lib/utils'
 
 interface AppSidebarProps {
@@ -80,7 +79,6 @@ export function AppSidebar({
   onDeleteTerminalWindow,
   onDeleteFileWindow
 }: AppSidebarProps): React.ReactElement {
-  const { confirm, ConfirmDialogComponent } = useConfirm()
   const [editingWindowKey, setEditingWindowKey] = useState<string | null>(null)
   const [editingWindowTitle, setEditingWindowTitle] = useState('')
   const statusText = requireConfirmation ? '操作需确认' : '自动执行模式'
@@ -182,24 +180,18 @@ export function AppSidebar({
                       >
                         <Pencil size={12} />
                       </IconButton>
-                      <IconButton
+                      <ConfirmActionButton
                         aria-label="删除窗口"
-                        onClick={async (e) => {
-                          e.stopPropagation()
-                          const ok = await confirm({
-                            title: `删除${title}`,
-                            message: `确定关闭 "${item.title}" 吗？`,
-                            confirmText: '关闭',
-                            variant: 'danger'
-                          })
-                          if (!ok) return
+                        onConfirm={() => {
                           onDelete(item.id)
                         }}
-                        variant="ghost"
-                        className="h-6 w-6 text-muted-foreground hover:text-danger"
+                        stopPropagation
+                        className="blue-ring inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground no-drag hover:bg-white/60 hover:text-danger"
+                        confirmClassName="hover:bg-danger-strong"
+                        confirmingTitle="关闭"
                       >
                         <Trash2 size={12} />
-                      </IconButton>
+                      </ConfirmActionButton>
                     </div>
                   )}
                 </div>
@@ -411,24 +403,18 @@ export function AppSidebar({
                           >
                             <Pencil size={12} />
                           </IconButton>
-                          <IconButton
+                          <ConfirmActionButton
                             aria-label="删除话题"
-                            onClick={async (e) => {
-                              e.stopPropagation()
-                              const ok = await confirm({
-                                title: '删除话题',
-                                message: `确定删除话题"${topic.title}"吗？此操作不可恢复。`,
-                                confirmText: '删除',
-                                variant: 'danger'
-                              })
-                              if (!ok) return
+                            onConfirm={async () => {
                               await onDeleteTopic(topic.id)
                             }}
-                            variant="ghost"
-                            className="h-6 w-6 text-muted-foreground hover:text-danger"
+                            stopPropagation
+                            className="blue-ring inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground no-drag hover:bg-white/60 hover:text-danger"
+                            confirmClassName="hover:bg-danger-strong"
+                            confirmingTitle="删除"
                           >
                             <Trash2 size={12} />
-                          </IconButton>
+                          </ConfirmActionButton>
                         </div>
                       )}
                     </>
@@ -482,7 +468,6 @@ export function AppSidebar({
           </Surface>
         )}
       </div>
-      {ConfirmDialogComponent}
     </aside>
   )
 }

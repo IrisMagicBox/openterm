@@ -1,12 +1,37 @@
-import { ipcMain } from 'electron'
+import { ipcMain, nativeImage } from 'electron'
+import type { NativeImage } from 'electron'
 import os from 'node:os'
 import path from 'node:path'
 import { logger } from './logger'
+
+const DRAG_ICON_SIZE = 32
+const DEFAULT_DRAG_ICON_PATH = path.join(__dirname, '../../resources/icon.png')
+
+let defaultDragIcon: NativeImage | null = null
 
 function expandUserPath(filePath: string): string {
   if (filePath === '~') return os.homedir()
   if (filePath.startsWith('~/')) return path.join(os.homedir(), filePath.slice(2))
   return filePath
+}
+
+function createDragIcon(iconPath: string): NativeImage | null {
+  const image = nativeImage.createFromPath(iconPath)
+  if (image.isEmpty()) return null
+  return image.resize({ width: DRAG_ICON_SIZE, height: DRAG_ICON_SIZE, quality: 'best' })
+}
+
+function getDefaultDragIcon(): NativeImage | string {
+  defaultDragIcon ??= createDragIcon(DEFAULT_DRAG_ICON_PATH)
+  return defaultDragIcon || DEFAULT_DRAG_ICON_PATH
+}
+
+function getDragIcon(iconPath?: string): NativeImage | string {
+  if (iconPath) {
+    const customIcon = createDragIcon(expandUserPath(iconPath))
+    if (customIcon) return customIcon
+  }
+  return getDefaultDragIcon()
 }
 
 export function registerLocalFsIPC(): void {
@@ -85,7 +110,7 @@ export function registerLocalFsIPC(): void {
   ipcMain.on('local-fs:start-native-drag', (event, filePath: string, iconPath?: string) => {
     event.sender.startDrag({
       file: expandUserPath(filePath),
-      icon: iconPath || path.join(__dirname, '../../resources/icon.png') // TODO: better icon
+      icon: getDragIcon(iconPath)
     })
   })
 

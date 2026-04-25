@@ -25,13 +25,13 @@ export function MarkdownRenderer({ content }: { content: string }): React.ReactE
               style={oneLight}
               language={match[1]}
               PreTag="div"
-              className="rounded-lg !my-4 border border-border"
+              className="rounded-lg !my-4 border border-border !bg-surface-muted"
             >
               {String(children).replace(/\n$/, '')}
             </SyntaxHighlighter>
           ) : (
             <code
-              className="rounded bg-surface-muted px-1.5 py-0.5 font-mono text-[0.9em] text-accent"
+              className="rounded-md bg-surface-muted px-1.5 py-0.5 font-mono text-[0.9em] text-foreground"
               {...props}
             >
               {children}
@@ -39,36 +39,44 @@ export function MarkdownRenderer({ content }: { content: string }): React.ReactE
           )
         },
         p({ children }) {
-          return <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>
+          return <p className="mb-3 leading-[var(--chat-line-height)] last:mb-0">{children}</p>
         },
         h1({ children }) {
-          return <h1 className="mb-4 mt-6 text-xl font-bold">{children}</h1>
+          return <h1 className="mb-4 mt-6 text-xl font-semibold">{children}</h1>
         },
         h2({ children }) {
-          return <h2 className="mb-3 mt-5 text-lg font-bold">{children}</h2>
+          return <h2 className="mb-3 mt-5 text-lg font-semibold">{children}</h2>
         },
         h3({ children }) {
-          return <h3 className="mb-2 mt-4 text-base font-bold">{children}</h3>
+          return <h3 className="mb-2 mt-4 text-base font-semibold">{children}</h3>
         },
         ul({ children }) {
-          return <ul className="list-disc pl-5 mb-4 space-y-1">{children}</ul>
+          return (
+            <ul className="mb-4 list-disc space-y-1 pl-5 leading-[var(--chat-line-height)]">
+              {children}
+            </ul>
+          )
         },
         ol({ children }) {
-          return <ol className="list-decimal pl-5 mb-4 space-y-1">{children}</ol>
+          return (
+            <ol className="mb-4 list-decimal space-y-1 pl-5 leading-[var(--chat-line-height)]">
+              {children}
+            </ol>
+          )
         },
         li({ children }) {
           return <li className="pl-1">{children}</li>
         },
         blockquote({ children }) {
           return (
-            <blockquote className="mb-4 rounded-r-lg border-l-4 border-accent/30 bg-accent-soft/40 py-1 pl-4 text-muted-foreground">
+            <blockquote className="mb-4 border-l-2 border-border py-1 pl-4 text-muted-foreground">
               {children}
             </blockquote>
           )
         },
         table({ children }) {
           return (
-            <div className="my-6 overflow-x-auto rounded-lg border border-border">
+            <div className="my-6 overflow-x-auto rounded-lg border border-border bg-white">
               <table className="w-full text-sm text-left">{children}</table>
             </div>
           )

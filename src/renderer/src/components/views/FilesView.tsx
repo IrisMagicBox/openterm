@@ -6,9 +6,9 @@ import { View, WorkspaceWindowItem } from '../../types'
 import { SplitPane } from '../SplitPane'
 import { PaneLeaf } from '../../types/pane'
 import { FileTab, useFilePaneManager } from '../../hooks/useFilePaneManager'
-import { useConfirm } from '../../hooks/useConfirm'
 import { useFileTransfer } from '../../hooks/useFileTransfer'
 import { FileTransferToast } from '../FileTransferToast'
+import { ConfirmActionButton } from '../ui'
 import {
   paneDropPreviewClass,
   resolvePaneDropEdgeFromPoint,
@@ -52,7 +52,6 @@ export function FilesView({
   onActiveFileWindowChange
 }: FilesViewProps): React.ReactElement {
   const paneManager = useFilePaneManager()
-  const { confirm, ConfirmDialogComponent } = useConfirm()
   const { transfers, startTransfer, removeTransfer } = useFileTransfer()
   const [showFileList, setShowFileList] = useState(false)
   const [dragOverPaneId, setDragOverPaneId] = useState<string | null>(null)
@@ -188,17 +187,10 @@ export function FilesView({
   )
 
   const handleCloseTab = useCallback(
-    async (tabId: string) => {
-      const ok = await confirm({
-        title: '关闭文件管理',
-        message: '确定关闭文件管理标签页？',
-        confirmText: '关闭',
-        variant: 'danger'
-      })
-      if (!ok) return
+    (tabId: string) => {
       closeFileTabById(tabId)
     },
-    [confirm, closeFileTabById]
+    [closeFileTabById]
   )
 
   useEffect(() => {
@@ -208,14 +200,7 @@ export function FilesView({
     closeFileTabById(closeFileRequest.tabId)
   }, [closeFileRequest, closeFileTabById])
 
-  const handleDisconnectAll = useCallback(async () => {
-    const ok = await confirm({
-      title: '关闭全部',
-      message: '确定关闭所有文件管理标签页？',
-      confirmText: '关闭',
-      variant: 'danger'
-    })
-    if (!ok) return
+  const handleDisconnectAll = useCallback(() => {
     const allTabs = paneManager.getAllTabs()
     for (const tab of allTabs) {
       paneManager.closeFileTab(tab.tabId)
@@ -227,7 +212,6 @@ export function FilesView({
     onActiveFileWindowChange?.(null)
     setActiveView('hosts')
   }, [
-    confirm,
     paneManager,
     emitFileWindowsChange,
     setFileBrowserHostId,
@@ -339,15 +323,16 @@ export function FilesView({
                 >
                   <Folder size={10} />
                   <span>{tab.title || tab.hostAlias}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleCloseTab(tab.tabId)
-                    }}
+                  <ConfirmActionButton
+                    aria-label="关闭文件管理标签页"
+                    onConfirm={() => handleCloseTab(tab.tabId)}
+                    stopPropagation
                     className="ml-1 rounded p-0.5 text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-workspace-foreground"
+                    confirmClassName="hover:bg-danger-strong"
+                    confirmingTitle="关闭"
                   >
                     <X size={9} />
-                  </button>
+                  </ConfirmActionButton>
                 </div>
               ))}
               <button
@@ -471,12 +456,19 @@ export function FilesView({
               >
                 <Plus size={12} /> 新建
               </button>
-              <button
-                onClick={handleDisconnectAll}
+              <ConfirmActionButton
+                aria-label="关闭全部文件管理"
+                onConfirm={handleDisconnectAll}
                 className="flex items-center gap-1.5 rounded-md bg-workspace px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-danger/15 hover:text-danger"
+                confirmChildren={
+                  <>
+                    <X size={12} /> 关闭
+                  </>
+                }
+                confirmingTitle="关闭全部"
               >
                 <X size={12} /> 关闭全部
-              </button>
+              </ConfirmActionButton>
             </div>
           </div>
         </div>
@@ -594,7 +586,6 @@ export function FilesView({
         </div>
       )}
 
-      {ConfirmDialogComponent}
       <FileTransferToast transfers={transfers} onRemove={removeTransfer} />
     </div>
   )

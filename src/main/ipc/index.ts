@@ -12,6 +12,7 @@ import { registerSessionIPC } from './session'
 import { registerMessageIPC } from './messages'
 import { registerAgentRunIPC } from './agent-runs'
 import { registerMemoryIPC } from './memories'
+import { registerTerminalCommandAssistIPC } from './terminal-command-assist'
 
 export function registerAllIPC(): void {
   registerHostIPC()
@@ -28,4 +29,5 @@ export function registerAllIPC(): void {
   registerMessageIPC()
   registerAgentRunIPC()
   registerMemoryIPC()
+  registerTerminalCommandAssistIPC()
 }

@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { Cloud, Server, Cpu, ToggleLeft, ToggleRight, Plus, Trash2, RefreshCw } from 'lucide-react'
 import type { Provider } from '../../../../shared/types'
-import { useConfirm } from '../../hooks/useConfirm'
-import { Badge, IconButton, Input } from '../ui'
+import { Badge, ConfirmActionButton, IconButton, Input } from '../ui'
 import { cn } from '../../lib/utils'
 
 interface ProviderListProps {
@@ -52,7 +51,6 @@ export function ProviderList({
   onDeleteProvider,
   onResetProvider
 }: ProviderListProps): React.ReactElement {
-  const { confirm, ConfirmDialogComponent } = useConfirm()
   const [filter, setFilter] = useState('')
 
   const filteredProviders = providers.filter((p) =>
@@ -132,23 +130,19 @@ export function ProviderList({
                   )}
 
                   {!provider.isSystem && (
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation()
-                        const ok = await confirm({
-                          title: '删除提供商',
-                          message: `确定删除提供商"${provider.name}"吗？此操作不可恢复。`,
-                          confirmText: '删除',
-                          variant: 'danger'
-                        })
-                        if (!ok) return
+                    <ConfirmActionButton
+                      aria-label={`删除提供商 ${provider.name}`}
+                      onConfirm={() => {
                         onDeleteProvider(provider.id)
                       }}
+                      stopPropagation
                       className="p-1.5 text-muted-foreground hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
+                      confirmClassName="opacity-100 hover:bg-danger-strong"
+                      confirmingTitle={`删除 ${provider.name}`}
                       title="删除提供商"
                     >
                       <Trash2 size={14} />
-                    </button>
+                    </ConfirmActionButton>
                   )}
 
                   <button
@@ -173,7 +167,6 @@ export function ProviderList({
       <div className="border-t border-white/55 bg-white/35 p-3 text-xs text-muted-foreground backdrop-blur-2xl">
         点击提供商以配置其设置
       </div>
-      {ConfirmDialogComponent}
     </div>
   )
 }

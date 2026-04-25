@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Clock, Monitor, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { TopicHub } from '../TopicHub'
 import { Host, Topic, TerminalSession } from '../../../../shared/types'
@@ -9,7 +9,6 @@ import { ModelSelector } from '../ModelSelector'
 import { PortForwardingPanel } from '../terminal/PortForwardingPanel'
 import { ChatInput } from './ChatInput'
 import { MessageBubble, ThinkingIndicator, EmptyState } from './MessageBubble'
-import { CommandPalette } from './CommandPalette'
 import { TerminalStage } from './TerminalStage'
 import { useProvider } from '../../hooks/useProvider'
 import { isAgentRuntimeProvider, isAgentUsableModel } from '../../config/providers'
@@ -19,9 +18,42 @@ import { useCommandPalette } from '../../hooks/useCommandPalette'
 import { useTerminalPreviews } from '../../hooks/useTerminalPreviews'
 import { useTerminalStageState } from '../../hooks/useTerminalStageState'
 import { deriveTerminalActivities } from '../../lib/terminal-stage'
+import { getErrorMessage } from '../../../../shared/errors'
 import { Badge, Dialog, DialogContent, IconButton, PageHeader, Tooltip } from '../ui'
 
 import { LOCAL_HOST } from '../../constants'
+
+const CHAT_ZOOM_STORAGE_KEY = 'openterm.chat.zoom'
+const DEFAULT_CHAT_ZOOM = 1
+const CHAT_BASE_FONT_SIZE = 14
+const CHAT_ZOOM_STEP = 0.06
+const MIN_CHAT_ZOOM = 0.25
+const MAX_CHAT_ZOOM = 1.18
+
+function clampChatZoom(value: number): number {
+  return Math.max(MIN_CHAT_ZOOM, Math.min(MAX_CHAT_ZOOM, value))
+}
+
+function isZoomInKey(event: KeyboardEvent): boolean {
+  return (
+    event.key === '=' || event.key === '+' || event.code === 'Equal' || event.code === 'NumpadAdd'
+  )
+}
+
+function isZoomOutKey(event: KeyboardEvent): boolean {
+  return (
+    event.key === '-' ||
+    event.key === '_' ||
+    event.code === 'Minus' ||
+    event.code === 'NumpadSubtract'
+  )
+}
+
+function isZoomResetKey(event: KeyboardEvent): boolean {
+  return event.key === '0' || event.code === 'Digit0' || event.code === 'Numpad0'
+}
+
+type ZoomDirection = 'in' | 'out' | 'reset'
 
 interface ChatPanelProps {
   topic: Topic
@@ -35,7 +67,6 @@ interface ChatPanelProps {
   terminalWidth: number
   setTerminalWidth: (w: number) => void
   terminalFontSize: number
-  setTerminalFontSize: (s: number) => void
   onRemoveHostFromTopic: (id: string) => Promise<void>
   onOpenFileBrowser: (host: Host) => void
   onCreateTerminal: (id: string) => Promise<void>
@@ -57,7 +88,6 @@ export function ChatPanel({
   terminalWidth,
   setTerminalWidth,
   terminalFontSize,
-  setTerminalFontSize,
   onRemoveHostFromTopic,
   onOpenFileBrowser,
   onCreateTerminal,
@@ -73,6 +103,14 @@ export function ChatPanel({
   const [portForwardHost, setPortForwardHost] = useState<{ id: string; alias: string } | null>(null)
   const [runDetailId, setRunDetailId] = useState<string | null>(null)
   const [pausingRun, setPausingRun] = useState(false)
+  const [commandPaletteSessionId, setCommandPaletteSessionId] = useState<string | null>(null)
+  const [commandPaletteHistory, setCommandPaletteHistory] = useState<string[]>([])
+  const [commandPaletteBusy, setCommandPaletteBusy] = useState(false)
+  const [commandPaletteError, setCommandPaletteError] = useState<string | null>(null)
+  const [chatZoom, setChatZoom] = useState(() => {
+    const stored = Number(window.localStorage.getItem(CHAT_ZOOM_STORAGE_KEY))
+    return Number.isFinite(stored) && stored > 0 ? clampChatZoom(stored) : DEFAULT_CHAT_ZOOM
+  })
   const [workspaceOpen, setWorkspaceOpen] = useState(
     () => window.localStorage.getItem('openterm.topicWorkspace.open') !== 'false'
   )
@@ -108,6 +146,7 @@ export function ChatPanel({
     messages,
     activeSteps,
     activeParts,
+    activeRunId: trackedActiveRunId,
     messageQueue,
     expandedThoughts,
     sendMessage,
@@ -115,14 +154,14 @@ export function ChatPanel({
     removeQueuedMessage,
     clearQueue
   } = useChatMessages(topic.id, thinking)
-  const visibleSessions = agentSessions.filter((s) => s.visible)
+  const visibleSessions = useMemo(() => agentSessions.filter((s) => s.visible), [agentSessions])
   const terminalPreviews = useTerminalPreviews(visibleSessions)
   const terminalStage = useTerminalStageState(visibleSessions, activeParts)
   const terminalActivities = useMemo(
     () => deriveTerminalActivities(visibleSessions, activeParts, terminalPreviews),
     [activeParts, terminalPreviews, visibleSessions]
   )
-  const activeRunId = useMemo(() => {
+  const derivedActiveRunId = useMemo(() => {
     const activePart = [...activeParts]
       .reverse()
       .find((part) => part.status === 'running' || part.status === 'pending')
@@ -133,13 +172,9 @@ export function ChatPanel({
 
     return null
   }, [activeParts, activeSteps])
-  const {
-    commandPaletteOpen,
-    commandPaletteValue,
-    setCommandPaletteOpen,
-    setCommandPaletteValue,
-    openCommandPalette
-  } = useCommandPalette()
+  const activeRunId = trackedActiveRunId || derivedActiveRunId
+  const { commandPaletteOpen, commandPaletteValue, setCommandPaletteOpen, setCommandPaletteValue } =
+    useCommandPalette()
   const realHosts = hosts.filter((h) => topic.hostIds.includes(h.id))
   const topicHosts = topic.hostIds.includes('local') ? [LOCAL_HOST, ...realHosts] : realHosts
   const filteredHosts = topicHosts.filter(
@@ -153,6 +188,23 @@ export function ChatPanel({
     window.localStorage.setItem('openterm.topicWorkspace.open', String(workspaceOpen))
   }, [workspaceOpen])
   useEffect(() => {
+    window.localStorage.setItem(CHAT_ZOOM_STORAGE_KEY, chatZoom.toFixed(2))
+  }, [chatZoom])
+  const openTerminalCommandPalette = useCallback(
+    (sessionId?: string): void => {
+      const targetSessionId =
+        sessionId || terminalStage.focusedSessionId || visibleSessions[0]?.id || null
+      if (!targetSessionId) return
+
+      terminalStage.focusSession(targetSessionId, { userInitiated: true })
+      setCommandPaletteSessionId(targetSessionId)
+      setCommandPaletteValue('')
+      setCommandPaletteError(null)
+      setCommandPaletteOpen(true)
+    },
+    [setCommandPaletteOpen, setCommandPaletteValue, terminalStage, visibleSessions]
+  )
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key.toLowerCase() !== 'b') return
       if (!event.altKey || (!event.metaKey && !event.ctrlKey)) return
@@ -162,6 +214,90 @@ export function ChatPanel({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key.toLowerCase() !== 'k') return
+      if (!event.metaKey && !event.ctrlKey) return
+      if (event.altKey) return
+      event.preventDefault()
+      openTerminalCommandPalette()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [openTerminalCommandPalette])
+  useEffect(() => {
+    if (!commandPaletteOpen || !commandPaletteSessionId) return
+    let cancelled = false
+    const targetSession = visibleSessions.find((session) => session.id === commandPaletteSessionId)
+
+    window.api
+      .searchCommands('', 24)
+      .then((commands) => {
+        if (cancelled) return
+        const history = commands
+          .filter((command) => !targetSession || command.hostId === targetSession.hostId)
+          .map((command) => command.content)
+          .slice(0, 8)
+        setCommandPaletteHistory(history)
+      })
+      .catch(() => {
+        if (!cancelled) setCommandPaletteHistory([])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [commandPaletteOpen, commandPaletteSessionId, visibleSessions])
+  useEffect(() => {
+    const applyChatZoom = (direction: ZoomDirection): void => {
+      if (document.documentElement.dataset.zoomTarget !== 'chat') return
+      if (direction === 'in') {
+        setChatZoom((zoom) => clampChatZoom(zoom + CHAT_ZOOM_STEP))
+        return
+      }
+      if (direction === 'out') {
+        setChatZoom((zoom) => clampChatZoom(zoom - CHAT_ZOOM_STEP))
+        return
+      }
+      setChatZoom(DEFAULT_CHAT_ZOOM)
+    }
+
+    const handleChatZoomKey = (event: KeyboardEvent): void => {
+      if ((!event.metaKey && !event.ctrlKey) || event.altKey) return
+      if (document.documentElement.dataset.zoomTarget !== 'chat') return
+
+      if (isZoomInKey(event)) {
+        event.preventDefault()
+        applyChatZoom('in')
+        return
+      }
+      if (isZoomOutKey(event)) {
+        event.preventDefault()
+        applyChatZoom('out')
+        return
+      }
+      if (isZoomResetKey(event)) {
+        event.preventDefault()
+        applyChatZoom('reset')
+      }
+    }
+
+    const unlistenZoomShortcut = window.api.onZoomShortcut(({ direction }) =>
+      applyChatZoom(direction)
+    )
+    window.addEventListener('keydown', handleChatZoomKey)
+    return () => {
+      unlistenZoomShortcut()
+      window.removeEventListener('keydown', handleChatZoomKey)
+    }
+  }, [])
+
+  const chatScaleStyle = {
+    zoom: chatZoom,
+    '--chat-text-size': `${CHAT_BASE_FONT_SIZE}px`,
+    '--chat-line-height': `${Math.round(CHAT_BASE_FONT_SIZE * 1.8)}px`
+  } as React.CSSProperties
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
     const value = e.target.value
@@ -193,13 +329,40 @@ export function ChatPanel({
       setPausingRun(false)
     }
   }
-  const handleSubmitCommandPalette = async (): Promise<void> => {
-    if (!commandPaletteValue.trim()) return
-    const prefix = terminalStage.focusedSession ? `@${terminalStage.focusedSession.hostAlias} ` : ''
-    setCommandPaletteOpen(false)
-    setCommandPaletteValue('')
-    setInputValue('')
-    await sendMessage(`${prefix}${commandPaletteValue.trim()}`)
+  const handleSubmitCommandPalette = async (context?: {
+    currentInput: string
+  }): Promise<string | null> => {
+    if (!commandPaletteValue.trim() || commandPaletteBusy) return null
+    const targetSession =
+      visibleSessions.find((session) => session.id === commandPaletteSessionId) ||
+      terminalStage.focusedSession
+    if (!targetSession) return null
+
+    setCommandPaletteBusy(true)
+    setCommandPaletteError(null)
+    try {
+      const screen =
+        targetSession.hostId === LOCAL_HOST.id
+          ? await window.api.getLocalBuffer(targetSession.id)
+          : await window.api.getSSHBuffer(targetSession.id)
+      const { command } = await window.api.draftTerminalCommand({
+        topicId: topic.id,
+        request: commandPaletteValue,
+        session: targetSession,
+        historyCommands: commandPaletteHistory,
+        screen,
+        currentInput: context?.currentInput
+      })
+      terminalStage.focusSession(targetSession.id, { userInitiated: true })
+      setCommandPaletteValue('')
+      setCommandPaletteError(null)
+      return command
+    } catch (error) {
+      setCommandPaletteError(getErrorMessage(error) || '命令生成失败')
+      return null
+    } finally {
+      setCommandPaletteBusy(false)
+    }
   }
   const handleFocusSession = (id: string): void =>
     terminalStage.focusSession(id, { userInitiated: true })
@@ -265,68 +428,82 @@ export function ChatPanel({
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div ref={scrollRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
-            {messages.length === 0 && (
-              <EmptyState
-                topicHosts={topicHosts}
-                onMentionHost={(alias) => setInputValue(`@${alias} `)}
-              />
-            )}
-            {messages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                expandedThoughts={expandedThoughts}
-                onToggleThought={toggleThought}
-              />
-            ))}
-            {thinking && activeParts.length > 0 && (
-              <AgentLiveStream
-                parts={activeParts}
-                onRevealTerminal={terminalStage.revealTerminal}
-                focusedPartId={terminalStage.focusedPartId}
-              />
-            )}
-            {thinking && activeParts.length === 0 && activeSteps.length > 0 && (
-              <AgentStepStream steps={activeSteps} />
-            )}
-            {thinking && activeParts.length === 0 && activeSteps.length === 0 && (
-              <ThinkingIndicator animationKey={animationKey} />
-            )}
+        <div
+          className="flex min-w-0 flex-1 flex-col"
+          onMouseEnter={() => {
+            document.documentElement.dataset.zoomTarget = 'chat'
+          }}
+          onMouseLeave={() => {
+            if (document.documentElement.dataset.zoomTarget === 'chat') {
+              delete document.documentElement.dataset.zoomTarget
+            }
+          }}
+        >
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-7">
+            <div style={chatScaleStyle} className="space-y-7">
+              {messages.length === 0 && (
+                <EmptyState
+                  topicHosts={topicHosts}
+                  onMentionHost={(alias) => setInputValue(`@${alias} `)}
+                />
+              )}
+              {messages.map((msg) => (
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  expandedThoughts={expandedThoughts}
+                  onToggleThought={toggleThought}
+                />
+              ))}
+              {thinking && activeParts.length > 0 && (
+                <AgentLiveStream
+                  parts={activeParts}
+                  onRevealTerminal={terminalStage.revealTerminal}
+                  focusedPartId={terminalStage.focusedPartId}
+                />
+              )}
+              {thinking && activeParts.length === 0 && activeSteps.length > 0 && (
+                <AgentStepStream steps={activeSteps} />
+              )}
+              {thinking && activeParts.length === 0 && activeSteps.length === 0 && (
+                <ThinkingIndicator animationKey={animationKey} />
+              )}
+            </div>
           </div>
 
-          <ChatInput
-            inputValue={inputValue}
-            onInputChange={handleInputChange}
-            onSend={handleSend}
-            thinking={!!thinking}
-            onPause={handlePauseRun}
-            canPause={!!thinking && !!activeRunId && !pausingRun}
-            pausing={pausingRun}
-            modelSelector={
-              <ModelSelector
-                providers={providers}
-                models={models}
-                selectedProviderId={selectedProviderId}
-                selectedModelId={selectedModelId}
-                onSelect={(pid, mid) => {
-                  onUpdateModel(topic.id, pid, mid)
-                }}
-                disabled={thinking}
-                triggerVariant="ghost"
-                triggerSize="sm"
-                triggerClassName="w-fit max-w-full px-3 text-[13px] font-medium"
-                menuAlign="start"
-              />
-            }
-            messageQueue={messageQueue}
-            onRemoveFromQueue={removeQueuedMessage}
-            onClearQueue={clearQueue}
-            showMentions={showMentions}
-            filteredHosts={filteredHosts}
-            onInsertMention={insertMention}
-          />
+          <div style={chatScaleStyle}>
+            <ChatInput
+              inputValue={inputValue}
+              onInputChange={handleInputChange}
+              onSend={handleSend}
+              thinking={!!thinking}
+              onPause={handlePauseRun}
+              canPause={!!thinking && !!activeRunId && !pausingRun}
+              pausing={pausingRun}
+              modelSelector={
+                <ModelSelector
+                  providers={providers}
+                  models={models}
+                  selectedProviderId={selectedProviderId}
+                  selectedModelId={selectedModelId}
+                  onSelect={(pid, mid) => {
+                    onUpdateModel(topic.id, pid, mid)
+                  }}
+                  disabled={thinking}
+                  triggerVariant="ghost"
+                  triggerSize="sm"
+                  triggerClassName="w-fit max-w-full px-3 text-[13px] font-medium"
+                  menuAlign="start"
+                />
+              }
+              messageQueue={messageQueue}
+              onRemoveFromQueue={removeQueuedMessage}
+              onClearQueue={clearQueue}
+              showMentions={showMentions}
+              filteredHosts={filteredHosts}
+              onInsertMention={insertMention}
+            />
+          </div>
         </div>
 
         {visibleSessions.length > 0 && (
@@ -345,12 +522,31 @@ export function ChatPanel({
             isResizing={isResizing}
             topicId={topic.id}
             topicHosts={topicHosts}
+            commandAssist={
+              commandPaletteOpen
+                ? {
+                    sessionId: commandPaletteSessionId,
+                    value: commandPaletteValue,
+                    historyCommands: commandPaletteHistory,
+                    busy: commandPaletteBusy,
+                    error: commandPaletteError,
+                    onChange: (value) => {
+                      setCommandPaletteValue(value)
+                      if (commandPaletteError) setCommandPaletteError(null)
+                    },
+                    onSubmit: handleSubmitCommandPalette,
+                    onClose: () => {
+                      setCommandPaletteOpen(false)
+                      setCommandPaletteError(null)
+                    }
+                  }
+                : null
+            }
             onCloseAgentTerminal={onCloseAgentTerminal}
             onToggleAgentTerminalPaused={onToggleAgentTerminalPaused}
             onCloseTerminal={onCloseTerminal}
-            onOpenCommandPalette={openCommandPalette}
+            onOpenCommandPalette={openTerminalCommandPalette}
             onCreateTerminal={onCreateTerminal}
-            onSetTerminalFontSize={setTerminalFontSize}
             onSetResizing={setIsResizing}
             onSetMode={terminalStage.setMode}
             onSetFollowAgent={terminalStage.setFollowAgent}
@@ -381,15 +577,6 @@ export function ChatPanel({
         )}
       </div>
 
-      {commandPaletteOpen && (
-        <CommandPalette
-          hostAlias={terminalStage.focusedSession?.hostAlias}
-          value={commandPaletteValue}
-          onChange={setCommandPaletteValue}
-          onClose={() => setCommandPaletteOpen(false)}
-          onSubmit={handleSubmitCommandPalette}
-        />
-      )}
       {portForwardHost && (
         <Dialog open onOpenChange={(open) => !open && setPortForwardHost(null)}>
           <DialogContent className="h-[520px] max-w-2xl overflow-hidden p-0" showClose={false}>

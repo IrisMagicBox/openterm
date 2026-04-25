@@ -63,7 +63,7 @@ export function ChatInput({
 
   return (
     <div className="relative px-6 pb-5 pt-3">
-      <div className="relative mx-auto w-full max-w-4xl">
+      <div className="relative mx-auto w-full max-w-[860px]">
         {showMentions && filteredHosts.length > 0 && (
           <div className="absolute bottom-full left-0 z-20 mb-3 w-72 overflow-hidden rounded-[22px] border border-black/10 bg-white/98 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
             <div className="flex items-center gap-1.5 border-b border-black/[0.06] px-3 py-2.5 text-xs font-semibold text-muted-foreground">
@@ -142,7 +142,7 @@ export function ChatInput({
             }
             rows={1}
             title="Enter 发送，Shift + Enter 换行"
-            className="max-h-36 min-h-[78px] w-full resize-none overflow-y-hidden border-0 bg-transparent px-1 py-1 pb-12 text-[15px] leading-7 text-foreground placeholder:text-muted-foreground/45 focus-visible:ring-0"
+            className="max-h-36 min-h-[78px] w-full resize-none overflow-y-hidden border-0 bg-transparent px-1 py-1 pb-12 text-sm leading-7 text-foreground placeholder:text-muted-foreground/45 focus-visible:ring-0"
           />
           <div className="pointer-events-none absolute inset-x-4 bottom-3 flex items-center justify-between gap-3">
             <div className="pointer-events-auto min-w-0 flex-1">{modelSelector}</div>

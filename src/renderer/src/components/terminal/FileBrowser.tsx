@@ -12,7 +12,7 @@ import {
   X,
   Loader2
 } from 'lucide-react'
-import { useConfirm } from '../../hooks/useConfirm'
+import { ConfirmActionButton } from '../ui'
 
 interface FileItem {
   name: string
@@ -70,7 +70,6 @@ export function FileBrowser({
   onClose,
   onFileDrop
 }: FileBrowserProps): React.ReactElement {
-  const { confirm, ConfirmDialogComponent } = useConfirm()
   const isLocal = hostId === 'local'
   const fsList = isLocal ? api.localFsList : api.sftpList
   const fsUpload = isLocal ? api.localFsUpload : api.sftpUpload
@@ -244,13 +243,6 @@ export function FileBrowser({
 
   const handleDelete = async (): Promise<void> => {
     if (!selectedItem || !sessionId) return
-    const ok = await confirm({
-      title: '删除文件',
-      message: `确定删除 ${selectedItem} 吗？此操作不可恢复。`,
-      confirmText: '删除',
-      variant: 'danger'
-    })
-    if (!ok) return
     setLoading(true)
     setError(null)
     try {
@@ -274,13 +266,6 @@ export function FileBrowser({
 
   const handleRowDragStart = (e: React.DragEvent, item: FileItem): void => {
     const fullPath = currentPath === '/' ? `/${item.name}` : `${currentPath}/${item.name}`
-
-    // If local, use native drag
-    if (isLocal) {
-      e.preventDefault()
-      api.startNativeDrag(fullPath)
-      return
-    }
 
     const dragData: FileDragData = {
       type: 'file-transfer',
@@ -379,12 +364,16 @@ export function FileBrowser({
           <span className="font-medium truncate">{hostAlias}</span>
           <span className="text-xs text-workspace-muted-foreground">文件管理</span>
         </div>
-        <button
-          onClick={onClose}
+        <ConfirmActionButton
+          aria-label="关闭文件管理"
+          onConfirm={onClose}
           className="rounded-lg p-1 text-workspace-muted-foreground hover:bg-white/70 hover:text-workspace-foreground"
+          confirmClassName="hover:bg-danger-strong"
+          confirmingTitle="关闭"
+          title="关闭"
         >
           <X className="w-4 h-4" />
-        </button>
+        </ConfirmActionButton>
       </div>
 
       <div className="flex items-center gap-1 overflow-x-auto border-b border-workspace-border px-3 py-1.5 text-xs">
@@ -450,14 +439,17 @@ export function FileBrowser({
           <Download className="w-3 h-3" />
           下载
         </button>
-        <button
-          onClick={handleDelete}
+        <ConfirmActionButton
+          aria-label="删除"
+          onConfirm={handleDelete}
           disabled={!selectedItem}
           className="rounded-lg p-1.5 text-workspace-muted-foreground hover:bg-danger/15 hover:text-danger disabled:cursor-not-allowed disabled:opacity-30"
+          confirmClassName="disabled:opacity-30"
+          confirmingTitle={selectedItem ? `删除 ${selectedItem}` : '删除'}
           title="删除"
         >
           <Trash2 className="w-3.5 h-3.5" />
-        </button>
+        </ConfirmActionButton>
         <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected} />
       </div>
 
@@ -545,7 +537,6 @@ export function FileBrowser({
           </table>
         )}
       </div>
-      {ConfirmDialogComponent}
     </div>
   )
 }

@@ -183,10 +183,7 @@ function model(
 }
 
 export const SYSTEM_MODELS_CONFIG: Record<SystemProviderId, Model[]> = {
-  coreshub: [
-    model('coreshub', 'gpt-4o-mini', 'GPT-4o mini', 'OpenAI'),
-    model('coreshub', 'deepseek-chat', 'DeepSeek Chat', 'DeepSeek')
-  ],
+  coreshub: [],
   openai: [
     model('openai', 'gpt-5.2', 'GPT-5.2', 'GPT-5'),
     model('openai', 'gpt-4.1', 'GPT-4.1', 'GPT-4'),

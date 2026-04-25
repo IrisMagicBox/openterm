@@ -1,8 +1,8 @@
 import { Server, Minus, Plus, Monitor } from 'lucide-react'
 import type { Host, Topic } from '../../../../shared/types'
-import { useConfirm } from '../../hooks/useConfirm'
 import {
   Button,
+  ConfirmActionButton,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -27,7 +27,6 @@ export function ManageHostsModal({
   onAddHost,
   onRemoveHost
 }: ManageHostsModalProps): React.ReactElement {
-  const { confirm, ConfirmDialogComponent } = useConfirm()
   const topicHosts = allHosts.filter((h) => topic.hostIds.includes(h.id))
   const availableHosts = allHosts.filter((h) => !topic.hostIds.includes(h.id))
   const hasLocal = topic.hostIds.includes('local')
@@ -60,22 +59,17 @@ export function ManageHostsModal({
           <Plus size={15} />
         </IconButton>
       ) : (
-        <IconButton
+        <ConfirmActionButton
           aria-label={`移除 ${host.alias}`}
-          className="hover:text-danger"
-          onClick={async () => {
-            const ok = await confirm({
-              title: `移除${isLocal ? '本机' : '主机'}`,
-              message: `确定从话题中移除${isLocal ? '本机终端' : `主机"${host.alias}"`}？`,
-              confirmText: '移除',
-              variant: 'danger'
-            })
-            if (!ok) return
+          className="blue-ring inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground no-drag hover:border-white/70 hover:bg-white/60 hover:text-danger hover:shadow-sm"
+          confirmClassName="hover:bg-danger-strong"
+          confirmingTitle={`移除 ${host.alias}`}
+          onConfirm={() => {
             onRemoveHost(host.id)
           }}
         >
           <Minus size={15} />
-        </IconButton>
+        </ConfirmActionButton>
       )}
     </Surface>
   )
@@ -118,7 +112,6 @@ export function ManageHostsModal({
           <Button onClick={onClose}>完成</Button>
         </div>
       </DialogContent>
-      {ConfirmDialogComponent}
     </Dialog>
   )
 }

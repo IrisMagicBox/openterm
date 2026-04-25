@@ -19,8 +19,17 @@ import {
   Trash2,
   X
 } from 'lucide-react'
-import { useConfirm } from '../hooks/useConfirm'
-import { Badge, Button, IconButton, Tabs, TabsContent, TabsList, TabsTrigger, Tooltip } from './ui'
+import {
+  Badge,
+  Button,
+  ConfirmActionButton,
+  IconButton,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Tooltip
+} from './ui'
 import { cn } from '../lib/utils'
 
 interface TopicHubProps {
@@ -103,7 +112,6 @@ export function TopicHub({
   onOpenPortForward,
   onOpenRunDetail
 }: TopicHubProps): React.ReactElement {
-  const { confirm, ConfirmDialogComponent } = useConfirm()
   const [view, setView] = React.useState<WorkspaceView>('hosts')
   const [editingSessionId, setEditingSessionId] = React.useState<string | null>(null)
   const [editName, setEditName] = React.useState('')
@@ -185,34 +193,27 @@ export function TopicHub({
   }
 
   const deleteMemory = async (memory: MemoryEntry): Promise<void> => {
-    const ok = await confirm({
-      title: '删除记忆',
-      message: '确定删除这条记忆？',
-      confirmText: '删除',
-      variant: 'danger'
-    })
-    if (!ok) return
     await window.api.deleteMemory(memory.id)
     void refreshWorkspace()
   }
 
   return (
     <div className="light-sidebar hidden h-full w-72 shrink-0 flex-col border-y-0 border-r-0 lg:flex">
-      <div className="border-b border-black/[0.06] bg-white px-4 py-3">
-        <div className="flex items-center justify-between gap-2">
+      <div className="border-b border-black/[0.06] bg-white px-3 py-2">
+        <div className="flex items-center gap-2">
           <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
             <Server size={13} className="text-accent" />
             作战中心
           </h3>
+          <div className="ml-auto flex min-w-0 items-center gap-1.5">
+            <Metric icon={Server} label="主机" value={hosts.length} />
+            <Metric icon={Terminal} label="终端" value={sessions.length} />
+            <Metric icon={History} label="Run" value={runs.length} />
+            <Metric icon={Globe} label="转发" value={tunnels.length} />
+          </div>
           <IconButton aria-label="管理话题主机" onClick={onAddHost} className="h-7 w-7">
             <Plus size={14} />
           </IconButton>
-        </div>
-        <div className="mt-3 grid grid-cols-4 gap-1.5 text-center">
-          <Metric label="主机" value={hosts.length} />
-          <Metric label="终端" value={sessions.length} />
-          <Metric label="Run" value={runs.length} />
-          <Metric label="转发" value={tunnels.length} />
         </div>
       </div>
 
@@ -221,32 +222,32 @@ export function TopicHub({
         onValueChange={(next) => setView(next as WorkspaceView)}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="border-b border-black/[0.06] bg-white px-3 py-2">
-          <TabsList className="light-control grid h-10 w-full grid-cols-4 rounded-xl border-black/[0.06] bg-black/[0.02] p-1 shadow-none">
+        <div className="border-b border-black/[0.06] bg-white px-2 py-1.5">
+          <TabsList className="grid h-8 w-full grid-cols-4 rounded-lg border-0 bg-black/[0.025] p-0.5 shadow-none backdrop-blur-0">
             <TabsTrigger
               value="hosts"
-              className="h-8 px-1 text-xs data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              className="h-7 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
             >
               <Server size={12} />
               主机
             </TabsTrigger>
             <TabsTrigger
               value="runs"
-              className="h-8 px-1 text-xs data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              className="h-7 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
             >
               <History size={12} />
               Run
             </TabsTrigger>
             <TabsTrigger
               value="memory"
-              className="h-8 px-1 text-xs data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              className="h-7 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
             >
               <Brain size={12} />
               记忆
             </TabsTrigger>
             <TabsTrigger
               value="tunnels"
-              className="h-8 px-1 text-xs data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              className="h-7 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
             >
               <Globe size={12} />
               转发
@@ -254,7 +255,7 @@ export function TopicHub({
           </TabsList>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
           <TabsContent value="hosts" className="mt-0">
             <HostsPane
               hosts={hosts}
@@ -273,7 +274,6 @@ export function TopicHub({
               onFocusSession={onFocusSession}
               onOpenFileBrowser={onOpenFileBrowser}
               onOpenPortForward={onOpenPortForward}
-              confirm={confirm}
             />
           </TabsContent>
 
@@ -302,7 +302,7 @@ export function TopicHub({
         </div>
       </Tabs>
 
-      <div className="border-t border-black/[0.06] bg-white p-3">
+      <div className="border-t border-black/[0.06] bg-white px-3 py-2">
         <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
           <span>TOPIC-{topicId.slice(0, 4)}</span>
           <Badge variant="neutral" className="border-black/[0.06] bg-black/[0.02] backdrop-blur-0">
@@ -310,17 +310,26 @@ export function TopicHub({
           </Badge>
         </div>
       </div>
-      {ConfirmDialogComponent}
     </div>
   )
 }
 
-function Metric({ label, value }: { label: string; value: number }): React.ReactElement {
+function Metric({
+  icon: Icon,
+  label,
+  value
+}: {
+  icon: React.ComponentType<{ size?: number; className?: string }>
+  label: string
+  value: number
+}): React.ReactElement {
   return (
-    <div className="light-control rounded-xl px-1.5 py-1.5">
-      <div className="text-sm font-bold text-foreground">{value}</div>
-      <div className="text-[10px] font-semibold text-muted-foreground">{label}</div>
-    </div>
+    <Tooltip content={`${label} ${value}`} side="bottom">
+      <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-semibold text-muted-foreground">
+        <Icon size={11} />
+        <strong className="text-sm leading-none text-foreground">{value}</strong>
+      </span>
+    </Tooltip>
   )
 }
 
@@ -340,8 +349,7 @@ function HostsPane({
   onTogglePin,
   onFocusSession,
   onOpenFileBrowser,
-  onOpenPortForward,
-  confirm
+  onOpenPortForward
 }: {
   hosts: Host[]
   sessions: TerminalSession[]
@@ -359,7 +367,6 @@ function HostsPane({
   onFocusSession: (sessionId: string) => void
   onOpenFileBrowser?: (host: Host) => void
   onOpenPortForward?: (host: Host) => void
-  confirm: ReturnType<typeof useConfirm>['confirm']
 }): React.ReactElement {
   if (hosts.length === 0) {
     return (
@@ -431,22 +438,17 @@ function HostsPane({
                     <Globe size={12} />
                   </IconButton>
                 )}
-                <IconButton
+                <ConfirmActionButton
                   aria-label={`从话题中移除 ${host.alias}`}
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: '移除主机',
-                      message: `确定从话题中移除主机"${host.alias}"？`,
-                      confirmText: '移除',
-                      variant: 'danger'
-                    })
-                    if (!ok) return
+                  onConfirm={() => {
                     onRemoveHost(host.id)
                   }}
-                  className="h-6 w-6 text-danger"
+                  className="blue-ring inline-flex h-6 w-6 items-center justify-center rounded-md text-danger no-drag hover:bg-white/60"
+                  confirmClassName="hover:bg-danger-strong"
+                  confirmingTitle={`移除 ${host.alias}`}
                 >
                   <Trash2 size={12} />
-                </IconButton>
+                </ConfirmActionButton>
               </div>
             </div>
 
@@ -529,23 +531,18 @@ function HostsPane({
                         >
                           <Pin size={10} fill={session.isPinned ? 'currentColor' : 'none'} />
                         </button>
-                        <button
+                        <ConfirmActionButton
                           aria-label="关闭终端"
-                          onClick={async (event) => {
-                            event.stopPropagation()
-                            const ok = await confirm({
-                              title: '关闭终端',
-                              message: '确定关闭此终端？',
-                              confirmText: '关闭',
-                              variant: 'danger'
-                            })
-                            if (!ok) return
+                          onConfirm={() => {
                             onCloseTerminal(session.id)
                           }}
+                          stopPropagation
                           className="rounded p-0.5 text-danger hover:bg-danger-soft"
+                          confirmClassName="hover:bg-danger-strong"
+                          confirmingTitle="关闭"
                         >
                           <X size={10} />
-                        </button>
+                        </ConfirmActionButton>
                       </div>
                     </div>
                   )
@@ -744,13 +741,15 @@ function MemoryPane({
                   >
                     {memory.disabled ? '启用' : '禁用'}
                   </Button>
-                  <IconButton
+                  <ConfirmActionButton
                     aria-label="删除记忆"
-                    className="h-7 w-7 text-danger"
-                    onClick={() => void onDelete(memory)}
+                    className="blue-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-danger no-drag hover:bg-white/60"
+                    confirmClassName="hover:bg-danger-strong"
+                    confirmingTitle="删除记忆"
+                    onConfirm={() => void onDelete(memory)}
                   >
                     <Trash2 size={12} />
-                  </IconButton>
+                  </ConfirmActionButton>
                 </div>
               </div>
             </article>

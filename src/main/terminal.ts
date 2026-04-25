@@ -176,6 +176,7 @@ export function classifyTerminalScreen(
   snapshot: TerminalScreenSnapshot,
   _history: TerminalScreenHistoryEntry[] = []
 ): TerminalScreenPhase {
+  void _history
   const lines = nonEmptyScreenLines(snapshot)
   const text = snapshot.visibleText
 
@@ -304,10 +305,7 @@ class CommandExecutor {
 
   private canAutoResumeAgent(state: SessionState): boolean {
     return (
-      state.isLocked &&
-      state.lockedBy === 'user' &&
-      state.takeoverMode === 'auto' &&
-      !state.paused
+      state.isLocked && state.lockedBy === 'user' && state.takeoverMode === 'auto' && !state.paused
     )
   }
 
@@ -327,7 +325,9 @@ class CommandExecutor {
 
     if (state.isLocked && state.lockedBy === 'user') {
       if (state.paused || state.takeoverMode === 'manual') {
-        throw new Error('Session is under manual user takeover, resume Agent control before continuing')
+        throw new Error(
+          'Session is under manual user takeover, resume Agent control before continuing'
+        )
       }
       throw new Error(`Session is locked by user, cannot ${action}`)
     }
@@ -525,50 +525,69 @@ class CommandExecutor {
       return
     }
 
-    if (data === '\r') {
-      const command = state.outputBuffer.trim()
-      if (command) {
-        const inputId = uuidv4()
-        const input: TerminalIO = {
-          id: inputId,
-          sessionId,
-          topicId,
-          hostId: state.session.hostId,
-          type: 'input',
-          source: 'user',
-          content: command,
-          timestamp: Date.now()
-        }
-        this.history.createIO(input)
-        state.session.command = command
-        state.session.commandSource = 'user'
-        state.session.commandStatus = 'running'
-        state.session.commandStartTime = Date.now()
+    if (data.startsWith('\x1b')) {
+      state.stream.write(data)
+      return
+    }
 
-        if (state.webContents) {
-          state.webContents.send(`terminal:command-start:${sessionId}`, {
+    for (const char of data) {
+      if (char === '\r') {
+        const command = state.outputBuffer.trim()
+        if (command) {
+          const inputId = uuidv4()
+          const input: TerminalIO = {
+            id: inputId,
+            sessionId,
+            topicId,
+            hostId: state.session.hostId,
+            type: 'input',
+            source: 'user',
+            content: command,
+            timestamp: Date.now()
+          }
+          this.history.createIO(input)
+          state.session.command = command
+          state.session.commandSource = 'user'
+          state.session.commandStatus = 'running'
+          state.session.commandStartTime = Date.now()
+
+          if (state.webContents) {
+            state.webContents.send(`terminal:command-start:${sessionId}`, {
+              inputId,
+              command,
+              source: 'user'
+            })
+          }
+
+          state.currentCommand = {
             inputId,
-            command,
-            source: 'user'
-          })
+            sessionId,
+            startTime: Date.now(),
+            resolve: () => {},
+            reject: () => {},
+            outputBuffer: '',
+            liveOutputBuffer: '',
+            isStreaming: false
+          }
         }
-
-        state.currentCommand = {
-          inputId,
-          sessionId,
-          startTime: Date.now(),
-          resolve: () => {},
-          reject: () => {},
-          outputBuffer: '',
-          liveOutputBuffer: '',
-          isStreaming: false
-        }
+        state.outputBuffer = ''
+        continue
       }
-      state.outputBuffer = ''
-    } else if (data === '\u007f') {
-      state.outputBuffer = state.outputBuffer.slice(0, -1)
-    } else if (data >= ' ' && data !== '\u007f') {
-      state.outputBuffer += data
+
+      if (char === '\n' || char === '\x03' || char === '\x15') {
+        state.outputBuffer = ''
+        continue
+      }
+
+      if (char === '\u007f' || char === '\b') {
+        state.outputBuffer = state.outputBuffer.slice(0, -1)
+        continue
+      }
+
+      const code = char.charCodeAt(0)
+      if (code >= 32 && code !== 127) {
+        state.outputBuffer += char
+      }
     }
 
     state.stream.write(data)
@@ -1012,7 +1031,9 @@ class CommandExecutor {
 
       const controlState = this.getSessionControlState(sessionId)
       if (controlState?.paused && controlState.takeoverMode === 'manual') {
-        throw new Error('Session is under manual user takeover, resume Agent control before waiting')
+        throw new Error(
+          'Session is under manual user takeover, resume Agent control before waiting'
+        )
       }
 
       const snapshot = await this.getTerminalSnapshot(sessionId)
@@ -1199,15 +1220,13 @@ class CommandExecutor {
       const history = await this.getTerminalHistory(session.id, { maxHistory: 6 })
       const phase = classifyTerminalScreen(snapshot, history)
       const rows = this.compactSnapshotRows(snapshot)
-      const recentChanges = history
-        .slice(-3)
-        .map((entry) =>
-          entry.excerpt
-            .split('\n')
-            .slice(-5)
-            .map((line) => `    ${line}`)
-            .join('\n')
-        )
+      const recentChanges = history.slice(-3).map((entry) =>
+        entry.excerpt
+          .split('\n')
+          .slice(-5)
+          .map((line) => `    ${line}`)
+          .join('\n')
+      )
 
       chunks.push(
         [
@@ -1312,6 +1331,9 @@ class CommandExecutor {
 
       const lastOutput = recentIO.filter((io) => io.type === 'output').slice(-1)[0]
       const outputSummary = lastOutput ? lastOutput.content.slice(0, 200) : '(no output)'
+      const runningOutput =
+        state?.currentCommand?.liveOutputBuffer || state?.currentCommand?.outputBuffer
+      const runningSummary = runningOutput ? runningOutput.slice(-300).replace(/\n/g, '\n    ') : ''
 
       const lockStatus = state && state.isLocked ? `, locked by ${state.lockedBy}` : ''
 
@@ -1319,6 +1341,10 @@ class CommandExecutor {
         `${session.hostAlias} - ${session.name || 'unnamed'} (id: ${session.id}):\n` +
         `  status: ${session.status}${lockStatus}\n` +
         `  recent commands:\n${recentCommands || '    (none)'}\n` +
+        (state?.currentCommand
+          ? `  running command inputId: ${state.currentCommand.inputId}\n` +
+            (runningSummary ? `  live output tail:\n    ${runningSummary}\n` : '')
+          : '') +
         `  last output: ${outputSummary.slice(0, 100)}${outputSummary.length > 100 ? '...' : ''}\n` +
         (userActionsSince > 0
           ? `  ⚠️ user typed ${userActionsSince} command(s) since last agent operation\n`

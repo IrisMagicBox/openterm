@@ -31,6 +31,10 @@ import type {
   DebugLogEntry,
   SessionRecoveredPayload
 } from '../shared/ipc/channels'
+import type {
+  TerminalCommandCompletionRequest,
+  TerminalCommandDraftRequest
+} from '../shared/terminal-command-assist'
 
 const typedIpc = createTypedIpc(ipcRenderer)
 
@@ -234,6 +238,12 @@ const api: Record<string, unknown> = {
     const listener = (_event: IpcRendererEvent, part: AgentPart) => callback(part)
     ipcRenderer.on('agent:part-updated', listener)
     return () => ipcRenderer.removeListener('agent:part-updated', listener)
+  },
+  onZoomShortcut: (callback: (data: { direction: 'in' | 'out' | 'reset' }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: { direction: 'in' | 'out' | 'reset' }) =>
+      callback(data)
+    ipcRenderer.on('app:zoom-shortcut', listener)
+    return () => ipcRenderer.removeListener('app:zoom-shortcut', listener)
   },
   onAgentToolCall: (
     callback: (data: {
@@ -455,6 +465,10 @@ const api: Record<string, unknown> = {
 
   searchCommands: (query: string, limit?: number) =>
     ipcRenderer.invoke('search-commands', query, limit),
+  draftTerminalCommand: (request: TerminalCommandDraftRequest) =>
+    ipcRenderer.invoke('terminal-command-assist:draft', request),
+  completeTerminalCommand: (request: TerminalCommandCompletionRequest) =>
+    ipcRenderer.invoke('terminal-command-assist:complete', request),
 
   pfCreate: (hostId: string, localPort: number, remoteHost: string, remotePort: number) =>
     ipcRenderer.invoke('pf:create', hostId, localPort, remoteHost, remotePort),
@@ -526,7 +540,11 @@ flatApi.terminal = {
   onCommandStart: flatApi.onTerminalCommandStart,
   onCommandEnd: flatApi.onTerminalCommandEnd,
   onSSHData: flatApi.onSSHData,
-  onSSHClosed: flatApi.onSSHClosed
+  onSSHClosed: flatApi.onSSHClosed,
+  draftCommand: (request: TerminalCommandDraftRequest) =>
+    typedIpc.invoke('terminal-command-assist:draft', request),
+  completeCommand: (request: TerminalCommandCompletionRequest) =>
+    typedIpc.invoke('terminal-command-assist:complete', request)
 }
 
 flatApi.settings = {
