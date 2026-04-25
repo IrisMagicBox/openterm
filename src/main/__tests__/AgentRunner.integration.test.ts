@@ -6,8 +6,9 @@
  * wired into the AgentRunner flow — without requiring a live LLM.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { AgentRunner, AgentContext } from '../AgentRunner'
-import { eventBus } from '../agent/event-bus'
+import { AgentRunner, type AgentContext } from '../AgentRunner'
+import type { AgentSession } from '../agent'
+import { eventBus, type EventMap } from '../agent/event-bus'
 import { getAgentConfig } from '../agent/agent-config'
 import { formatObservation, fromCommandResult } from '../tools/observation'
 
@@ -56,20 +57,36 @@ vi.mock('../tools', () => {
 })
 
 function createMockContext(): AgentContext {
+  const session: AgentSession = {
+    id: 'session-1',
+    topicId: 'topic-1',
+    hostId: 'local',
+    hostAlias: 'Local',
+    status: 'active',
+    shellIntegrationReady: false,
+    createdAt: Date.now(),
+    paused: false
+  }
+
   return {
     topicId: 'topic-1',
     taskId: 'task-1',
     agentName: undefined,
-    webContents: { send: vi.fn(), isDestroyed: vi.fn(() => false) } as any,
+    webContents: {
+      send: vi.fn(),
+      isDestroyed: vi.fn(() => false)
+    } as unknown as AgentContext['webContents'],
     agentService: {
       getSessions: vi.fn(async () => []),
-      createTerminal: vi.fn(async () => ({ id: 'session-1' }) as any),
+      createTerminal: vi.fn(async () => session),
       closeTerminal: vi.fn(async () => {}),
       renameTerminal: vi.fn(async () => {}),
       updateHostMetadata: vi.fn(async () => {}),
       searchTopics: vi.fn(async () => []),
       searchMemories: vi.fn(async () => []),
-      getTopicHosts: vi.fn(async () => [])
+      getTopicHosts: vi.fn(async () => []),
+      registerRunController: vi.fn(),
+      unregisterRunController: vi.fn()
     },
     ensureSession: vi.fn(async () => 'session-1'),
     requestAuthorization: vi.fn(async () => ({ approved: true, alwaysAllow: false })),
@@ -157,7 +174,7 @@ describe('AgentRunner Integration', () => {
           topicId: 123, // Should be string
           thinking: true,
           taskId: 'task-1'
-        } as any)
+        } as unknown as EventMap['agent:thinking'])
       }).not.toThrow()
     })
   })

@@ -46,12 +46,12 @@ interface TerminalStageProps {
   topicId: string
   topicHosts: { id: string; alias: string }[]
   commandAssist?: TerminalStageCommandAssist | null
-  onCloseAgentTerminal: (id: string) => void
+  onCloseAgentTerminal: (id: string) => void | Promise<void>
   onToggleAgentTerminalPaused: (id: string, paused: boolean) => Promise<void>
   onCloseTerminal: (id: string) => Promise<void>
   onOpenCommandPalette: (sessionId?: string) => void
   onCreateTerminal: (hostId: string) => Promise<void>
-  onSetResizing: (resizing: boolean) => void
+  onResizeStart: (rightEdge: number) => void
   onSetMode: (mode: TerminalStageMode) => void
   onSetFollowAgent: (followAgent: boolean) => void
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
@@ -67,7 +67,7 @@ interface TerminalStageCommandAssist {
   error?: string | null
   onChange: (value: string) => void
   onSubmit: (context?: { currentInput: string }) => Promise<string | null>
-  onClose: () => void
+  onClose: () => void | Promise<void>
 }
 
 function statusTone(
@@ -154,7 +154,7 @@ function TerminalControls({
 }: {
   session: TerminalSession
   onTogglePaused: () => void
-  onClose: () => void
+  onClose: () => void | Promise<void>
   onOpenCommandPalette: () => void
   onOpenPortForward?: () => void
 }): React.ReactElement {
@@ -199,9 +199,7 @@ function TerminalControls({
       </IconButton>
       <ConfirmActionButton
         aria-label="关闭终端"
-        onConfirm={() => {
-          onClose()
-        }}
+        onConfirm={() => onClose()}
         stopPropagation
         className="blue-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-danger no-drag hover:bg-white/60"
         confirmClassName="hover:bg-danger-strong"
@@ -307,7 +305,7 @@ function StageTerminalPane({
   topicId: string
   onCloseTerminal: (id: string) => Promise<void>
   onToggleAgentTerminalPaused: (id: string, paused: boolean) => Promise<void>
-  onCloseWithConfirm: (id: string) => void
+  onCloseWithConfirm: (id: string) => void | Promise<void>
   onOpenCommandPalette: (sessionId?: string) => void
   onOpenPortForward?: (session: TerminalSession) => void
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
@@ -424,7 +422,7 @@ function GridMode({
   topicId: string
   onCloseTerminal: (id: string) => Promise<void>
   onToggleAgentTerminalPaused: (id: string, paused: boolean) => Promise<void>
-  onCloseWithConfirm: (id: string) => void
+  onCloseWithConfirm: (id: string) => void | Promise<void>
   onOpenCommandPalette: (sessionId?: string) => void
   onOpenPortForward?: (session: TerminalSession) => void
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
@@ -548,7 +546,7 @@ function TimelineMode({
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
   onCloseTerminal: (id: string) => Promise<void>
   onToggleAgentTerminalPaused: (id: string, paused: boolean) => Promise<void>
-  onCloseWithConfirm: (id: string) => void
+  onCloseWithConfirm: (id: string) => void | Promise<void>
   onOpenCommandPalette: (sessionId?: string) => void
   onOpenPortForward?: (session: TerminalSession) => void
   commandAssist?: TerminalStageCommandAssist | null
@@ -679,7 +677,7 @@ export function TerminalStage({
   onCloseTerminal,
   onOpenCommandPalette,
   onCreateTerminal,
-  onSetResizing,
+  onResizeStart,
   onSetMode,
   onSetFollowAgent,
   onFocusSession,
@@ -719,9 +717,8 @@ export function TerminalStage({
     }
   }, [focusedSessionId, focusedPartId])
 
-  const closeWithConfirm = (sessionId: string): void => {
+  const closeWithConfirm = (sessionId: string): void | Promise<void> =>
     onCloseAgentTerminal(sessionId)
-  }
 
   const createTerminal = (): void => {
     const hostId = focusedSession?.hostId || topicHosts[0]?.id
@@ -737,7 +734,8 @@ export function TerminalStage({
         )}
         onMouseDown={(event) => {
           event.preventDefault()
-          onSetResizing(true)
+          const terminalPanel = event.currentTarget.nextElementSibling as HTMLElement | null
+          onResizeStart(terminalPanel?.getBoundingClientRect().right ?? window.innerWidth)
         }}
       />
       <div

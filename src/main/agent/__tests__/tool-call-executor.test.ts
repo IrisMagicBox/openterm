@@ -106,12 +106,16 @@ function makeOptions(toolRegistry: ToolRegistry): AgentProcessorOptions {
   }
 }
 
-function toolCall(args: Record<string, unknown>): ChatCompletionMessageFunctionToolCall {
+function toolCall(
+  args: Record<string, unknown>,
+  name = 'validated_tool',
+  id = 'call-1'
+): ChatCompletionMessageFunctionToolCall {
   return {
-    id: 'call-1',
+    id,
     type: 'function',
     function: {
-      name: 'validated_tool',
+      name,
       arguments: JSON.stringify(args)
     }
   }
@@ -153,5 +157,79 @@ describe('ToolCallExecutor schema validation', () => {
         })
       })
     )
+  })
+
+  it('only clears pending verification when a read command carries matching verificationIds', async () => {
+    const registry = new ToolRegistry()
+    registry.register(
+      define('write_tool', {
+        description: 'Mutating test tool',
+        parameters: z.object({ hostId: z.string() }),
+        execute: async (args) => ({
+          output: 'write ok',
+          metadata: {
+            hostId: args.hostId,
+            command: 'write target',
+            riskCategory: 'write',
+            requiresVerification: true,
+            exitCode: 0
+          }
+        })
+      })
+    )
+    registry.register(
+      define('execute_command', {
+        description: 'Read command test tool',
+        parameters: z.object({
+          hostId: z.string(),
+          command: z.string(),
+          verificationIds: z.array(z.string()).optional()
+        }),
+        execute: async (args) => ({
+          output: JSON.stringify({
+            content: 'ok',
+            exitCode: 0,
+            durationMs: 1,
+            isTruncated: false,
+            sessionId: 's1'
+          }),
+          metadata: {
+            hostId: args.hostId,
+            command: args.command,
+            riskCategory: 'read',
+            requiresVerification: false,
+            exitCode: 0
+          }
+        })
+      })
+    )
+    await registry.initializeTools('build')
+
+    const executor = new ToolCallExecutor(makeOptions(registry))
+    const writeObservation = await executor.executeToolCalls([
+      toolCall({ hostId: 'local' }, 'write_tool', 'write-1')
+    ])
+
+    expect(executor.hasPendingVerification()).toBe(true)
+    expect(String(writeObservation[0].content)).toContain('verificationIds')
+
+    const pendingObservation = executor.getVerificationObservation()
+    const verificationId = pendingObservation.match(/verificationId=(ver_[\w-]+)/)?.[1]
+    expect(verificationId).toBeDefined()
+
+    await executor.executeToolCalls([
+      toolCall({ hostId: 'local', command: 'pwd' }, 'execute_command', 'read-1')
+    ])
+    expect(executor.hasPendingVerification()).toBe(true)
+
+    const clearObservation = await executor.executeToolCalls([
+      toolCall(
+        { hostId: 'local', command: 'ls', verificationIds: [verificationId] },
+        'execute_command',
+        'read-2'
+      )
+    ])
+    expect(executor.hasPendingVerification()).toBe(false)
+    expect(String(clearObservation[0].content)).toContain('已确认并清除验证项')
   })
 })

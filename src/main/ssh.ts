@@ -4,12 +4,18 @@ import { hostDB } from './db'
 import { commandExecutor } from './terminal'
 import { TERMINAL_BUFFER_SIZE, SSH_RAW_BUFFER_MAX, SSH_RAW_BUFFER_TRIM } from './constants'
 import { buildSSHConfig, type SSHConnectionConfig } from './utils/ssh-config'
-import type { Host, TerminalSessionRole, TerminalStream } from '../shared/types'
+import type {
+  Host,
+  TerminalSessionDeletedBy,
+  TerminalSessionRole,
+  TerminalStream
+} from '../shared/types'
 
 interface SSHSession {
   client: Client
   stream: TerminalStream | null
   hostId: string
+  webContents?: WebContents
   buffer: string
   isAgentSession?: boolean
   commandResolve?: (value: string) => void
@@ -137,6 +143,7 @@ export const createAgentSession = (
             client,
             stream: stream as unknown as TerminalStream,
             hostId,
+            webContents,
             buffer: '',
             isAgentSession: true,
             currentOutput: ''
@@ -167,17 +174,17 @@ export const createAgentSession = (
               session.buffer = session.buffer.slice(-SSH_RAW_BUFFER_TRIM)
             }
 
-            webContents.send(`ssh:data:${sessionId}`, cleanData)
+            session.webContents?.send(`ssh:data:${sessionId}`, cleanData)
           })
 
           stream.on('close', () => {
-            commandExecutor.closeSession(sessionId)
+            commandExecutor.closeSession(sessionId, 'system')
             sessions.delete(sessionId)
-            webContents.send(`ssh:closed:${sessionId}`)
+            session.webContents?.send(`ssh:closed:${sessionId}`)
             client.end()
           })
 
-          webContents.send(`ssh:ready:${sessionId}`, host.alias)
+          session.webContents?.send(`ssh:ready:${sessionId}`, host.alias)
           resolve(sessionId)
         })
       })
@@ -188,14 +195,29 @@ export const createAgentSession = (
   })
 }
 
-export const closeSession = (sessionId: string): void => {
+export const hasSSHSession = (sessionId: string): boolean => sessions.has(sessionId)
+
+export const attachSSHSession = (sessionId: string, webContents: WebContents): boolean => {
+  const session = sessions.get(sessionId)
+  if (!session) return false
+  session.webContents = webContents
+  commandExecutor.attachSession(sessionId, webContents)
+  return true
+}
+
+export const closeSession = (
+  sessionId: string,
+  deletedBy: TerminalSessionDeletedBy = 'agent'
+): boolean => {
   const session = sessions.get(sessionId)
   if (session) {
-    commandExecutor.closeSession(sessionId)
+    commandExecutor.closeSession(sessionId, deletedBy)
     session.stream?.close()
     session.client.end()
     sessions.delete(sessionId)
+    return true
   }
+  return false
 }
 
 export const sendSSHInput = (sessionId: string, data: string, topicId?: string): boolean => {
@@ -245,13 +267,15 @@ export function setupSSHHandlers(): void {
             }
 
             const sessionId = generateSessionId(hostId)
-            sessions.set(sessionId, {
+            const session: SSHSession = {
               client,
               stream: stream as unknown as TerminalStream,
               hostId,
+              webContents,
               buffer: '',
               currentOutput: ''
-            })
+            }
+            sessions.set(sessionId, session)
 
             // Register with commandExecutor for Agent usage if topic is provided
             if (topicId) {
@@ -290,18 +314,18 @@ export function setupSSHHandlers(): void {
                 ? commandExecutor.handleStreamOutput(sessionId, data)
                 : { cleanData: data.toString() }
 
-              const session = sessions.get(sessionId)
-              if (session) {
-                session.buffer += data.toString()
-                session.currentOutput += data.toString()
+              const currentSession = sessions.get(sessionId)
+              if (currentSession) {
+                currentSession.buffer += data.toString()
+                currentSession.currentOutput += data.toString()
               }
-              webContents.send(`ssh:data:${sessionId}`, cleanData)
+              currentSession?.webContents?.send(`ssh:data:${sessionId}`, cleanData)
             })
 
             stream.on('close', () => {
-              if (topicId) commandExecutor.closeSession(sessionId)
+              if (topicId) commandExecutor.closeSession(sessionId, 'system')
               sessions.delete(sessionId)
-              webContents.send(`ssh:closed:${sessionId}`)
+              session?.webContents?.send(`ssh:closed:${sessionId}`)
               client.end()
             })
 
@@ -346,7 +370,7 @@ export function setupSSHHandlers(): void {
 
   ipcMain.removeHandler('ssh:agent:close')
   ipcMain.handle('ssh:agent:close', (_, sessionId: string) => {
-    closeSession(sessionId)
+    closeSession(sessionId, 'agent')
   })
 
   ipcMain.removeHandler('ssh:agent:set-paused')
@@ -366,7 +390,7 @@ export function setupSSHHandlers(): void {
 
   ipcMain.removeAllListeners('ssh:attach')
   ipcMain.on('ssh:attach', (event, sessionId: string) => {
-    commandExecutor.attachSession(sessionId, event.sender)
+    attachSSHSession(sessionId, event.sender)
   })
 
   ipcMain.removeAllListeners('ssh:input')

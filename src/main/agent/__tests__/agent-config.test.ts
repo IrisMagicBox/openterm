@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { getAgentConfig, BUILT_IN_AGENTS } from '../agent-config'
+import {
+  getAgentConfig,
+  getDefaultAgentConfig,
+  isBuiltInAgentName,
+  BUILT_IN_AGENTS
+} from '../agent-config'
 import { ToolRegistry } from '../../tools/tool-registry'
 import { define } from '../../tools/tool-factory'
 import { z } from 'zod'
@@ -37,10 +42,19 @@ describe('agent-config', () => {
       expect(config.temperature).toBe(0)
     })
 
-    it('falls back to build for unknown agent', () => {
-      const config = getAgentConfig('nonexistent')
+    it('throws for unknown agent names', () => {
+      expect(() => getAgentConfig('nonexistent')).toThrow('Unknown agent "nonexistent".')
+    })
+
+    it('returns build only through the explicit default helper', () => {
+      const config = getDefaultAgentConfig()
       expect(config.name).toBe('build')
       expect(config.mode).toBe('primary')
+    })
+
+    it('checks built-in agent names explicitly', () => {
+      expect(isBuiltInAgentName('explore')).toBe(true)
+      expect(isBuiltInAgentName('explor')).toBe(false)
     })
   })
 

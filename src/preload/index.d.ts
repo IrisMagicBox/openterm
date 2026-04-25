@@ -100,7 +100,7 @@ declare global {
           hostId: string,
           name?: string
         ) => Promise<TerminalSession>
-        closeAgentTerminal: (id: string) => Promise<void>
+        closeAgentTerminal: (id: string, deletedBy?: 'user' | 'agent' | 'system') => Promise<void>
         renameAgentTerminal: (id: string, name: string) => Promise<void>
         toggleTerminalPin: (id: string, isPinned: boolean) => Promise<void>
         onCommandStart: (
@@ -387,7 +387,7 @@ declare global {
         hostId: string,
         name?: string
       ) => Promise<TerminalSession>
-      closeAgentTerminal: (id: string) => Promise<void>
+      closeAgentTerminal: (id: string, deletedBy?: 'user' | 'agent' | 'system') => Promise<void>
       renameAgentTerminal: (id: string, name: string) => Promise<void>
       toggleTerminalPin: (id: string, isPinned: boolean) => Promise<void>
 

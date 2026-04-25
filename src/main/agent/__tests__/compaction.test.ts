@@ -1,6 +1,21 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+vi.mock('../../ai', () => ({
+  getAIClient: vi.fn(() => ({
+    chat: {
+      completions: {
+        create: vi.fn(async () => ({
+          choices: [{ message: { content: '## Goal\n- summarized' } }]
+        }))
+      }
+    }
+  })),
+  getCurrentModel: vi.fn(() => 'test-model')
+}))
+
 import { PRUNE_PROTECT_TOKENS } from '../token-counter'
 import type { Message } from '../../../shared/types'
+import { compactContext } from '../compaction'
 import {
   buildAnchoredCompactionPrompt,
   pruneToolOutputs,
@@ -119,6 +134,50 @@ describe('compaction', () => {
       expect(tail.tailStartMessageId).toBe('u2')
       expect(tail.messages.map((message) => message.id)).toEqual(['u2', 'a2', 'u3', 'a3'])
       expect(tail.droppedCount).toBe(2)
+    })
+  })
+
+  describe('compactContext', () => {
+    it('returns prune_only with compacted messages when pruning is enough', async () => {
+      const largeContent = 'x'.repeat(200_000)
+      const messages = [
+        makeUserMsg('run a noisy command', 'u1'),
+        makeToolResult(largeContent, 'old-tool-call'),
+        makeToolResult('recent output', 'recent-tool-call')
+      ]
+
+      const result = await compactContext(messages, {
+        modelContextWindow: 45_000,
+        reserveTokens: 4_096
+      })
+
+      expect(result.mode).toBe('prune_only')
+      expect(result.compactedMessages[1].content).toContain('[Tool output pruned')
+      expect(result.compactedMessages.at(-1)?.content).toBe('recent output')
+    })
+
+    it('uses the provided model context window when deciding overflow', async () => {
+      const content = 'x'.repeat(40_000) // ~10k tokens
+      const messages = [
+        makeUserMsg(content, 'u1'),
+        makeAssistantMsg('old answer', 'a1'),
+        makeUserMsg('second turn', 'u2'),
+        makeAssistantMsg('second answer', 'a2'),
+        makeUserMsg('current request', 'u3')
+      ]
+
+      const roomy = await compactContext(messages, {
+        modelContextWindow: 128_000,
+        reserveTokens: 4_096
+      })
+      const tight = await compactContext(messages, {
+        modelContextWindow: 8_000,
+        reserveTokens: 2_048
+      })
+
+      expect(roomy.mode).toBe('none')
+      expect(tight.originalTokenEstimate).toBeGreaterThan(8_000 - 2_048)
+      expect(tight.mode).toBe('summary')
     })
   })
 })

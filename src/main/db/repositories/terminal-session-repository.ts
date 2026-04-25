@@ -1,5 +1,9 @@
 import Database from 'better-sqlite3'
-import { TerminalSession, TerminalSessionStatus } from '../../../shared/types'
+import {
+  TerminalSession,
+  TerminalSessionDeletedBy,
+  TerminalSessionStatus
+} from '../../../shared/types'
 import { TerminalSessionRow } from '../row-types'
 import { mapTerminalSessionRow } from '../mappers'
 import { BaseRepository } from '../base-repository'
@@ -11,8 +15,8 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
 
   createSession(session: TerminalSession): void {
     this.stmt(
-      `INSERT INTO terminal_sessions (id, topicId, hostId, hostAlias, role, visible, status, shellType, shellIntegrationReady, createdAt, name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` +
+      `INSERT INTO terminal_sessions (id, topicId, hostId, hostAlias, role, visible, status, shellType, shellIntegrationReady, isPinned, createdAt, name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` +
         ` ON CONFLICT(id) DO UPDATE SET
             topicId = excluded.topicId,
             hostId = excluded.hostId,
@@ -22,6 +26,7 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
             status = excluded.status,
             shellType = COALESCE(excluded.shellType, terminal_sessions.shellType),
             shellIntegrationReady = excluded.shellIntegrationReady,
+            isPinned = COALESCE(excluded.isPinned, terminal_sessions.isPinned, 0),
             closedAt = NULL,
             name = COALESCE(excluded.name, terminal_sessions.name),
             isDeleted = 0,
@@ -37,6 +42,7 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
       session.status,
       session.shellType || null,
       session.shellIntegrationReady ? 1 : 0,
+      session.isPinned == null ? null : session.isPinned ? 1 : 0,
       session.createdAt,
       session.name || null
     )
@@ -100,7 +106,11 @@ export class TerminalSessionRepository extends BaseRepository<TerminalSessionRow
     this.stmt('UPDATE terminal_sessions SET visible = ? WHERE id = ?').run(visible ? 1 : 0, id)
   }
 
-  closeSession(id: string, deletedBy: 'user' | 'agent' | 'system' = 'agent'): void {
+  updateSessionPinned(id: string, isPinned: boolean): void {
+    this.stmt('UPDATE terminal_sessions SET isPinned = ? WHERE id = ?').run(isPinned ? 1 : 0, id)
+  }
+
+  closeSession(id: string, deletedBy: TerminalSessionDeletedBy = 'agent'): void {
     const now = Date.now()
     this.stmt(
       'UPDATE terminal_sessions SET status = ?, closedAt = ?, isDeleted = 1, deletedAt = ?, deletedBy = ? WHERE id = ?'

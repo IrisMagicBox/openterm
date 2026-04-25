@@ -44,6 +44,7 @@ const migrations: Migration[] = [
       addColumnIfMissing(db, 'terminal_sessions', 'name', 'TEXT')
       addColumnIfMissing(db, 'terminal_sessions', 'role', "TEXT DEFAULT 'user'")
       addColumnIfMissing(db, 'terminal_sessions', 'agentNotes', 'TEXT')
+      addColumnIfMissing(db, 'terminal_sessions', 'isPinned', 'INTEGER DEFAULT 0')
       addColumnIfMissing(db, 'terminal_sessions', 'isDeleted', 'INTEGER DEFAULT 0')
       addColumnIfMissing(db, 'terminal_sessions', 'deletedAt', 'INTEGER')
       addColumnIfMissing(db, 'terminal_sessions', 'deletedBy', 'TEXT')
@@ -231,6 +232,27 @@ const migrations: Migration[] = [
         `INSERT OR IGNORE INTO topics (id, title, hostIds, lastMessageAt, createdAt)
          VALUES (?, ?, ?, ?, ?)`
       ).run(WORKSPACE_TERMINALS_TOPIC_ID, 'Workspace Terminals', '[]', now, now)
+    }
+  },
+  {
+    id: '014_terminal_session_pinned',
+    run: (db) => {
+      addColumnIfMissing(db, 'terminal_sessions', 'isPinned', 'INTEGER DEFAULT 0')
+      db.prepare('UPDATE terminal_sessions SET isPinned = 0 WHERE isPinned IS NULL').run()
+    }
+  },
+  {
+    id: '015_agent_run_checkpoints',
+    run: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS agent_run_checkpoints (
+          runId TEXT PRIMARY KEY,
+          payload TEXT NOT NULL,
+          createdAt INTEGER NOT NULL,
+          updatedAt INTEGER NOT NULL,
+          FOREIGN KEY (runId) REFERENCES agent_runs(id) ON DELETE CASCADE
+        );
+      `)
     }
   }
 ]

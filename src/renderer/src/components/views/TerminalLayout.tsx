@@ -10,6 +10,7 @@ import { useTerminalPaneManager, TerminalTab } from '../../hooks/useTerminalPane
 import { useFileTransfer } from '../../hooks/useFileTransfer'
 import { FileTransferToast } from '../FileTransferToast'
 import { ConfirmActionButton } from '../ui'
+import { cn } from '../../lib/utils'
 import {
   paneDropPreviewClass,
   resolvePaneDropEdgeFromPoint,
@@ -146,7 +147,7 @@ export function TerminalLayout({
     [paneManager]
   )
 
-  const closeTerminalTab = useCallback(
+  const removeTerminalTab = useCallback(
     (tabId: string) => {
       paneManager.closeTerminalTab(tabId)
       syncedSessionIds.current.delete(tabId)
@@ -173,9 +174,23 @@ export function TerminalLayout({
     ]
   )
 
+  const closeTerminalTab = useCallback(
+    async (tabId: string): Promise<boolean> => {
+      try {
+        await window.api.closeAgentTerminal(tabId, 'user')
+        removeTerminalTab(tabId)
+        return true
+      } catch (error) {
+        console.error('Failed to close terminal session:', error)
+        return false
+      }
+    },
+    [removeTerminalTab]
+  )
+
   const handleCloseTab = useCallback(
     (tabId: string) => {
-      closeTerminalTab(tabId)
+      void closeTerminalTab(tabId)
     },
     [closeTerminalTab]
   )
@@ -184,19 +199,15 @@ export function TerminalLayout({
     if (!closeTerminalRequest) return
     if (lastCloseRequestId.current === closeTerminalRequest.requestId) return
     lastCloseRequestId.current = closeTerminalRequest.requestId
-    closeTerminalTab(closeTerminalRequest.sessionId)
+    void closeTerminalTab(closeTerminalRequest.sessionId)
   }, [closeTerminalRequest, closeTerminalTab])
 
-  const handleDisconnectAll = useCallback(() => {
-    for (const tab of paneManager.getAllTabs()) {
-      paneManager.closeTerminalTab(tab.sessionId)
-      syncedSessionIds.current.delete(tab.sessionId)
+  const handleDisconnectAll = useCallback(async () => {
+    const tabs = paneManager.getAllTabs()
+    for (const tab of tabs) {
+      await closeTerminalTab(tab.sessionId)
     }
-    setLegacyTabs([])
-    setActiveView('hosts')
-    setSelectedHost(null)
-    setTerminalSessionId(null)
-  }, [paneManager, setLegacyTabs, setActiveView, setSelectedHost, setTerminalSessionId])
+  }, [closeTerminalTab, paneManager])
 
   const handleTabDragStart = useCallback((e: React.DragEvent, tabId: string) => {
     e.dataTransfer.setData('text/plain', tabId)
@@ -353,6 +364,9 @@ export function TerminalLayout({
   const allTabs = paneManager
     .getAllTabs()
     .map((tab) => legacyTabs.find((legacyTab) => legacyTab.sessionId === tab.sessionId) ?? tab)
+  const leafToSplit = leaves.find((l) => l.id === paneManager.focusedLeafId) || leaves[0]
+  const canSplitFocusedLeaf = !!leafToSplit && leafToSplit.tabIds.length >= 2
+  const splitDisabledTitle = '需要至少 2 个标签才能分屏'
 
   return (
     <div className="relative flex flex-1 gap-3 overflow-hidden bg-workspace-muted/45 p-3">
@@ -377,29 +391,40 @@ export function TerminalLayout({
             <div className="flex items-center gap-2 no-drag">
               {allTabs.length > 0 && (
                 <div className="flex gap-1">
-                  {(() => {
-                    const leafToSplit =
-                      paneManager.getLeaves().find((l) => l.id === paneManager.focusedLeafId) ||
-                      paneManager.getLeaves()[0]
-                    return leafToSplit ? (
-                      <>
-                        <button
-                          onClick={() => handleSplit(leafToSplit.id, 'horizontal')}
-                          className="flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
-                          title="水平分屏"
-                        >
-                          <Columns size={12} />
-                        </button>
-                        <button
-                          onClick={() => handleSplit(leafToSplit.id, 'vertical')}
-                          className="flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
-                          title="垂直分屏"
-                        >
-                          <Rows size={12} />
-                        </button>
-                      </>
-                    ) : null
-                  })()}
+                  {leafToSplit && (
+                    <>
+                      <button
+                        onClick={() => handleSplit(leafToSplit.id, 'horizontal')}
+                        disabled={!canSplitFocusedLeaf}
+                        className={cn(
+                          'flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent',
+                          !canSplitFocusedLeaf &&
+                            'cursor-not-allowed opacity-45 hover:bg-workspace hover:text-workspace-muted-foreground'
+                        )}
+                        title={canSplitFocusedLeaf ? '水平分屏' : splitDisabledTitle}
+                        aria-label={
+                          canSplitFocusedLeaf ? '水平分屏' : `水平分屏：${splitDisabledTitle}`
+                        }
+                      >
+                        <Columns size={12} />
+                      </button>
+                      <button
+                        onClick={() => handleSplit(leafToSplit.id, 'vertical')}
+                        disabled={!canSplitFocusedLeaf}
+                        className={cn(
+                          'flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent',
+                          !canSplitFocusedLeaf &&
+                            'cursor-not-allowed opacity-45 hover:bg-workspace hover:text-workspace-muted-foreground'
+                        )}
+                        title={canSplitFocusedLeaf ? '垂直分屏' : splitDisabledTitle}
+                        aria-label={
+                          canSplitFocusedLeaf ? '垂直分屏' : `垂直分屏：${splitDisabledTitle}`
+                        }
+                      >
+                        <Rows size={12} />
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
               <button

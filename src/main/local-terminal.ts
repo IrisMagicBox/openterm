@@ -1,10 +1,10 @@
 import { ipcMain, WebContents } from 'electron'
 import { commandExecutor } from './terminal'
 import { logger } from './logger'
-import { terminalSessionDB } from './db'
-import { TerminalSession, TerminalSessionRole } from '../shared/types'
+import { TerminalSession, TerminalSessionDeletedBy, TerminalSessionRole } from '../shared/types'
 import { getErrorMessage } from '../shared/errors'
 import { v4 as uuidv4 } from 'uuid'
+import type { AgentSession } from './agent'
 import {
   LOCAL_BUFFER_MAX,
   LOCAL_BUFFER_TRIM,
@@ -27,6 +27,13 @@ interface LocalPtySession {
 }
 
 const sessions = new Map<string, LocalPtySession>()
+let agentServiceRef: { registerSession(session: AgentSession): void | Promise<void> } | null = null
+
+export function setLocalAgentService(
+  service: { registerSession(session: AgentSession): void | Promise<void> } | null
+): void {
+  agentServiceRef = service
+}
 
 let ptyModule: any = null
 async function getPty(): Promise<any> {
@@ -103,7 +110,7 @@ export function createLocalSession(
         logger.info('LocalTerminal', `Local PTY exited with code ${exitCode}`)
         sessions.delete(sessionId)
         if (topicId && topicId !== '') {
-          terminalSessionDB.closeSession(sessionId)
+          commandExecutor.closeSession(sessionId, 'system')
         }
         if (localSession.webContents) {
           localSession.webContents.send(`ssh:closed:${sessionId}`)
@@ -181,9 +188,16 @@ export function getLocalSessionBuffer(sessionId: string): string {
   return session ? session.buffer.slice(-TERMINAL_BUFFER_SIZE) : ''
 }
 
-export function closeLocalSession(sessionId: string): void {
+export function hasLocalSession(sessionId: string): boolean {
+  return sessions.has(sessionId)
+}
+
+export function closeLocalSession(
+  sessionId: string,
+  deletedBy: TerminalSessionDeletedBy = 'agent'
+): boolean {
   const session = sessions.get(sessionId)
-  if (!session) return
+  if (!session) return false
 
   try {
     session.pty.kill()
@@ -191,8 +205,9 @@ export function closeLocalSession(sessionId: string): void {
     /* PTY kill fails silently if already exited */
   }
 
-  commandExecutor.closeSession(sessionId)
+  commandExecutor.closeSession(sessionId, deletedBy)
   sessions.delete(sessionId)
+  return true
 }
 
 export function attachLocalSession(sessionId: string, webContents: WebContents): boolean {
@@ -208,7 +223,18 @@ export function registerLocalTerminalIPC(): void {
   ipcMain.removeHandler('local:connect')
   ipcMain.handle('local:connect', async (event, topicId: string) => {
     const sessionId = uuidv4()
-    return await createLocalSession(sessionId, topicId, event.sender)
+    const session = await createLocalSession(sessionId, topicId, event.sender)
+    if (topicId) {
+      await agentServiceRef?.registerSession({
+        ...session,
+        role: 'user',
+        name: session.name || '本地终端',
+        visible: true,
+        paused: false,
+        takeoverMode: null
+      })
+    }
+    return session
   })
 
   ipcMain.on('local:input', (event, sessionId: string, data: string) => {
@@ -235,7 +261,7 @@ export function registerLocalTerminalIPC(): void {
 
   ipcMain.removeHandler('local:close')
   ipcMain.handle('local:close', (_, sessionId: string) => {
-    closeLocalSession(sessionId)
+    closeLocalSession(sessionId, 'user')
     return true
   })
 }

@@ -21,13 +21,8 @@ import {
   topicDB
 } from './db'
 import { getDatabase } from './db/connection'
-import {
-  closeLocalSession,
-  getLocalSessionBuffer,
-  resizeLocalTerminal,
-  sendLocalInput
-} from './local-terminal'
-import { closeSession, getTerminalBuffer, resizeSSHSession, sendSSHInput } from './ssh'
+import { getLocalSessionBuffer, resizeLocalTerminal, sendLocalInput } from './local-terminal'
+import { getTerminalBuffer, resizeSSHSession, sendSSHInput } from './ssh'
 import {
   closeSFTPSession,
   createDirectory,
@@ -298,10 +293,7 @@ async function handleRequest(
     }
     case 'terminal.close': {
       const sessionId = resolveSessionId(args)
-      const session = terminalSessionDB.getSessionById(sessionId)
-      if (session?.hostId === 'local') closeLocalSession(sessionId)
-      else closeSession(sessionId)
-      await agentService.closeTerminal(sessionId).catch(() => undefined)
+      await agentService.closeTerminal(sessionId, { deletedBy: 'user' })
       return { ok: true, sessionId }
     }
     case 'terminal.rename':

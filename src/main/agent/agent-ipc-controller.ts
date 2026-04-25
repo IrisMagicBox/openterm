@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import type { AgentService } from '../agent'
+import type { TerminalSessionDeletedBy } from '../../shared/types'
 
 export class AgentIpcController {
   constructor(private readonly service: AgentService) {}
@@ -41,7 +42,9 @@ export class AgentIpcController {
     )
 
     ipcMain.removeHandler('agent:close-terminal')
-    ipcMain.handle('agent:close-terminal', (_, id: string) => this.service.closeTerminal(id))
+    ipcMain.handle('agent:close-terminal', (_, id: string, deletedBy?: TerminalSessionDeletedBy) =>
+      this.service.closeTerminal(id, { deletedBy })
+    )
 
     ipcMain.removeHandler('agent:rename-terminal')
     ipcMain.handle('agent:rename-terminal', (_, id: string, name: string) =>

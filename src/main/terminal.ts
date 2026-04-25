@@ -8,6 +8,7 @@ import {
   TerminalIO,
   CommandResult,
   TerminalStream,
+  TerminalSessionDeletedBy,
   TerminalSessionRole,
   TerminalTakeoverMode
 } from '../shared/types'
@@ -1467,7 +1468,7 @@ class CommandExecutor {
     }
   }
 
-  closeSession(sessionId: string): void {
+  closeSession(sessionId: string, deletedBy: TerminalSessionDeletedBy = 'agent'): void {
     const state = this.sessions.get(sessionId)
     if (state) {
       if (state.currentCommand) {
@@ -1483,7 +1484,7 @@ class CommandExecutor {
       }
 
       if (state.session.topicId) {
-        this.history.closeSession(sessionId)
+        this.history.closeSession(sessionId, deletedBy)
       }
       this.sessions.delete(sessionId)
 

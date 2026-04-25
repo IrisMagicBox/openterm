@@ -14,7 +14,7 @@ export interface ToolContextFactoryOptions {
 export class ToolContextFactory {
   constructor(private readonly options: ToolContextFactoryOptions) {}
 
-  create(partId: string, stepId: string): Tool.Context {
+  create(partId: string, stepId: string, toolName: string): Tool.Context {
     const { context, runId, config, permissionEngine } = this.options
     return {
       ...context,
@@ -26,11 +26,11 @@ export class ToolContextFactory {
       messages: [],
       requestAuthorization: async (command, riskLevel, reason, metadata) =>
         permissionEngine.ask({
-          permission: 'execute_command',
+          permission: toolName,
           pattern: command,
           riskLevel,
           reason,
-          metadata: { toolName: 'execute_command', ...metadata }
+          metadata: { ...metadata, toolName }
         }),
       ask: async (request) => {
         await permissionEngine.ask({

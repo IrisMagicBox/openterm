@@ -51,7 +51,7 @@ export default define('manage_terminal', {
             output: 'Error: No session found. Use list_terminals to see available sessions.'
           }
         }
-        await ctx.agentService.closeTerminal(targetSessionId)
+        await ctx.agentService.closeTerminal(targetSessionId, { deletedBy: 'agent' })
         return {
           output: JSON.stringify({ message: 'Terminal closed', sessionId: targetSessionId })
         }

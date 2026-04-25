@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
-import { topicDB } from '../db'
-import { commandExecutor } from '../terminal'
+import { terminalSessionDB, topicDB } from '../db'
+import { agentService } from '../agent'
 
 export function registerTopicIPC(): void {
   ipcMain.removeHandler('get-topics')
@@ -15,9 +15,12 @@ export function registerTopicIPC(): void {
   )
 
   ipcMain.removeHandler('delete-topic')
-  ipcMain.handle('delete-topic', (_, topicId) => {
+  ipcMain.handle('delete-topic', async (_, topicId) => {
     // 1. Close all active terminal processes first
-    commandExecutor.closeSessionsByTopic(topicId)
+    const sessions = terminalSessionDB.getActiveSessionsByTopic(topicId)
+    await Promise.all(
+      sessions.map((session) => agentService.closeTerminal(session.id, { deletedBy: 'user' }))
+    )
 
     // 2. Delete from DB (cascades will handle messages, sessions, etc.)
     return topicDB.deleteTopic(topicId)

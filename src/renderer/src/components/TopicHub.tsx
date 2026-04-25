@@ -39,7 +39,7 @@ interface TopicHubProps {
   onAddHost: () => void
   onRemoveHost: (hostId: string) => void
   onCreateTerminal: (hostId: string) => void
-  onCloseTerminal: (sessionId: string) => void
+  onCloseTerminal: (sessionId: string) => void | Promise<void>
   onRenameTerminal: (sessionId: string, name: string) => void
   onTogglePin: (sessionId: string, isPinned: boolean) => void
   focusedSessionId: string | null
@@ -362,7 +362,7 @@ function HostsPane({
   onAddHost: () => void
   onRemoveHost: (hostId: string) => void
   onCreateTerminal: (hostId: string) => void
-  onCloseTerminal: (sessionId: string) => void
+  onCloseTerminal: (sessionId: string) => void | Promise<void>
   onTogglePin: (sessionId: string, isPinned: boolean) => void
   onFocusSession: (sessionId: string) => void
   onOpenFileBrowser?: (host: Host) => void
@@ -533,9 +533,7 @@ function HostsPane({
                         </button>
                         <ConfirmActionButton
                           aria-label="关闭终端"
-                          onConfirm={() => {
-                            onCloseTerminal(session.id)
-                          }}
+                          onConfirm={() => onCloseTerminal(session.id)}
                           stopPropagation
                           className="rounded p-0.5 text-danger hover:bg-danger-soft"
                           confirmClassName="hover:bg-danger-strong"

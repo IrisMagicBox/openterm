@@ -1,5 +1,6 @@
 import type { Message } from '../../shared/types'
 import { resolveProviderSelection } from '../ai'
+import { CONTEXT_RESERVE_TOKENS, CONTEXT_WINDOW_TOKENS } from '../constants'
 import type { AgentContext } from '../AgentRunner'
 import { createDefaultRegistry, ToolRegistry } from '../tools'
 import { getAgentConfig, type AgentConfig } from './agent-config'
@@ -17,6 +18,16 @@ export interface AgentRuntimeOptions {
   persistFinalMessage?: boolean
   updateTaskStatus?: boolean
   goal?: string
+  metadata?: Record<string, unknown>
+  resumeFromCheckpoint?: boolean
+  contextBudget?: {
+    modelContextWindow: number
+    reserveTokens: number
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
 }
 
 export class AgentRuntime {
@@ -43,6 +54,12 @@ export class AgentRuntime {
   async run(history: Message[]): Promise<Message> {
     await this.toolsReady
     const selection = resolveProviderSelection({ topicId: this.context.topicId })
+    const contextBudget = this.options.contextBudget ?? {
+      modelContextWindow: selection.capabilities.contextWindow || CONTEXT_WINDOW_TOKENS,
+      reserveTokens: selection.capabilities.maxOutputTokens
+        ? clamp(selection.capabilities.maxOutputTokens, 2048, 8192)
+        : CONTEXT_RESERVE_TOKENS
+    }
     const run =
       (this.options.runId ? agentRunStore.getRun(this.options.runId) : undefined) ??
       agentRunStore.createRun({
@@ -56,7 +73,8 @@ export class AgentRuntime {
         status: 'running',
         goal: this.options.goal ?? history.filter((m) => m.role === 'user').pop()?.content ?? '',
         providerId: selection.provider.id,
-        modelId: selection.modelId
+        modelId: selection.modelId,
+        metadata: this.options.metadata
       })
 
     this.context.runId = run.id
@@ -72,7 +90,9 @@ export class AgentRuntime {
       provider: this.provider,
       permissionEngine,
       persistFinalMessage: this.options.persistFinalMessage ?? !run.parentRunId,
-      updateTaskStatus: this.options.updateTaskStatus ?? !run.parentRunId
+      updateTaskStatus: this.options.updateTaskStatus ?? !run.parentRunId,
+      resumeFromCheckpoint: this.options.resumeFromCheckpoint,
+      contextBudget
     })
 
     return processor.process(history)

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { AgentPart, AgentRun, Message } from '../../../shared/types'
+import { shouldDispatchQueuedMessage } from '../lib/chat-message-queue'
 
 interface ChatMessageQueueItem {
   id: string
@@ -33,8 +34,17 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
   const [activeParts, setActiveParts] = useState<AgentPart[]>([])
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [messageQueue, setMessageQueue] = useState<ChatMessageQueueItem[]>([])
+  const [queuedSendInFlight, setQueuedSendInFlight] = useState(false)
   const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({})
   const runCacheRef = useRef<Map<string, AgentRun | undefined>>(new Map())
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     const fetchHistory = async (): Promise<void> => {
@@ -43,6 +53,7 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
       setActiveSteps([])
       setActiveParts([])
       setActiveRunId(null)
+      setQueuedSendInFlight(false)
       runCacheRef.current.clear()
     }
     fetchHistory()
@@ -120,17 +131,33 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
     }
   }, [topicId])
 
-  const sendMessage = useCallback(
-    async (content: string) => {
-      if (!content.trim()) return
-
-      if (thinking) {
-        setMessageQueue((prev) => [...prev, { id: Date.now().toString(), content }])
-        return
+  const appendAgentResponse = useCallback((response: Message): void => {
+    setMessages((prev) => {
+      const index = prev.findIndex((m) => m.id === response.id)
+      if (index !== -1) {
+        const newMessages = [...prev]
+        newMessages[index] = response
+        return newMessages
       }
+      return [...prev, response]
+    })
+  }, [])
 
+  const appendSendError = useCallback((topicId: string): void => {
+    const errMsg: Message = {
+      id: Date.now().toString(),
+      topicId,
+      role: 'assistant',
+      content: '抱歉，出错了。请检查连接并重试。',
+      timestamp: Date.now()
+    }
+    setMessages((prev) => [...prev, errMsg])
+  }, [])
+
+  const dispatchMessage = useCallback(
+    async (content: string, messageId = Date.now().toString()) => {
       const userMsg: Message = {
-        id: Date.now().toString(),
+        id: messageId,
         topicId,
         role: 'user',
         content,
@@ -140,61 +167,50 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
 
       try {
         const response = await window.api.sendMessage(topicId, content)
-        setMessages((prev) => {
-          const index = prev.findIndex((m) => m.id === response.id)
-          if (index !== -1) {
-            const newMessages = [...prev]
-            newMessages[index] = response
-            return newMessages
-          }
-          return [...prev, response]
-        })
+        appendAgentResponse(response)
       } catch (err) {
         console.error('Agent error:', err)
-        const errMsg: Message = {
-          id: Date.now().toString(),
-          topicId,
-          role: 'assistant',
-          content: '抱歉，出错了。请检查连接并重试。',
-          timestamp: Date.now()
-        }
-        setMessages((prev) => [...prev, errMsg])
+        appendSendError(topicId)
       }
     },
-    [topicId, thinking]
+    [appendAgentResponse, appendSendError, topicId]
+  )
+
+  const sendMessage = useCallback(
+    async (content: string) => {
+      if (!content.trim()) return
+
+      if (thinking) {
+        setMessageQueue((prev) => [...prev, { id: Date.now().toString(), content }])
+        return
+      }
+
+      await dispatchMessage(content)
+    },
+    [dispatchMessage, thinking]
   )
 
   useEffect(() => {
-    if (!thinking && messageQueue.length > 0) {
-      const next = messageQueue[0]
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setMessageQueue((prev) => prev.slice(1))
-      const userMsg: Message = {
-        id: next.id,
-        topicId,
-        role: 'user',
-        content: next.content,
-        timestamp: Date.now()
-      }
-      setMessages((prev) => [...prev, userMsg])
-      window.api
-        .sendMessage(topicId, next.content)
-        .then((response) => {
-          setMessages((prev) => {
-            const index = prev.findIndex((m) => m.id === response.id)
-            if (index !== -1) {
-              const newMessages = [...prev]
-              newMessages[index] = response
-              return newMessages
-            }
-            return [...prev, response]
-          })
-        })
-        .catch((err) => {
-          console.error('Agent error:', err)
-        })
+    if (
+      !shouldDispatchQueuedMessage({
+        thinking: !!thinking,
+        queuedSendInFlight,
+        queueLength: messageQueue.length
+      })
+    ) {
+      return
     }
-  }, [thinking, messageQueue, topicId])
+
+    const next = messageQueue[0]
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setQueuedSendInFlight(true)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMessageQueue((prev) => prev.slice(1))
+
+    void dispatchMessage(next.content, next.id).finally(() => {
+      if (mountedRef.current) setQueuedSendInFlight(false)
+    })
+  }, [dispatchMessage, messageQueue, queuedSendInFlight, thinking])
 
   const toggleThought = useCallback((msgId: string) => {
     setExpandedThoughts((p) => ({ ...p, [msgId]: !p[msgId] }))

@@ -4,9 +4,19 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { WINDOW_DEFAULT_WIDTH, WINDOW_DEFAULT_HEIGHT } from './constants'
 import { initializeDB } from './db'
-import { setupSSHHandlers, setAgentService, createAgentSession } from './ssh'
-import { setupAgentHandlers, agentService, setCreateAgentSession } from './agent'
-import { registerLocalTerminalIPC } from './local-terminal'
+import {
+  setupSSHHandlers,
+  setAgentService,
+  createAgentSession,
+  closeSession as closeSSHSession
+} from './ssh'
+import {
+  setupAgentHandlers,
+  agentService,
+  setCreateAgentSession,
+  setCloseTerminalSession
+} from './agent'
+import { registerLocalTerminalIPC, setLocalAgentService, closeLocalSession } from './local-terminal'
 import { registerSFTPIPC } from './sftp'
 import { registerLocalFsIPC } from './local-fs'
 import { registerPortForwardIPC } from './port-forward'
@@ -92,7 +102,12 @@ app.whenReady().then(() => {
   registerLocalFsIPC()
   registerPortForwardIPC()
   setAgentService(agentService)
+  setLocalAgentService(agentService)
   setCreateAgentSession(createAgentSession)
+  setCloseTerminalSession((session, deletedBy) => {
+    if (session.hostId === 'local') return closeLocalSession(session.id, deletedBy)
+    return closeSSHSession(session.id, deletedBy)
+  })
   startCliControlServer(agentService)
 
   electronApp.setAppUserModelId(APP_ID)

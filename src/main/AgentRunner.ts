@@ -19,12 +19,17 @@ export interface IAgentService {
     name?: string,
     options?: { role?: TerminalSessionRole }
   ): Promise<import('./agent').AgentSession>
-  closeTerminal(id: string): Promise<void>
+  closeTerminal(
+    id: string,
+    options?: { deletedBy?: import('../shared/types').TerminalSessionDeletedBy }
+  ): Promise<void>
   renameTerminal(id: string, name: string): Promise<void>
   updateHostMetadata(hostId: string, metadata: Record<string, unknown>): Promise<void>
   searchTopics(query: string): Promise<unknown[]>
   searchMemories(query: string, hostId?: string, topicId?: string): Promise<unknown[]>
   getTopicHosts(topicId: string): Promise<(Host | undefined)[]>
+  registerRunController(runId: string, controller: AbortController): void
+  unregisterRunController(runId: string, controller?: AbortController): void
 }
 
 export interface AgentContext {

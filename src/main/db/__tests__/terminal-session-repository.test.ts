@@ -28,6 +28,7 @@ class FakeStatement {
         status,
         shellType,
         shellIntegrationReady,
+        isPinned,
         createdAt,
         name
       ] = params
@@ -41,6 +42,7 @@ class FakeStatement {
         status: String(status),
         shellType: shellType == null ? null : String(shellType),
         shellIntegrationReady: Number(shellIntegrationReady),
+        isPinned: isPinned == null ? 0 : Number(isPinned),
         createdAt: Number(createdAt),
         closedAt: null,
         name: name == null ? null : String(name),
@@ -62,6 +64,12 @@ class FakeStatement {
       const [visible, id] = params
       const row = this.rows.find((item) => item.id === id)
       if (row) row.visible = Number(visible)
+    }
+
+    if (this.sql.includes('UPDATE terminal_sessions SET isPinned = ? WHERE id = ?')) {
+      const [isPinned, id] = params
+      const row = this.rows.find((item) => item.id === id)
+      if (row) row.isPinned = Number(isPinned)
     }
   }
 
@@ -116,5 +124,26 @@ describe('TerminalSessionRepository', () => {
     repo.updateSessionVisibility('session-2', false)
 
     expect(repo.getSessionById('session-2')?.visible).toBe(false)
+  })
+
+  it('persists terminal pin state', () => {
+    const repo = createRepo()
+    repo.createSession({
+      id: 'session-3',
+      topicId: 'topic-1',
+      hostId: 'local',
+      hostAlias: '本地终端',
+      role: 'user',
+      isPinned: true,
+      status: 'active',
+      shellIntegrationReady: false,
+      createdAt: 1
+    })
+
+    expect(repo.getSessionById('session-3')?.isPinned).toBe(true)
+
+    repo.updateSessionPinned('session-3', false)
+
+    expect(repo.getSessionById('session-3')?.isPinned).toBe(false)
   })
 })

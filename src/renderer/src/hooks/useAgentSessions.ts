@@ -119,7 +119,9 @@ export function useAgentSessions({
           if (!cancelled) setAgentSessions([])
         })
     } else {
-      setAgentSessions([])
+      window.queueMicrotask(() => {
+        if (!cancelled) setAgentSessions([])
+      })
     }
 
     return () => {
@@ -225,7 +227,7 @@ export function useAgentSessions({
   )
 
   const handleCloseTerminal = useCallback(async (id: string) => {
-    await window.api.closeAgentTerminal(id)
+    await window.api.closeAgentTerminal(id, 'user')
     setAgentSessions((prev) => prev.filter((s) => s.id !== id))
   }, [])
 

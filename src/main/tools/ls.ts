@@ -2,13 +2,21 @@ import { z } from 'zod'
 import { define, Tool } from './tool-factory'
 import { resolveHostId } from '../utils/host-resolver'
 import { commandExecutor } from '../terminal'
+import { shellQuote } from './shell-quote'
+import { authorizeReadCommand } from './read-command-authorization'
 
 const parameters = z.object({
   hostId: z.string().describe('主机ID'),
   path: z.string().optional().describe('目录路径，默认为当前目录'),
   recursive: z.boolean().optional().describe('是否递归列出子目录，默认false'),
   showHidden: z.boolean().optional().describe('是否显示隐藏文件（以.开头），默认false'),
-  maxDepth: z.number().optional().describe('递归深度限制（仅当recursive=true时有效）'),
+  maxDepth: z
+    .number()
+    .int()
+    .min(0)
+    .max(50)
+    .optional()
+    .describe('递归深度限制（仅当recursive=true时有效）'),
   details: z.boolean().optional().describe('是否显示详细信息（权限、大小、修改时间），默认false')
 })
 
@@ -30,26 +38,39 @@ export default define('ls', {
       return { output: `Error: Host ${hostId} not found` }
     }
 
-    const sessionId = await ctx.ensureSession(host.id, host.alias, undefined, {
-      role: 'agent_command'
-    })
-
     let lsCmd: string
 
     if (recursive) {
       const depthFlag = maxDepth !== undefined ? ` -maxdepth ${maxDepth}` : ''
-      const hiddenFlag = showHidden ? '' : ' -not -path "*/\\.*"'
-      lsCmd = `find "${path}"${depthFlag}${hiddenFlag} | sort`
+      const hiddenFlag = showHidden ? '' : ` -not -path ${shellQuote('*/.*')}`
+      lsCmd = `find ${shellQuote(path)}${depthFlag}${hiddenFlag} | sort`
     } else {
-      const hiddenFlag = showHidden ? '-a' : ''
-      const detailFlag = details ? '-l' : ''
-      lsCmd = `ls ${detailFlag} ${hiddenFlag} "${path}" 2>/dev/null`
+      const flags = [details ? '-l' : '', showHidden ? '-a' : ''].filter(Boolean)
+      lsCmd = ['ls', ...flags, '--', shellQuote(path)].join(' ') + ' 2>/dev/null'
     }
+
+    const authorization = await authorizeReadCommand(ctx, {
+      toolName: 'ls',
+      hostId: host.id,
+      command: lsCmd,
+      reason: `列出目录 ${path}`,
+      metadata: { path, recursive, showHidden, maxDepth, details }
+    })
+    if (!authorization.ok) {
+      return { output: authorization.output, metadata: authorization.metadata }
+    }
+
+    const sessionId = await ctx.ensureSession(host.id, host.alias, undefined, {
+      role: 'agent_command'
+    })
 
     const result = await commandExecutor.execute(sessionId, lsCmd, ctx.topicId, ctx.taskId)
 
     if (result.exitCode !== 0) {
-      return { output: `Error: Failed to list directory: ${result.content}` }
+      return {
+        output: `Error: Failed to list directory: ${result.content}`,
+        metadata: authorization.metadata
+      }
     }
 
     const lines = result.content.split('\n').filter((l) => l.trim())
@@ -57,6 +78,7 @@ export default define('ls', {
     return {
       output: result.content,
       metadata: {
+        ...authorization.metadata,
         itemCount: lines.length,
         path,
         recursive,

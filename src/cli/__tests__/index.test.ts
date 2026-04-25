@@ -59,6 +59,10 @@ describe('opentermctl arg parsing', () => {
     })
   })
 
+  it('rejects unknown chat agent names', () => {
+    expect(() => parseCliArgs(['chat', 'send', '--agent', 'explor', '你好'])).toThrow(CliUsageError)
+  })
+
   it('parses terminal output defaults', () => {
     expect(
       parseCliArgs(['terminal', 'output', 'latest', '--topic', 'latest', '--tail', '20'])

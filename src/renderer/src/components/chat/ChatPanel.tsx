@@ -29,6 +29,8 @@ const CHAT_BASE_FONT_SIZE = 14
 const CHAT_ZOOM_STEP = 0.06
 const MIN_CHAT_ZOOM = 0.25
 const MAX_CHAT_ZOOM = 1.18
+const MIN_TERMINAL_STAGE_WIDTH = 360
+const MIN_CHAT_COLUMN_WIDTH = 420
 
 function clampChatZoom(value: number): number {
   return Math.max(MIN_CHAT_ZOOM, Math.min(MAX_CHAT_ZOOM, value))
@@ -62,7 +64,7 @@ interface ChatPanelProps {
   thinking?: boolean
   onManageHosts: () => void
   agentSessions: TerminalSession[]
-  onCloseAgentTerminal: (id: string) => void
+  onCloseAgentTerminal: (id: string) => void | Promise<void>
   onToggleAgentTerminalPaused: (id: string, paused: boolean) => Promise<void>
   terminalWidth: number
   setTerminalWidth: (w: number) => void
@@ -99,7 +101,7 @@ export function ChatPanel({
   const [inputValue, setInputValue] = useState(prefill || '')
   const [showMentions, setShowMentions] = useState(false)
   const [mentionFilter, setMentionFilter] = useState('')
-  const [isResizing, setIsResizing] = useState(false)
+  const [resizeRightEdge, setResizeRightEdge] = useState<number | null>(null)
   const [portForwardHost, setPortForwardHost] = useState<{ id: string; alias: string } | null>(null)
   const [runDetailId, setRunDetailId] = useState<string | null>(null)
   const [pausingRun, setPausingRun] = useState(false)
@@ -114,6 +116,7 @@ export function ChatPanel({
   const [workspaceOpen, setWorkspaceOpen] = useState(
     () => window.localStorage.getItem('openterm.topicWorkspace.open') !== 'false'
   )
+  const panelRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const { animationKey } = useVisibilityRestore()
   const { providers, models, defaultProviderId, defaultModelId } = useProvider()
@@ -303,6 +306,7 @@ export function ChatPanel({
     '--chat-text-size': `${CHAT_BASE_FONT_SIZE}px`,
     '--chat-line-height': `${Math.round(CHAT_BASE_FONT_SIZE * 1.8)}px`
   } as React.CSSProperties
+  const isResizing = resizeRightEdge !== null
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
     const value = e.target.value
@@ -373,7 +377,7 @@ export function ChatPanel({
     terminalStage.focusSession(id, { userInitiated: true })
 
   return (
-    <div className="flex h-full flex-col bg-transparent">
+    <div ref={panelRef} className="flex h-full flex-col bg-transparent">
       <PageHeader
         title={topic.title}
         dense
@@ -552,7 +556,7 @@ export function ChatPanel({
             onCloseTerminal={onCloseTerminal}
             onOpenCommandPalette={openTerminalCommandPalette}
             onCreateTerminal={onCreateTerminal}
-            onSetResizing={setIsResizing}
+            onResizeStart={setResizeRightEdge}
             onSetMode={terminalStage.setMode}
             onSetFollowAgent={terminalStage.setFollowAgent}
             onFocusSession={handleFocusSession}
@@ -604,10 +608,19 @@ export function ChatPanel({
           className="fixed inset-0 z-[100] cursor-col-resize select-none pointer-events-auto bg-transparent"
           onMouseDown={(e) => e.preventDefault()}
           onMouseMove={(e) => {
-            const w = window.innerWidth - e.clientX - 256
-            setTerminalWidth(Math.max(360, Math.min(w, window.innerWidth - 700)))
+            const rightEdge = resizeRightEdge ?? window.innerWidth
+            const panelLeft = panelRef.current?.getBoundingClientRect().left ?? 0
+            const maxWidth = Math.max(
+              MIN_TERMINAL_STAGE_WIDTH,
+              rightEdge - panelLeft - MIN_CHAT_COLUMN_WIDTH
+            )
+            const nextWidth = Math.max(
+              MIN_TERMINAL_STAGE_WIDTH,
+              Math.min(rightEdge - e.clientX, maxWidth)
+            )
+            setTerminalWidth(nextWidth)
           }}
-          onMouseUp={() => setIsResizing(false)}
+          onMouseUp={() => setResizeRightEdge(null)}
         />
       )}
     </div>

@@ -452,6 +452,7 @@ function createDiagnosticTables(): DbTables {
         createdAt: now + 12,
         closedAt: now + 40,
         name: 'prod shell',
+        isPinned: 0,
         agentNotes: 'used by agent',
         isDeleted: 0,
         deletedAt: null,

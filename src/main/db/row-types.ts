@@ -124,6 +124,14 @@ export interface AgentPartRow {
   updatedAt: number
 }
 
+// agent_run_checkpoints table
+export interface AgentRunCheckpointRow {
+  runId: string
+  payload: string
+  createdAt: number
+  updatedAt: number
+}
+
 // approvals table
 export interface ApprovalRow {
   id: string
@@ -166,6 +174,7 @@ export interface TerminalSessionRow {
   createdAt: number
   closedAt: number | null
   name: string | null // Added via ALTER TABLE
+  isPinned: number // 0 or 1
   agentNotes: string | null
   isDeleted: number // 0 or 1
   deletedAt: number | null

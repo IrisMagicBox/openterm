@@ -229,6 +229,7 @@ export const mapTerminalSessionRow = (row: TerminalSessionRow): TerminalSession 
   status: row.status as TerminalSession['status'],
   shellType: row.shellType ?? undefined,
   shellIntegrationReady: row.shellIntegrationReady === 1,
+  isPinned: row.isPinned === 1,
   createdAt: row.createdAt,
   closedAt: row.closedAt ?? undefined,
   agentNotes: row.agentNotes ?? undefined,

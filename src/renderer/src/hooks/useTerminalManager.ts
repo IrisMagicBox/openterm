@@ -70,15 +70,7 @@ export function useTerminalManager(): TerminalManagerState {
       }
     }
 
-    const handleCommandHistoryKey = (e: KeyboardEvent): void => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'r') {
-        e.preventDefault()
-        setCommandHistoryOpen(true)
-      }
-    }
-
     window.addEventListener('keydown', handleZoomKey)
-    window.addEventListener('keydown', handleCommandHistoryKey)
     const unlistenZoomShortcut = window.api.onZoomShortcut(({ direction }) =>
       applyTerminalZoom(direction)
     )
@@ -86,7 +78,6 @@ export function useTerminalManager(): TerminalManagerState {
     return () => {
       unlistenZoomShortcut()
       window.removeEventListener('keydown', handleZoomKey)
-      window.removeEventListener('keydown', handleCommandHistoryKey)
     }
   }, [])
 

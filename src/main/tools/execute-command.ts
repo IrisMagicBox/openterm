@@ -79,7 +79,11 @@ const parameters = z.object({
     .max(300000)
     .default(COMMAND_TIMEOUT_MS)
     .describe('最长等待毫秒数，超时后终止命令。'),
-  reason: z.string().describe('执行该命令的原因')
+  reason: z.string().describe('执行该命令的原因'),
+  verificationIds: z
+    .array(z.string())
+    .optional()
+    .describe('可选：本命令用于确认的待验证操作 ID。只在只读验证命令中填写。')
 })
 
 export default define('execute_command', {

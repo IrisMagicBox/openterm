@@ -18,6 +18,11 @@ export interface AgentProcessorOptions {
   permissionEngine: AgentPermissionEngine
   persistFinalMessage: boolean
   updateTaskStatus: boolean
+  resumeFromCheckpoint?: boolean
+  contextBudget?: {
+    modelContextWindow: number
+    reserveTokens: number
+  }
 }
 
 export interface StreamResult {

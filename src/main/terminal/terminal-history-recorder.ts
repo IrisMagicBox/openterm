@@ -1,4 +1,4 @@
-import type { TerminalIO, TerminalSession } from '../../shared/types'
+import type { TerminalIO, TerminalSession, TerminalSessionDeletedBy } from '../../shared/types'
 import { terminalIODB, terminalSessionDB } from '../db'
 
 export class TerminalHistoryRecorder {
@@ -14,9 +14,9 @@ export class TerminalHistoryRecorder {
     terminalIODB.createIO(io)
   }
 
-  closeSession(sessionId: string): void {
-    terminalSessionDB.closeSession(sessionId)
-    terminalIODB.markIOAsDeletedBySession(sessionId, Date.now(), 'agent')
+  closeSession(sessionId: string, deletedBy: TerminalSessionDeletedBy = 'agent'): void {
+    terminalSessionDB.closeSession(sessionId, deletedBy)
+    terminalIODB.markIOAsDeletedBySession(sessionId, Date.now(), deletedBy)
   }
 
   getRecentIO(sessionId: string, limit: number): TerminalIO[] {

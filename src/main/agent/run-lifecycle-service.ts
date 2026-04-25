@@ -8,6 +8,7 @@ import type { AgentProcessorOptions } from './agent-processor-types'
 import { agentRunStore } from './agent-run-store'
 import { LegacyAgentEventAdapter } from './legacy-agent-event-adapter'
 import { AgentPartWriter } from './agent-part-writer'
+import { agentCheckpointStore } from './agent-checkpoint'
 
 function extractProviderErrorContent(content: string): string | undefined {
   try {
@@ -212,6 +213,9 @@ export class RunLifecycleService {
       reason: providerError ?? 'Run completed',
       metadata: { stopReason }
     })
+    if (!providerError) {
+      agentCheckpointStore.delete(run.id)
+    }
     agentRunStore.completeRun(run.id, {
       usage: this.usageWithStopReason(stopReason),
       error: providerError

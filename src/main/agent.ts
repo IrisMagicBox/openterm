@@ -6,7 +6,12 @@ import { AgentApplicationService } from './agent/agent-application-service'
 import { AgentIpcController } from './agent/agent-ipc-controller'
 import { AgentSessionManager } from './agent/agent-session-manager'
 import { ApprovalBroker } from './agent/approval-broker'
-import type { AgentSession, CreateAgentSessionFn } from './agent/agent-service-types'
+import type {
+  AgentSession,
+  CloseTerminalSessionFn,
+  CreateAgentSessionFn
+} from './agent/agent-service-types'
+import type { TerminalSessionDeletedBy } from '../shared/types'
 
 export type { AgentSession } from './agent/agent-service-types'
 
@@ -36,6 +41,10 @@ export class AgentService implements IAgentService {
     this.sessions.setCreateAgentSession(fn)
   }
 
+  setCloseTerminalSession(fn: CloseTerminalSessionFn | null): void {
+    this.sessions.setCloseTerminalSession(fn)
+  }
+
   registerIPC(): void {
     this.ipc.register()
   }
@@ -63,8 +72,8 @@ export class AgentService implements IAgentService {
     return this.sessions.createTerminal(topicId, hostId, name, options)
   }
 
-  closeTerminal(id: string): Promise<void> {
-    return this.sessions.closeTerminal(id)
+  closeTerminal(id: string, options?: { deletedBy?: TerminalSessionDeletedBy }): Promise<void> {
+    return this.sessions.closeTerminal(id, options)
   }
 
   renameTerminal(id: string, name: string): Promise<void> {
@@ -110,6 +119,14 @@ export class AgentService implements IAgentService {
     return this.application.resumeRun(runId)
   }
 
+  registerRunController(runId: string, controller: AbortController): void {
+    this.application.registerRunController(runId, controller)
+  }
+
+  unregisterRunController(runId: string, controller?: AbortController): void {
+    this.application.unregisterRunController(runId, controller)
+  }
+
   handleAuthResponse(requestId: string, approved: boolean, alwaysAllow = false): Promise<void> {
     return this.approvals.handleAuthResponse(requestId, approved, alwaysAllow)
   }
@@ -127,6 +144,10 @@ export const agentService = new AgentService()
 
 export function setCreateAgentSession(fn: CreateAgentSessionFn | null): void {
   agentService.setCreateAgentSession(fn)
+}
+
+export function setCloseTerminalSession(fn: CloseTerminalSessionFn | null): void {
+  agentService.setCloseTerminalSession(fn)
 }
 
 export function setupAgentHandlers(): void {

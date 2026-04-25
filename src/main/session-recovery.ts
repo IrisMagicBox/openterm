@@ -1,6 +1,6 @@
 import { terminalSessionDB } from './db'
-import { createAgentSession } from './ssh'
-import { createLocalSession } from './local-terminal'
+import { attachSSHSession, createAgentSession } from './ssh'
+import { attachLocalSession, createLocalSession } from './local-terminal'
 import { getErrorMessage } from '../shared/errors'
 import { logger } from './logger'
 import type { TerminalSession, TerminalSessionRole } from '../shared/types'
@@ -11,6 +11,33 @@ interface RecoveredSession {
   originalSession: TerminalSession
   newSessionId: string | null
   recovered: boolean
+}
+
+let startupRecoveryCompleted = false
+
+async function registerRecoveredSessions(results: RecoveredSession[]): Promise<void> {
+  const recovered = results.filter((r) => r.recovered)
+  await Promise.all(
+    recovered.map((res) => {
+      if (!res.newSessionId) return Promise.resolve()
+      const role: TerminalSessionRole = res.originalSession.role ?? 'agent_command'
+      return agentService.registerSession({
+        id: res.newSessionId,
+        topicId: res.originalSession.topicId,
+        hostId: res.originalSession.hostId,
+        hostAlias: res.originalSession.hostAlias,
+        status: 'active',
+        role,
+        shellType: res.originalSession.shellType,
+        shellIntegrationReady: false,
+        createdAt: res.originalSession.createdAt,
+        paused: false,
+        name: res.originalSession.name,
+        visible: res.originalSession.visible ?? role !== 'agent_command',
+        isPinned: res.originalSession.isPinned
+      })
+    })
+  )
 }
 
 export async function recoverSessions(webContents: WebContents): Promise<RecoveredSession[]> {
@@ -77,34 +104,46 @@ export async function recoverSessions(webContents: WebContents): Promise<Recover
   return results
 }
 
+export async function reattachLiveSessions(webContents: WebContents): Promise<RecoveredSession[]> {
+  const activeSessions = terminalSessionDB.getActiveSessions()
+
+  if (activeSessions.length === 0) {
+    logger.info('SessionRecovery', 'No active sessions to reattach')
+    return []
+  }
+
+  const results: RecoveredSession[] = []
+  for (const session of activeSessions) {
+    const attached =
+      session.hostId === 'local'
+        ? attachLocalSession(session.id, webContents)
+        : attachSSHSession(session.id, webContents)
+    results.push({
+      originalSession: session,
+      newSessionId: attached ? session.id : null,
+      recovered: attached
+    })
+  }
+
+  return results
+}
+
 export function getRecoverableSessions(): TerminalSession[] {
   return terminalSessionDB.getActiveSessions()
 }
 
 export function handleSessionRecovery(webContents: WebContents): void {
-  recoverSessions(webContents).then((results) => {
+  const recovery = startupRecoveryCompleted
+    ? reattachLiveSessions(webContents)
+    : recoverSessions(webContents).finally(() => {
+        startupRecoveryCompleted = true
+      })
+
+  recovery.then(async (results) => {
     if (results.length === 0) return
     const recovered = results.filter((r) => r.recovered)
     const failed = results.filter((r) => !r.recovered)
-    for (const res of recovered) {
-      if (res.newSessionId) {
-        const role: TerminalSessionRole = res.originalSession.role ?? 'agent_command'
-        agentService.registerSession({
-          id: res.newSessionId,
-          topicId: res.originalSession.topicId,
-          hostId: res.originalSession.hostId,
-          hostAlias: res.originalSession.hostAlias,
-          status: 'active',
-          role,
-          shellType: res.originalSession.shellType,
-          shellIntegrationReady: false,
-          createdAt: Date.now(),
-          paused: false,
-          name: res.originalSession.name,
-          visible: res.originalSession.visible ?? role !== 'agent_command'
-        })
-      }
-    }
+    await registerRecoveredSessions(results)
     logger.info(
       'SessionRecovery',
       `Recovered ${recovered.length}/${results.length} sessions, ${failed.length} failed`

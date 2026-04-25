@@ -79,6 +79,13 @@ export class ContextAssembler {
     this.reserveTokens = opts?.reserveTokens ?? CONTEXT_RESERVE_TOKENS
   }
 
+  /** Override context budget after construction. */
+  setBudget(opts: { modelContextWindow?: number; reserveTokens?: number }): this {
+    this.modelContextWindow = opts.modelContextWindow ?? this.modelContextWindow
+    this.reserveTokens = opts.reserveTokens ?? this.reserveTokens
+    return this
+  }
+
   /** Set the base system prompt (always included, highest priority) */
   setSystemPrompt(prompt: string): this {
     this.systemBase = prompt

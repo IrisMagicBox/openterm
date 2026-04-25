@@ -166,6 +166,14 @@ export const BASE_SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_agent_parts_parent ON agent_parts(parentPartId);
   CREATE INDEX IF NOT EXISTS idx_agent_parts_tool_call ON agent_parts(toolCallId);
 
+  CREATE TABLE IF NOT EXISTS agent_run_checkpoints (
+    runId TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (runId) REFERENCES agent_runs(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS approvals (
     id TEXT PRIMARY KEY,
     taskId TEXT NOT NULL,
@@ -205,6 +213,7 @@ export const BASE_SCHEMA_SQL = `
     status TEXT NOT NULL DEFAULT 'active',
     shellType TEXT,
     shellIntegrationReady INTEGER DEFAULT 0,
+    isPinned INTEGER DEFAULT 0,
     createdAt INTEGER NOT NULL,
     closedAt INTEGER,
     FOREIGN KEY (topicId) REFERENCES topics(id) ON DELETE CASCADE,

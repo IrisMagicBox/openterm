@@ -4,6 +4,7 @@ import type { AgentContext, AuthResponse } from '../AgentRunner'
 import { agentRunStore } from './agent-run-store'
 import { approvalDB } from '../db'
 import type { AgentPart, ApprovalRiskLevel, PolicyRiskCategory } from '../../shared/types'
+import { getErrorMessage } from '../../shared/errors'
 
 export interface AgentPermissionRequest {
   permission: string
@@ -68,8 +69,9 @@ export class AgentPermissionEngine {
       throw new Error(feedback)
     }
 
-    agentRunStore.updateRun(this.context.runId!, { status: 'waiting_approval' })
+    this.updateRunIfActive('waiting_approval')
 
+    let approvalRecorded = false
     try {
       const response = await this.context.requestAuthorization(
         request.pattern,
@@ -79,6 +81,7 @@ export class AgentPermissionEngine {
       )
 
       this.recordApproval(request, riskLevel, response.approved)
+      approvalRecorded = true
 
       agentRunStore.updatePart(part.id, {
         status: response.approved ? 'completed' : 'error',
@@ -92,10 +95,20 @@ export class AgentPermissionEngine {
         throw new Error(this.rejectFeedback(request, rule, riskLevel))
       }
 
-      agentRunStore.updateRun(this.context.runId!, { status: 'running' })
+      this.updateRunIfActive('running')
       return response
     } catch (error) {
-      agentRunStore.updateRun(this.context.runId!, { status: 'running' })
+      const feedback = getErrorMessage(error)
+      if (!approvalRecorded) {
+        this.recordApproval(request, riskLevel, false)
+        agentRunStore.updatePart(part.id, {
+          status: 'error',
+          error: feedback,
+          endedAt: Date.now(),
+          metadata: { approved: false, feedback }
+        })
+      }
+      this.updateRunIfActive('running')
       throw error
     }
   }
@@ -182,5 +195,20 @@ export class AgentPermissionEngine {
       createdAt: Date.now(),
       respondedAt: Date.now()
     })
+  }
+
+  private updateRunIfActive(status: 'running' | 'waiting_approval'): void {
+    const runId = this.context.runId
+    if (!runId) return
+    const run = agentRunStore.getRun(runId)
+    if (
+      !run ||
+      run.status === 'cancelled' ||
+      run.status === 'completed' ||
+      run.status === 'failed'
+    ) {
+      return
+    }
+    agentRunStore.updateRun(runId, { status })
   }
 }

@@ -16,6 +16,7 @@ import {
   type ConversationDiagnosticsOptions,
   type ConversationDiagnosticsReport
 } from '../main/db/conversation-diagnostics'
+import { isBuiltInAgentName } from '../main/agent/agent-config'
 import {
   mapMessageRow,
   mapTerminalIORow,
@@ -506,6 +507,9 @@ function parseChatSendArgs(argv: string[]): CliCommand {
 
   if (!content.trim()) throw new CliUsageError('chat send requires a message')
   if (topicId && createTopic) throw new CliUsageError('Use either --topic or --new-topic, not both')
+  if (!isBuiltInAgentName(agentName)) {
+    throw new CliUsageError(`Unknown agent: ${agentName}`)
+  }
   return {
     name: 'chat-send',
     content,

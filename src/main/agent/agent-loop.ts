@@ -12,6 +12,9 @@ import { ProviderStreamCollector } from './provider-stream-collector'
 import { RunLifecycleService } from './run-lifecycle-service'
 import { ToolCallExecutor } from './tool-call-executor'
 import { agentRunStore } from './agent-run-store'
+import { agentCheckpointStore } from './agent-checkpoint'
+import type { CompactionMode } from './compaction'
+import { CONTEXT_RESERVE_TOKENS, CONTEXT_WINDOW_TOKENS } from '../constants'
 
 export class AgentLoop {
   private readonly streamCollector: ProviderStreamCollector
@@ -38,12 +41,29 @@ export class AgentLoop {
     )
 
     this.toolExecutor.reset()
-    this.lifecycle.createUserPart(run, lastUserMsg)
 
-    const turnMessages: ChatCompletionMessageParam[] = []
+    let turnMessages: ChatCompletionMessageParam[] = []
     let workingHistory = history
+    let startTurn = 1
+    let lastCompactionMode: CompactionMode | undefined
+    let lastCompactionReport:
+      | { mode: CompactionMode; beforeTokens: number; afterTokens: number }
+      | undefined
 
-    for (let turnCount = 1; turnCount <= maxTurns; turnCount++) {
+    const checkpoint = this.options.resumeFromCheckpoint
+      ? agentCheckpointStore.get(run.id)
+      : undefined
+    if (checkpoint) {
+      workingHistory = checkpoint.workingHistory
+      turnMessages = checkpoint.turnMessages
+      this.toolExecutor.restorePendingVerifications(checkpoint.pendingVerifications)
+      startTurn = checkpoint.turnCount
+      lastCompactionMode = checkpoint.lastCompactionMode
+    } else if (!this.options.resumeFromCheckpoint) {
+      this.lifecycle.createUserPart(run, lastUserMsg)
+    }
+
+    for (let turnCount = startTurn; turnCount <= maxTurns; turnCount++) {
       const terminalContext = commandExecutor.buildTerminalContext(context.topicId)
       const assembled = this.assembleContext(
         workingHistory,
@@ -57,18 +77,27 @@ export class AgentLoop {
       if (assembled.budget.isOverflow) {
         const compacted = await this.compaction.compactHistory(workingHistory, turnMessages)
         if (compacted) {
-          workingHistory = compacted
+          workingHistory = compacted.workingHistory
+          turnMessages = compacted.turnMessages
+          lastCompactionMode = compacted.mode
+          lastCompactionReport = {
+            mode: compacted.mode,
+            beforeTokens: compacted.beforeTokens,
+            afterTokens: compacted.afterTokens
+          }
+          this.saveCheckpoint(turnCount, workingHistory, turnMessages, lastCompactionMode)
           const compactedContext = this.assembleContext(
             workingHistory,
             turnMessages,
             terminalContext,
             extraContext
           )
-          this.recordContextReport(compactedContext, turnCount, true)
+          this.recordContextReport(compactedContext, turnCount, true, lastCompactionReport)
           currentMessages = compactedContext.messages
         }
       }
 
+      this.saveCheckpoint(turnCount, workingHistory, turnMessages, lastCompactionMode)
       this.legacyEvents.thinking()
       this.legacyEvents.status(turnCount > 1 ? 'verifying' : 'thinking')
 
@@ -103,11 +132,6 @@ export class AgentLoop {
         tool_calls: streamResult.toolCalls
       })
 
-      const autoCompacted = await this.compaction.maybeAutoCompact(workingHistory, turnMessages)
-      if (autoCompacted) {
-        workingHistory = autoCompacted
-      }
-
       if (streamResult.toolCalls.length === 0) {
         if (this.toolExecutor.hasPendingVerification()) {
           if (turnCount >= maxTurns) {
@@ -118,6 +142,7 @@ export class AgentLoop {
             role: 'user',
             content: this.toolExecutor.getVerificationObservation()
           })
+          this.saveCheckpoint(turnCount + 1, workingHistory, turnMessages, lastCompactionMode)
           continue
         }
 
@@ -143,6 +168,36 @@ export class AgentLoop {
       for (const observation of observations) {
         turnMessages.push(observation)
       }
+
+      const postToolContext = this.assembleContext(
+        workingHistory,
+        turnMessages,
+        terminalContext,
+        extraContext
+      )
+      const autoCompacted = await this.compaction.maybeAutoCompact(
+        workingHistory,
+        turnMessages,
+        postToolContext.budget
+      )
+      if (autoCompacted) {
+        workingHistory = autoCompacted.workingHistory
+        turnMessages = autoCompacted.turnMessages
+        lastCompactionMode = autoCompacted.mode
+        lastCompactionReport = {
+          mode: autoCompacted.mode,
+          beforeTokens: autoCompacted.beforeTokens,
+          afterTokens: autoCompacted.afterTokens
+        }
+        const compactedContext = this.assembleContext(
+          workingHistory,
+          turnMessages,
+          terminalContext,
+          extraContext
+        )
+        this.recordContextReport(compactedContext, turnCount, true, lastCompactionReport)
+      }
+      this.saveCheckpoint(turnCount + 1, workingHistory, turnMessages, lastCompactionMode)
     }
 
     return this.lifecycle.failMaxTurns(maxTurns)
@@ -155,6 +210,12 @@ export class AgentLoop {
     extraContext: string
   ): AssembledContext {
     return new ContextAssembler()
+      .setBudget(
+        this.options.contextBudget ?? {
+          modelContextWindow: CONTEXT_WINDOW_TOKENS,
+          reserveTokens: CONTEXT_RESERVE_TOKENS
+        }
+      )
       .setSystemPrompt(this.options.config.systemPrompt ?? SYSTEM_PROMPT)
       .addLayer('terminal_context', terminalContext, 80)
       .addLayer('memory_recall', extraContext, 60)
@@ -166,16 +227,35 @@ export class AgentLoop {
   private recordContextReport(
     assembled: AssembledContext,
     turnCount: number,
-    afterCompaction: boolean
+    afterCompaction: boolean,
+    compactionReport?: { mode: CompactionMode; beforeTokens: number; afterTokens: number }
   ): void {
     agentRunStore.updateRun(this.options.run.id, {
       metadata: {
         latestContextReport: {
           ...assembled.contextReport,
           turnCount,
-          afterCompaction
+          afterCompaction,
+          compactionMode: compactionReport?.mode,
+          beforeCompactionTokens: compactionReport?.beforeTokens,
+          afterCompactionTokens: compactionReport?.afterTokens
         }
       }
+    })
+  }
+
+  private saveCheckpoint(
+    turnCount: number,
+    workingHistory: Message[],
+    turnMessages: ChatCompletionMessageParam[],
+    lastCompactionMode?: CompactionMode
+  ): void {
+    agentCheckpointStore.save(this.options.run.id, {
+      turnCount,
+      workingHistory,
+      turnMessages,
+      pendingVerifications: this.toolExecutor.getPendingVerificationSnapshot(),
+      lastCompactionMode
     })
   }
 }

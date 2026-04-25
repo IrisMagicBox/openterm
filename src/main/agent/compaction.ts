@@ -17,9 +17,14 @@ import {
   pruneToolOutputs,
   selectTailMessages
 } from './compaction-policy'
+import { CONTEXT_RESERVE_TOKENS } from '../constants'
+
+export type CompactionMode = 'none' | 'prune_only' | 'summary'
 
 export interface CompactionResult {
+  mode: CompactionMode
   summary: string
+  compactedMessages: Message[]
   prunedCount: number
   prunedTokens: number
   originalTokenEstimate: number
@@ -34,12 +39,26 @@ export interface CompactionResult {
  */
 export async function compactContext(
   messages: Message[],
-  modelContextWindow?: number
-): Promise<CompactionResult | null> {
+  opts: {
+    modelContextWindow?: number
+    reserveTokens?: number
+    force?: boolean
+  } = {}
+): Promise<CompactionResult> {
   const originalTokens = estimateMessagesTokens(messages)
+  const reserveTokens = opts.reserveTokens ?? CONTEXT_RESERVE_TOKENS
 
-  if (!isOverflow(originalTokens, modelContextWindow)) {
-    return null
+  if (!opts.force && !isOverflow(originalTokens, opts.modelContextWindow, reserveTokens)) {
+    return {
+      mode: 'none',
+      summary: '',
+      compactedMessages: messages,
+      prunedCount: 0,
+      prunedTokens: 0,
+      originalTokenEstimate: originalTokens,
+      compactedTokenEstimate: originalTokens,
+      tailMessageCount: messages.length
+    }
   }
 
   logger.info('Compaction', 'Context overflow detected', {
@@ -56,13 +75,15 @@ export async function compactContext(
   const prunedTokenEstimate = estimateMessagesTokens(prunedMessages)
   const tail = selectTailMessages(prunedMessages)
 
-  if (!isOverflow(prunedTokenEstimate, modelContextWindow) && prunedCount > 0) {
+  if (!isOverflow(prunedTokenEstimate, opts.modelContextWindow, reserveTokens) && prunedCount > 0) {
     logger.info('Compaction', 'Pruning sufficient, no LLM summary needed', {
       prunedCount,
       tokensRecovered: originalTokens - prunedTokenEstimate
     })
     return {
+      mode: 'prune_only',
       summary: '',
+      compactedMessages: prunedMessages,
       prunedCount,
       prunedTokens: prunedOutputTokens,
       originalTokenEstimate: originalTokens,
@@ -82,6 +103,19 @@ export async function compactContext(
       : -1
     const messagesToSummarize =
       tailStartIndex > 0 ? prunedMessages.slice(0, tailStartIndex) : prunedMessages.slice(0, -1)
+    if (messagesToSummarize.length === 0) {
+      return {
+        mode: 'none',
+        summary: '',
+        compactedMessages: prunedMessages,
+        prunedCount,
+        prunedTokens: prunedOutputTokens,
+        originalTokenEstimate: originalTokens,
+        compactedTokenEstimate: prunedTokenEstimate,
+        tailStartMessageId: tail.tailStartMessageId,
+        tailMessageCount: tail.messages.length
+      }
+    }
     const conversationText = messagesToCompactionText(messagesToSummarize)
     const prompt = buildAnchoredCompactionPrompt({ conversationText })
 
@@ -100,21 +134,34 @@ export async function compactContext(
     })
 
     const summary = response.choices[0]?.message?.content || ''
+    const compactedMessages = [
+      { id: '', topicId: '', role: 'assistant' as const, content: summary, timestamp: 0 },
+      ...tail.messages
+    ]
 
     return {
+      mode: 'summary',
       summary,
+      compactedMessages,
       prunedCount,
       prunedTokens: prunedOutputTokens,
       originalTokenEstimate: originalTokens,
-      compactedTokenEstimate: estimateMessagesTokens([
-        { id: '', topicId: '', role: 'assistant', content: summary, timestamp: 0 },
-        ...tail.messages
-      ]),
+      compactedTokenEstimate: estimateMessagesTokens(compactedMessages),
       tailStartMessageId: tail.tailStartMessageId,
       tailMessageCount: tail.messages.length
     }
   } catch (error) {
     logger.error('Compaction', 'Failed to generate summary', error)
-    return null
+    return {
+      mode: 'none',
+      summary: '',
+      compactedMessages: messages,
+      prunedCount,
+      prunedTokens: prunedOutputTokens,
+      originalTokenEstimate: originalTokens,
+      compactedTokenEstimate: originalTokens,
+      tailStartMessageId: tail.tailStartMessageId,
+      tailMessageCount: tail.messages.length
+    }
   }
 }

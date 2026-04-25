@@ -236,6 +236,7 @@ export interface ToolResult {
 export type TerminalSessionStatus = 'active' | 'streaming' | 'closed' | 'disconnected'
 export type TerminalSessionRole = 'agent_command' | 'interactive' | 'user'
 export type TerminalTakeoverMode = 'auto' | 'manual'
+export type TerminalSessionDeletedBy = 'user' | 'agent' | 'system'
 
 export interface TerminalSession {
   id: string

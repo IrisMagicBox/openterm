@@ -7,6 +7,7 @@ import { MessageRepository } from './repositories/message-repository'
 import { TaskRepository } from './repositories/task-repository'
 import { TaskStepRepository } from './repositories/task-step-repository'
 import { AgentRunRepository } from './repositories/agent-run-repository'
+import { AgentRunCheckpointRepository } from './repositories/agent-run-checkpoint-repository'
 import { AgentPartRepository } from './repositories/agent-part-repository'
 import { ApprovalRepository } from './repositories/approval-repository'
 import { ArtifactRepository } from './repositories/artifact-repository'
@@ -27,6 +28,7 @@ class AppDatabase {
   readonly tasks: TaskRepository
   readonly taskSteps: TaskStepRepository
   readonly agentRuns: AgentRunRepository
+  readonly agentRunCheckpoints: AgentRunCheckpointRepository
   readonly agentParts: AgentPartRepository
   readonly approvals: ApprovalRepository
   readonly artifacts: ArtifactRepository
@@ -50,6 +52,7 @@ class AppDatabase {
     this.tasks = new TaskRepository(db)
     this.taskSteps = new TaskStepRepository(db)
     this.agentRuns = new AgentRunRepository(db)
+    this.agentRunCheckpoints = new AgentRunCheckpointRepository(db)
     this.agentParts = new AgentPartRepository(db)
     this.approvals = new ApprovalRepository(db)
     this.artifacts = new ArtifactRepository(db)
@@ -80,6 +83,7 @@ export const messageDB = db.messages
 export const taskDB = db.tasks
 export const taskStepDB = db.taskSteps
 export const agentRunDB = db.agentRuns
+export const agentRunCheckpointDB = db.agentRunCheckpoints
 export const agentPartDB = db.agentParts
 export const approvalDB = db.approvals
 export const artifactDB = db.artifacts

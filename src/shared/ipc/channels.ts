@@ -303,7 +303,10 @@ export interface IpcInvokeChannels {
     payload: [topicId: string, hostId: string, name?: string]
     result: TerminalSession
   }
-  'agent:close-terminal': { payload: [id: string]; result: void }
+  'agent:close-terminal': {
+    payload: [id: string, deletedBy?: 'user' | 'agent' | 'system']
+    result: void
+  }
   'agent:rename-terminal': { payload: [id: string, name: string]; result: void }
   'agent:toggle-terminal-pin': { payload: [id: string, isPinned: boolean]; result: void }
   'agent:set-session-paused': { payload: [id: string, paused: boolean]; result: boolean }

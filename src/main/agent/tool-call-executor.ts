@@ -3,6 +3,7 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool
 } from 'openai/resources/chat/completions/completions'
+import { v4 as uuidv4 } from 'uuid'
 import { getErrorMessage } from '../../shared/errors'
 import type { AgentPart, PolicyRiskCategory, TaskStep, ToolResult } from '../../shared/types'
 import { taskStepDB } from '../db'
@@ -17,6 +18,7 @@ import { LegacyAgentEventAdapter } from './legacy-agent-event-adapter'
 import type { AgentProcessorOptions } from './agent-processor-types'
 import type { SessionUsage } from './provider-adapter'
 import { AgentPartWriter } from './agent-part-writer'
+import type { PendingVerificationCheckpoint } from './agent-checkpoint'
 
 export class ToolCallExecutor {
   private readonly doomLoop = new DoomLoopDetector()
@@ -55,14 +57,26 @@ export class ToolCallExecutor {
     return this.pendingVerifications.size > 0
   }
 
+  getPendingVerificationSnapshot(): PendingVerificationCheckpoint[] {
+    return Array.from(this.pendingVerifications.values()).map((item) => ({ ...item }))
+  }
+
+  restorePendingVerifications(items: PendingVerificationCheckpoint[] = []): void {
+    this.pendingVerifications.clear()
+    for (const item of items) {
+      this.pendingVerifications.set(item.id, { ...item })
+    }
+  }
+
   getVerificationObservation(): string {
     const pending = Array.from(this.pendingVerifications.values())
     const lines = pending.map(
-      (item) => `- host=${item.hostId}, category=${item.riskCategory}, command=${item.command}`
+      (item) =>
+        `- verificationId=${item.id}, host=${item.hostId}, tool=${item.toolName}, category=${item.riskCategory}, command=${item.command}`
     )
     return [
       '[Runtime observation] 你刚才执行了会修改系统状态的操作，但还没有提供只读验证证据。',
-      '请继续使用 execute_command 执行只读验证命令，确认修改结果，再给出最终回答。',
+      '请继续使用 execute_command 执行只读验证命令，并在 verificationIds 参数中带上对应 verificationId，确认修改结果后再给出最终回答。',
       '待验证操作：',
       ...lines
     ].join('\n')
@@ -175,7 +189,7 @@ export class ToolCallExecutor {
     })
 
     try {
-      const context = this.contextFactory.create(part.id, legacyStep.id)
+      const context = this.contextFactory.create(part.id, legacyStep.id, call.function.name)
       const result = await this.options.toolRegistry.execute(
         call.function.name,
         validation.args,
@@ -208,7 +222,20 @@ export class ToolCallExecutor {
         this.options.provider.mergeChildUsage(metadata.usage as SessionUsage)
       }
 
-      this.trackVerification(call, result, metadata)
+      const verificationUpdate = this.trackVerification(call, result, metadata)
+      if (
+        verificationUpdate.createdIds.length > 0 ||
+        verificationUpdate.clearedIds.length > 0 ||
+        verificationUpdate.ignoredIds.length > 0
+      ) {
+        Object.assign(metadata, {
+          verificationIdsCreated: verificationUpdate.createdIds,
+          verificationIdsCleared: verificationUpdate.clearedIds,
+          verificationIdsIgnored: verificationUpdate.ignoredIds
+        })
+        this.parts.updatePart(part.id, { metadata })
+        taskStepDB.updateStep(legacyStep.id, { metadata })
+      }
 
       return { toolCallId: call.id, content: output, metadata }
     } catch (error) {
@@ -355,7 +382,10 @@ export class ToolCallExecutor {
     call: ChatCompletionMessageFunctionToolCall,
     result: ToolResult
   ): Promise<string> {
-    if (call.function.name !== 'execute_command') return result.content
+    const verificationNote = this.formatVerificationNote(result.metadata)
+    if (call.function.name !== 'execute_command') {
+      return [result.content, verificationNote].filter(Boolean).join('\n')
+    }
 
     try {
       const parsed = JSON.parse(result.content)
@@ -366,31 +396,37 @@ export class ToolCallExecutor {
 
       if (parsed.content !== undefined && parsed.exitCode !== undefined) {
         const observation = fromCommandResult(parsed, hostId, terminalName)
-        return formatObservation(observation)
+        return [formatObservation(observation), verificationNote].filter(Boolean).join('\n')
       }
 
       if (parsed.content && parsed.content.length > 2000) {
-        return MemoryManager.distillObservation(
+        const distilled = await MemoryManager.distillObservation(
           typeof args.command === 'string' ? args.command : '',
           parsed.content || '',
           parsed.exitCode
         )
+        return [distilled, verificationNote].filter(Boolean).join('\n')
       }
     } catch {
-      return result.content
+      return [result.content, verificationNote].filter(Boolean).join('\n')
     }
 
-    return result.content
+    return [result.content, verificationNote].filter(Boolean).join('\n')
   }
 
   private trackVerification(
     call: ChatCompletionMessageFunctionToolCall,
     result: { output: string; metadata?: Record<string, unknown> },
     metadata: Record<string, unknown>
-  ): void {
+  ): VerificationTrackingUpdate {
+    const update: VerificationTrackingUpdate = {
+      createdIds: [],
+      clearedIds: [],
+      ignoredIds: []
+    }
     const args = this.safeParseArgs(call.function.arguments)
     const hostId = this.stringValue(metadata.hostId) ?? this.stringValue(args.hostId)
-    if (!hostId) return
+    if (!hostId) return update
 
     const riskCategory = this.riskCategoryValue(metadata.riskCategory)
     const exitCode = this.numberValue(metadata.exitCode) ?? this.parseExitCode(result.output)
@@ -398,29 +434,93 @@ export class ToolCallExecutor {
 
     if (call.function.name !== 'execute_command') {
       if (metadata.requiresVerification === true && (exitCode === undefined || exitCode === 0)) {
-        this.pendingVerifications.set(hostId, {
+        const id = this.createPendingVerification({
           hostId,
+          toolName: call.function.name,
           command: command || call.function.name,
           riskCategory: riskCategory ?? 'write',
-          createdAt: Date.now()
+          metadata
         })
+        update.createdIds.push(id)
       }
-      return
+      return update
     }
 
     if (riskCategory === 'read' && exitCode === 0) {
-      this.pendingVerifications.delete(hostId)
-      return
+      const requestedIds = this.stringArrayValue(args.verificationIds)
+      for (const id of requestedIds) {
+        const pending = this.pendingVerifications.get(id)
+        if (pending && pending.hostId === hostId) {
+          this.pendingVerifications.delete(id)
+          update.clearedIds.push(id)
+        } else {
+          update.ignoredIds.push(id)
+        }
+      }
+      return update
     }
 
     if (metadata.requiresVerification === true && exitCode === 0) {
-      this.pendingVerifications.set(hostId, {
+      const id = this.createPendingVerification({
         hostId,
+        toolName: call.function.name,
         command,
         riskCategory: riskCategory ?? 'write',
-        createdAt: Date.now()
+        metadata
       })
+      update.createdIds.push(id)
     }
+
+    return update
+  }
+
+  private createPendingVerification(input: {
+    hostId: string
+    toolName: string
+    command: string
+    riskCategory: PolicyRiskCategory
+    metadata?: Record<string, unknown>
+  }): string {
+    const id = `ver_${uuidv4().slice(0, 8)}`
+    this.pendingVerifications.set(id, {
+      id,
+      hostId: input.hostId,
+      toolName: input.toolName,
+      command: input.command,
+      riskCategory: input.riskCategory,
+      metadata: input.metadata,
+      createdAt: Date.now()
+    })
+    return id
+  }
+
+  private formatVerificationNote(metadata: Record<string, unknown> | undefined): string {
+    const createdIds = this.stringArrayValue(metadata?.verificationIdsCreated)
+    const clearedIds = this.stringArrayValue(metadata?.verificationIdsCleared)
+    const ignoredIds = this.stringArrayValue(metadata?.verificationIdsIgnored)
+    const lines: string[] = []
+
+    if (createdIds.length > 0) {
+      lines.push(
+        `[Runtime verification] 该操作需要后续只读验证。验证时请在 execute_command 参数 verificationIds 中带上：${createdIds.join(', ')}`
+      )
+    }
+    if (clearedIds.length > 0) {
+      lines.push(`[Runtime verification] 已确认并清除验证项：${clearedIds.join(', ')}`)
+    }
+    if (ignoredIds.length > 0) {
+      lines.push(
+        `[Runtime verification] 以下 verificationIds 未匹配当前主机或不存在，未清除：${ignoredIds.join(', ')}`
+      )
+    }
+
+    return lines.join('\n')
+  }
+
+  private stringArrayValue(value: unknown): string[] {
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string')
+      : []
   }
 
   private safeParseArgs(raw: string): Record<string, unknown> {
@@ -464,8 +564,17 @@ export class ToolCallExecutor {
 }
 
 interface PendingVerification {
+  id: string
   hostId: string
+  toolName: string
   command: string
   riskCategory: PolicyRiskCategory
+  metadata?: Record<string, unknown>
   createdAt: number
+}
+
+interface VerificationTrackingUpdate {
+  createdIds: string[]
+  clearedIds: string[]
+  ignoredIds: string[]
 }

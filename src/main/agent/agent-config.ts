@@ -229,6 +229,17 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
   }
 }
 
+export function isBuiltInAgentName(name: string): name is keyof typeof BUILT_IN_AGENTS {
+  return Object.prototype.hasOwnProperty.call(BUILT_IN_AGENTS, name)
+}
+
+export function getDefaultAgentConfig(): AgentConfig {
+  return BUILT_IN_AGENTS.build
+}
+
 export function getAgentConfig(name: string): AgentConfig {
-  return BUILT_IN_AGENTS[name] ?? BUILT_IN_AGENTS.build
+  if (!isBuiltInAgentName(name)) {
+    throw new Error(`Unknown agent "${name}".`)
+  }
+  return BUILT_IN_AGENTS[name]
 }

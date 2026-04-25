@@ -1,4 +1,4 @@
-import { type JSX, useState, useEffect, useMemo } from 'react'
+import { type JSX, useState, useEffect, useMemo, useCallback } from 'react'
 import { SettingsPage } from './features/settings'
 import { ChatPanel, ChatEmptyState } from './features/chat'
 import { AddHostModal, HostsView } from './features/hosts'
@@ -22,6 +22,14 @@ import {
 } from './lib/terminal-tabs'
 import { View, WorkspaceWindowItem } from './types'
 import type { Topic } from '../../shared/types'
+import { WORKSPACE_TERMINALS_TOPIC_ID } from '../../shared/constants'
+
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.closest('[data-terminal-view]')) return false
+  if (target.isContentEditable) return true
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+}
 
 export default function App(): JSX.Element {
   const [activeView, setActiveView] = useState<View>('hosts')
@@ -127,6 +135,43 @@ export default function App(): JSX.Element {
     loadTopics()
   }, [loadHosts, loadTopics])
 
+  const syncWorkspaceTerminalSessions = useCallback(async (): Promise<void> => {
+    const sessions = await window.api.getAgentSessions(WORKSPACE_TERMINALS_TOPIC_ID)
+    const workspaceSessions = sessions.filter(shouldMirrorSessionInTerminalTabs)
+    if (workspaceSessions.length === 0) return
+
+    setTerminalTabs((prev) => {
+      let next = prev
+      for (const session of workspaceSessions) {
+        next = upsertTerminalTab(next, terminalTabFromSession(session, hosts))
+      }
+      return next
+    })
+
+    setTerminalSessionId((prev) => prev ?? workspaceSessions[0]?.id ?? null)
+    const firstSession = workspaceSessions[0]
+    if (firstSession) {
+      setSelectedHost(terminalTabFromSession(firstSession, hosts).host)
+    }
+  }, [hosts, setSelectedHost, setTerminalSessionId, setTerminalTabs])
+
+  useEffect(() => {
+    let cancelled = false
+    const sync = (): void => {
+      void syncWorkspaceTerminalSessions().catch((error) => {
+        if (!cancelled) console.error('Failed to sync workspace terminals:', error)
+      })
+    }
+
+    sync()
+    const unlistenRecovered = window.api.onSessionRecovered(sync)
+
+    return () => {
+      cancelled = true
+      unlistenRecovered()
+    }
+  }, [syncWorkspaceTerminalSessions])
+
   useEffect(() => {
     const unlistenCreated = window.api.onAgentSessionCreated((session) => {
       if (!shouldMirrorSessionInTerminalTabs(session)) return
@@ -161,6 +206,22 @@ export default function App(): JSX.Element {
     }
   }, [hosts, setActiveTerminalTabIndex, setSelectedHost, setTerminalSessionId, setTerminalTabs])
 
+  useEffect(() => {
+    const handleCommandHistoryKey = (event: KeyboardEvent): void => {
+      if (activeView !== 'terminal' || !terminalSessionId) return
+      if ((!event.metaKey && !event.ctrlKey) || event.altKey || event.key.toLowerCase() !== 'r') {
+        return
+      }
+      if (isEditableKeyboardTarget(event.target)) return
+
+      event.preventDefault()
+      setCommandHistoryOpen(true)
+    }
+
+    window.addEventListener('keydown', handleCommandHistoryKey)
+    return () => window.removeEventListener('keydown', handleCommandHistoryKey)
+  }, [activeView, setCommandHistoryOpen, terminalSessionId])
+
   const terminalWindows = useMemo<WorkspaceWindowItem[]>(
     () =>
       terminalTabs.map(({ host, sessionId, title }) => ({
@@ -172,6 +233,13 @@ export default function App(): JSX.Element {
             : `${host.username}@${host.ip}${host.port && host.port !== 22 ? `:${host.port}` : ''}`
       })),
     [terminalTabs]
+  )
+  const activeTerminalTab = useMemo(
+    () =>
+      terminalTabs.find((tab) => tab.sessionId === terminalSessionId) ??
+      terminalTabs[activeTerminalTabIndex] ??
+      null,
+    [activeTerminalTabIndex, terminalSessionId, terminalTabs]
   )
 
   const handleCreateLocalAgentTopic = async (): Promise<Topic> => {
@@ -365,7 +433,12 @@ export default function App(): JSX.Element {
           <CommandHistorySearch
             onSelect={(cmd) => {
               if (activeView === 'terminal' && terminalSessionId) {
-                window.api.sendSSHInput(terminalSessionId, cmd + '\n')
+                const targetHost = activeTerminalTab?.host ?? selectedHost
+                if (targetHost?.id === 'local') {
+                  window.api.sendLocalInput(terminalSessionId, cmd + '\n')
+                } else {
+                  window.api.sendSSHInput(terminalSessionId, cmd + '\n')
+                }
               }
             }}
             onClose={() => setCommandHistoryOpen(false)}

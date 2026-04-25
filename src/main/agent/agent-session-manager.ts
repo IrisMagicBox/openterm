@@ -3,12 +3,17 @@ import { v4 as uuidv4 } from 'uuid'
 import { hostDB, memoryDB, terminalSessionDB, topicDB } from '../db'
 import { commandExecutor } from '../terminal'
 import { createLocalSession } from '../local-terminal'
-import type { AgentSession, CreateAgentSessionFn } from './agent-service-types'
-import type { TerminalSessionRole } from '../../shared/types'
+import type {
+  AgentSession,
+  CloseTerminalSessionFn,
+  CreateAgentSessionFn
+} from './agent-service-types'
+import type { TerminalSessionDeletedBy, TerminalSessionRole } from '../../shared/types'
 
 export class AgentSessionManager {
   private webContents?: WebContents
   private createAgentSessionRef: CreateAgentSessionFn | null = null
+  private closeTerminalSessionRef: CloseTerminalSessionFn | null = null
   private topicSessions: Map<string, Map<string, AgentSession[]>> = new Map()
 
   setWebContents(webContents: WebContents): void {
@@ -17,6 +22,10 @@ export class AgentSessionManager {
 
   setCreateAgentSession(fn: CreateAgentSessionFn | null): void {
     this.createAgentSessionRef = fn
+  }
+
+  setCloseTerminalSession(fn: CloseTerminalSessionFn | null): void {
+    this.closeTerminalSessionRef = fn
   }
 
   async getTopicHosts(topicId: string): Promise<Array<ReturnType<typeof hostDB.getHostById>>> {
@@ -42,10 +51,10 @@ export class AgentSessionManager {
     )
 
     const hostMap = this.topicSessions.get(topicId)
-    const sessions = hostMap?.get(hostId)
-    if (!sessions) return
+    const sessions = [...(hostMap?.get(hostId) ?? [])]
+    if (sessions.length === 0) return
     for (const session of sessions) {
-      commandExecutor.closeSession(session.id)
+      await this.closeTerminal(session.id, { deletedBy: 'system' })
     }
     hostMap?.delete(hostId)
   }
@@ -61,19 +70,22 @@ export class AgentSessionManager {
     return this.createNewSession(topicId, hostId, host.alias, name, true, options.role ?? 'user')
   }
 
-  async closeTerminal(id: string): Promise<void> {
-    commandExecutor.closeSession(id)
-    for (const hostMap of this.topicSessions.values()) {
-      for (const [hostId, sessions] of hostMap.entries()) {
-        const index = sessions.findIndex((s) => s.id === id)
-        if (index !== -1) {
-          sessions.splice(index, 1)
-          if (sessions.length === 0) hostMap.delete(hostId)
-          this.webContents?.send('agent:session-closed', { id })
-          return
-        }
-      }
+  async closeTerminal(
+    id: string,
+    options: { deletedBy?: TerminalSessionDeletedBy } = {}
+  ): Promise<void> {
+    const deletedBy = options.deletedBy ?? 'agent'
+    const session = this.findSession(id) ?? terminalSessionDB.getSessionById(id)
+    const physicallyClosed = session
+      ? this.closeTerminalSessionRef?.({ id: session.id, hostId: session.hostId }, deletedBy)
+      : false
+
+    if (!physicallyClosed) {
+      commandExecutor.closeSession(id, deletedBy)
     }
+
+    this.removeSession(id)
+    this.webContents?.send('agent:session-closed', { id })
   }
 
   async renameTerminal(id: string, name: string): Promise<void> {
@@ -87,7 +99,11 @@ export class AgentSessionManager {
 
   async toggleTerminalPin(id: string, isPinned: boolean): Promise<void> {
     const session = this.findSession(id)
-    if (session) session.isPinned = isPinned
+    if (session) {
+      session.isPinned = isPinned
+      this.webContents?.send('agent:session-created', this.withControlState(session))
+    }
+    terminalSessionDB.updateSessionPinned(id, isPinned)
   }
 
   async updateHostMetadata(
@@ -146,6 +162,12 @@ export class AgentSessionManager {
 
     if (registeredSession.visible !== undefined) {
       terminalSessionDB.updateSessionVisibility(registeredSession.id, registeredSession.visible)
+    }
+    if (registeredSession.name !== undefined) {
+      terminalSessionDB.updateSessionName(registeredSession.id, registeredSession.name)
+    }
+    if (registeredSession.isPinned !== undefined) {
+      terminalSessionDB.updateSessionPinned(registeredSession.id, registeredSession.isPinned)
     }
 
     if (options.emit ?? true) {
@@ -301,6 +323,18 @@ export class AgentSessionManager {
       }
     }
     return undefined
+  }
+
+  private removeSession(id: string): void {
+    for (const hostMap of this.topicSessions.values()) {
+      for (const [hostId, sessions] of hostMap.entries()) {
+        const index = sessions.findIndex((s) => s.id === id)
+        if (index === -1) continue
+        sessions.splice(index, 1)
+        if (sessions.length === 0) hostMap.delete(hostId)
+        return
+      }
+    }
   }
 
   private withControlState(session: AgentSession): AgentSession {

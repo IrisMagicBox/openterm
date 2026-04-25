@@ -381,7 +381,8 @@ const api: Record<string, unknown> = {
   // Multi-Terminal Management
   createAgentTerminal: (topicId: string, hostId: string, name?: string) =>
     ipcRenderer.invoke('agent:create-terminal', topicId, hostId, name),
-  closeAgentTerminal: (id: string) => ipcRenderer.invoke('agent:close-terminal', id),
+  closeAgentTerminal: (id: string, deletedBy?: 'user' | 'agent' | 'system') =>
+    ipcRenderer.invoke('agent:close-terminal', id, deletedBy),
   renameAgentTerminal: (id: string, name: string) =>
     ipcRenderer.invoke('agent:rename-terminal', id, name),
   toggleTerminalPin: (id: string, isPinned: boolean) =>
