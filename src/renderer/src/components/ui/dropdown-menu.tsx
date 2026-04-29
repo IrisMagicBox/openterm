@@ -19,7 +19,7 @@ export const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        'glass-menu z-[220] min-w-40 overflow-hidden rounded-xl p-1 text-foreground animate-in fade-in',
+        'glass-menu menu-pop-in z-[220] min-w-40 overflow-hidden rounded-xl p-1 text-foreground',
         className
       )}
       {...props}
@@ -70,7 +70,7 @@ export const DropdownMenuSubContent = React.forwardRef<
   <DropdownMenuPrimitive.SubContent
     ref={ref}
     className={cn(
-      'glass-menu z-[230] min-w-40 overflow-hidden rounded-xl p-1 text-foreground',
+      'glass-menu menu-pop-in z-[230] min-w-40 overflow-hidden rounded-xl p-1 text-foreground',
       className
     )}
     {...props}

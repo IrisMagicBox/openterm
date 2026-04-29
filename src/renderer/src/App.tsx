@@ -1,4 +1,14 @@
-import { type JSX, useState, useEffect, useMemo, useCallback } from 'react'
+import {
+  type JSX,
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent
+} from 'react'
 import { SettingsPage } from './features/settings'
 import { ChatPanel, ChatEmptyState } from './features/chat'
 import { AddHostModal, HostsView } from './features/hosts'
@@ -20,6 +30,15 @@ import {
   terminalTabFromSession,
   upsertTerminalTab
 } from './lib/terminal-tabs'
+import {
+  SIDEBAR_COLLAPSED_WIDTH,
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MIN_EXPANDED_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_COMPACT_THRESHOLD,
+  SIDEBAR_COLLAPSE_THRESHOLD,
+  clampSidebarWidth
+} from './lib/sidebar-layout'
 import { View, WorkspaceWindowItem } from './types'
 import type { Topic } from '../../shared/types'
 import { WORKSPACE_TERMINALS_TOPIC_ID } from '../../shared/constants'
@@ -129,6 +148,155 @@ export default function App(): JSX.Element {
   } = useTerminalManager()
 
   const { requireConfirmation } = usePermissions()
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_DEFAULT_WIDTH
+  )
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false)
+  const appShellRef = useRef<HTMLDivElement>(null)
+  const sidebarWidthRef = useRef(sidebarWidth)
+  const stopSidebarResizeRef = useRef<(() => void) | null>(null)
+  const compactSidebar = sidebarWidth <= SIDEBAR_COMPACT_THRESHOLD
+
+  const setSidebarCssWidth = useCallback((width: number): void => {
+    appShellRef.current?.style.setProperty('--sidebar-width', `${Math.round(width)}px`)
+  }, [])
+
+  useEffect(() => {
+    sidebarWidthRef.current = sidebarWidth
+    setSidebarCssWidth(sidebarWidth)
+  }, [setSidebarCssWidth, sidebarWidth])
+
+  useEffect(() => {
+    setSidebarWidth((currentWidth) => {
+      if (sidebarCollapsed && currentWidth > SIDEBAR_COMPACT_THRESHOLD) {
+        sidebarWidthRef.current = SIDEBAR_COLLAPSED_WIDTH
+        return SIDEBAR_COLLAPSED_WIDTH
+      }
+      if (!sidebarCollapsed && currentWidth <= SIDEBAR_COMPACT_THRESHOLD) {
+        sidebarWidthRef.current = SIDEBAR_DEFAULT_WIDTH
+        return SIDEBAR_DEFAULT_WIDTH
+      }
+      return currentWidth
+    })
+  }, [sidebarCollapsed])
+
+  useEffect(() => {
+    return () => {
+      stopSidebarResizeRef.current?.()
+    }
+  }, [])
+
+  const settleSidebarWidth = useCallback(
+    (width: number): void => {
+      const clampedWidth = clampSidebarWidth(width)
+      const shouldCollapse = clampedWidth < SIDEBAR_COLLAPSE_THRESHOLD
+      const settledWidth = shouldCollapse
+        ? SIDEBAR_COLLAPSED_WIDTH
+        : Math.max(clampedWidth, SIDEBAR_MIN_EXPANDED_WIDTH)
+
+      sidebarWidthRef.current = settledWidth
+      setSidebarCssWidth(settledWidth)
+      setSidebarWidth(settledWidth)
+      setSidebarCollapsed(shouldCollapse)
+    },
+    [setSidebarCollapsed, setSidebarCssWidth]
+  )
+
+  const startSidebarResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>): void => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      event.stopPropagation()
+
+      stopSidebarResizeRef.current?.()
+
+      const startWidth = sidebarWidthRef.current
+      const startX = event.clientX
+      let pendingWidth = startWidth
+      let resizeFrame = 0
+
+      setIsResizingSidebar(true)
+      document.body.dataset.sidebarResizing = 'true'
+      window.dispatchEvent(new Event('openterm:sidebar-resize-start'))
+
+      const applyPendingWidth = (): void => {
+        resizeFrame = 0
+        setSidebarCssWidth(pendingWidth)
+      }
+
+      const handlePointerMove = (moveEvent: PointerEvent): void => {
+        moveEvent.preventDefault()
+        const nextWidth = clampSidebarWidth(startWidth + moveEvent.clientX - startX)
+        pendingWidth = nextWidth
+        sidebarWidthRef.current = nextWidth
+        if (!resizeFrame) {
+          resizeFrame = window.requestAnimationFrame(applyPendingWidth)
+        }
+      }
+
+      function cleanup(): void {
+        if (resizeFrame) {
+          window.cancelAnimationFrame(resizeFrame)
+          resizeFrame = 0
+        }
+        window.removeEventListener('pointermove', handlePointerMove)
+        window.removeEventListener('pointerup', finishSidebarResize)
+        window.removeEventListener('pointercancel', cancelSidebarResize)
+        delete document.body.dataset.sidebarResizing
+        setIsResizingSidebar(false)
+        stopSidebarResizeRef.current = null
+      }
+
+      function finishSidebarResize(): void {
+        const finalWidth = sidebarWidthRef.current
+        cleanup()
+        settleSidebarWidth(finalWidth)
+        window.requestAnimationFrame(() => {
+          window.dispatchEvent(new Event('openterm:sidebar-resize-end'))
+        })
+      }
+
+      function cancelSidebarResize(): void {
+        const finalWidth = sidebarWidthRef.current
+        cleanup()
+        settleSidebarWidth(finalWidth)
+        window.requestAnimationFrame(() => {
+          window.dispatchEvent(new Event('openterm:sidebar-resize-end'))
+        })
+      }
+
+      window.addEventListener('pointermove', handlePointerMove)
+      window.addEventListener('pointerup', finishSidebarResize, { once: true })
+      window.addEventListener('pointercancel', cancelSidebarResize, { once: true })
+      stopSidebarResizeRef.current = cleanup
+    },
+    [setSidebarCssWidth, settleSidebarWidth]
+  )
+
+  const handleSidebarResizeKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+      let nextWidth: number | null = null
+      const step = event.shiftKey ? 48 : 24
+
+      if (event.key === 'ArrowLeft') {
+        nextWidth = compactSidebar ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidthRef.current - step
+      } else if (event.key === 'ArrowRight') {
+        nextWidth = compactSidebar ? SIDEBAR_MIN_EXPANDED_WIDTH : sidebarWidthRef.current + step
+      } else if (event.key === 'Home') {
+        nextWidth = SIDEBAR_COLLAPSED_WIDTH
+      } else if (event.key === 'End') {
+        nextWidth = SIDEBAR_DEFAULT_WIDTH
+      } else if (event.key === 'Enter' || event.key === ' ') {
+        nextWidth = compactSidebar ? SIDEBAR_DEFAULT_WIDTH : SIDEBAR_COLLAPSED_WIDTH
+      }
+
+      if (nextWidth === null) return
+      event.preventDefault()
+      event.stopPropagation()
+      settleSidebarWidth(nextWidth)
+    },
+    [compactSidebar, settleSidebarWidth]
+  )
 
   useEffect(() => {
     loadHosts()
@@ -261,10 +429,16 @@ export default function App(): JSX.Element {
 
   return (
     <TooltipProvider>
-      <div className="flex h-screen w-screen overflow-hidden bg-surface text-foreground select-none">
+      <div
+        ref={appShellRef}
+        className="app-shell relative flex h-screen w-screen overflow-hidden text-foreground select-none"
+        style={{ '--sidebar-width': `${Math.round(sidebarWidth)}px` } as CSSProperties}
+      >
+        <div aria-hidden className="app-sidebar-backdrop" />
+
         <AppSidebar
-          sidebarCollapsed={sidebarCollapsed}
-          setSidebarCollapsed={setSidebarCollapsed}
+          compactSidebar={compactSidebar}
+          isResizingSidebar={isResizingSidebar}
           activeView={activeView}
           setActiveView={setActiveView}
           hosts={hosts}
@@ -311,7 +485,7 @@ export default function App(): JSX.Element {
           }}
         />
 
-        <main className="relative flex flex-1 flex-col overflow-hidden bg-surface">
+        <main className="app-workspace-frame relative z-20 flex flex-1 flex-col">
           <div className={activeView === 'hosts' ? 'flex-1 flex flex-col' : 'hidden'}>
             <HostsView
               filteredHosts={filteredHosts}
@@ -405,6 +579,25 @@ export default function App(): JSX.Element {
 
           {activeView === 'settings' && <SettingsPage />}
         </main>
+
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整侧边栏宽度"
+          aria-valuemin={SIDEBAR_COLLAPSED_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          aria-valuenow={Math.round(sidebarWidth)}
+          tabIndex={0}
+          data-resizing={isResizingSidebar ? 'true' : 'false'}
+          className="sidebar-resize-rail no-drag"
+          onPointerDown={startSidebarResize}
+          onDoubleClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            settleSidebarWidth(compactSidebar ? SIDEBAR_DEFAULT_WIDTH : SIDEBAR_COLLAPSED_WIDTH)
+          }}
+          onKeyDown={handleSidebarResizeKeyDown}
+        />
 
         {showAddHost && (
           <AddHostModal onClose={() => setShowAddHost(false)} onSave={handleCreateHost} />

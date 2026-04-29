@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactElement, type ReactNode } from 'react'
 import {
   Plus,
   LayoutGrid,
@@ -6,7 +6,6 @@ import {
   Folder,
   MessageSquare,
   Settings,
-  ChevronLeft,
   Pencil,
   Trash2,
   ShieldAlert
@@ -19,8 +18,8 @@ import { Badge, ConfirmActionButton, IconButton, Surface, Tooltip } from './ui'
 import { cn } from '../lib/utils'
 
 interface AppSidebarProps {
-  sidebarCollapsed: boolean
-  setSidebarCollapsed: (v: boolean) => void
+  compactSidebar: boolean
+  isResizingSidebar: boolean
   activeView: View
   setActiveView: (v: View) => void
   hosts: { length: number }
@@ -50,8 +49,8 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({
-  sidebarCollapsed,
-  setSidebarCollapsed,
+  compactSidebar,
+  isResizingSidebar,
   activeView,
   setActiveView,
   hosts,
@@ -78,11 +77,12 @@ export function AppSidebar({
   onRenameFileWindow,
   onDeleteTerminalWindow,
   onDeleteFileWindow
-}: AppSidebarProps): React.ReactElement {
+}: AppSidebarProps): ReactElement {
   const [editingWindowKey, setEditingWindowKey] = useState<string | null>(null)
   const [editingWindowTitle, setEditingWindowTitle] = useState('')
   const statusText = requireConfirmation ? '操作需确认' : '自动执行模式'
   const statusDescription = requireConfirmation ? '高危操作会询问您' : 'Agent 将直接执行'
+
   const renderWindowList = (
     title: string,
     items: WorkspaceWindowItem[],
@@ -90,8 +90,8 @@ export function AppSidebar({
     onSelect: (id: string) => void,
     onRename: (id: string, title: string) => void,
     onDelete: (id: string) => void
-  ): React.ReactNode => {
-    if (sidebarCollapsed) return null
+  ): ReactNode => {
+    if (compactSidebar) return null
 
     const commitRename = (item: WorkspaceWindowItem): void => {
       const nextTitle = editingWindowTitle.trim()
@@ -206,40 +206,17 @@ export function AppSidebar({
   return (
     <aside
       className={cn(
-        'glass-sidebar relative z-50 flex flex-col overflow-visible border-y-0 border-l-0 no-drag transition-[width] duration-200',
-        sidebarCollapsed ? 'w-16' : 'w-72'
+        'app-sidebar-content relative z-10 flex shrink-0 flex-col overflow-visible border-y-0 border-l-0 no-drag',
+        isResizingSidebar ? 'transition-none' : 'transition-[width] duration-300 ease-ui-emphasized'
       )}
     >
-      <Tooltip content={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'} side="right">
-        <button
-          type="button"
-          aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
-          onMouseDown={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-          }}
-          onClick={(event) => {
-            event.stopPropagation()
-            setSidebarCollapsed(!sidebarCollapsed)
-          }}
-          className={cn(
-            'blue-ring no-drag absolute -right-2 top-14 z-[120] flex h-12 w-4 items-center justify-center rounded-full border border-white/80 bg-white/80 text-muted-foreground/75 shadow-sm shadow-black/[0.05] backdrop-blur-xl transition hover:border-accent/25 hover:bg-white/95 hover:text-accent hover:shadow-md',
-            sidebarCollapsed && 'rotate-180'
-          )}
-        >
-          <ChevronLeft size={13} />
-        </button>
-      </Tooltip>
-
-      <div className={cn('drag px-4 pb-5 pt-4', sidebarCollapsed && 'px-3 pt-12')}>
-        {!sidebarCollapsed && <div aria-hidden className="mb-5 h-3" />}
-        <div
-          className={cn('flex items-center gap-3 no-drag', sidebarCollapsed && 'justify-center')}
-        >
+      <div className={cn('drag px-4 pb-5 pt-4', compactSidebar && 'px-3')}>
+        {!compactSidebar && <div aria-hidden className="mb-5 h-3" />}
+        <div className={cn('flex items-center gap-3 no-drag', compactSidebar && 'justify-center')}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/80 bg-white/75 p-1 shadow-sm shadow-accent/10 backdrop-blur-xl">
             <img src={logo} alt="OpenTerm" className="h-full w-full object-contain" />
           </div>
-          {!sidebarCollapsed && (
+          {!compactSidebar && (
             <h1 className="truncate text-lg font-semibold leading-none tracking-normal text-foreground">
               OpenTerm
             </h1>
@@ -247,20 +224,20 @@ export function AppSidebar({
         </div>
       </div>
 
-      <nav className={cn('space-y-1 px-3', sidebarCollapsed && 'px-2')}>
+      <nav className={cn('space-y-1 px-3', compactSidebar && 'px-2')}>
         <NavItem
           active={activeView === 'hosts'}
           onClick={() => setActiveView('hosts')}
           icon={<LayoutGrid size={17} />}
-          label={sidebarCollapsed ? '' : '主机'}
-          count={sidebarCollapsed ? undefined : hosts.length}
+          label={compactSidebar ? '' : '主机'}
+          count={compactSidebar ? undefined : hosts.length}
           tooltip="主机列表"
         />
         <NavItem
           active={activeView === 'terminal'}
           onClick={() => setActiveView('terminal')}
           icon={<Terminal size={17} />}
-          label={sidebarCollapsed ? '' : '终端'}
+          label={compactSidebar ? '' : '终端'}
           count={terminalWindows.length > 0 ? terminalWindows.length : undefined}
           tooltip="手动终端"
         />
@@ -268,7 +245,7 @@ export function AppSidebar({
           active={activeView === 'files'}
           onClick={() => setActiveView('files')}
           icon={<Folder size={17} />}
-          label={sidebarCollapsed ? '' : '文件'}
+          label={compactSidebar ? '' : '文件'}
           count={fileWindows.length > 0 ? fileWindows.length : undefined}
           tooltip="文件窗口"
         />
@@ -279,15 +256,15 @@ export function AppSidebar({
             if (!selectedTopic && topics.length > 0) setSelectedTopic(topics[0])
           }}
           icon={<MessageSquare size={17} />}
-          label={sidebarCollapsed ? '' : 'Agent助手'}
-          count={sidebarCollapsed ? undefined : topics.length}
+          label={compactSidebar ? '' : 'Agent助手'}
+          count={compactSidebar ? undefined : topics.length}
           tooltip="Agent助手"
         />
         <NavItem
           active={activeView === 'settings'}
           onClick={() => setActiveView('settings')}
           icon={<Settings size={17} />}
-          label={sidebarCollapsed ? '' : '设置'}
+          label={compactSidebar ? '' : '设置'}
           tooltip="设置"
         />
       </nav>
@@ -313,21 +290,21 @@ export function AppSidebar({
         )}
 
       {activeView === 'chat' && (
-        <div className={cn('mt-5 flex-1 overflow-y-auto px-3', sidebarCollapsed && 'px-2')}>
+        <div className={cn('mt-5 flex-1 overflow-y-auto px-3', compactSidebar && 'px-2')}>
           <div
             className={cn(
               'mb-2 flex items-center justify-between gap-2 px-1',
-              sidebarCollapsed && 'justify-center'
+              compactSidebar && 'justify-center'
             )}
           >
-            {!sidebarCollapsed && (
+            {!compactSidebar && (
               <span className="text-xs font-semibold text-muted-foreground">会话记录</span>
             )}
-            <Tooltip content="新建会话" side={sidebarCollapsed ? 'right' : 'top'}>
+            <Tooltip content="新建会话" side={compactSidebar ? 'right' : 'top'}>
               <IconButton
                 aria-label="新建会话"
                 onClick={() => onCreateTopic()}
-                className={cn('h-7 w-7', sidebarCollapsed && 'w-full')}
+                className={cn('h-7 w-7', compactSidebar && 'w-full')}
               >
                 <Plus size={14} />
               </IconButton>
@@ -335,7 +312,7 @@ export function AppSidebar({
           </div>
 
           <div className="space-y-1">
-            {topics.length === 0 && !sidebarCollapsed && (
+            {topics.length === 0 && !compactSidebar && (
               <div className="py-8 text-center text-xs text-muted-foreground">
                 <MessageSquare size={26} className="mx-auto mb-2 opacity-40" />
                 暂无会话
@@ -365,7 +342,7 @@ export function AppSidebar({
                     active
                       ? 'border-white/55 bg-black/5 text-foreground shadow-sm backdrop-blur-xl'
                       : 'border-transparent text-muted-foreground hover:border-white/70 hover:bg-white/60 hover:text-foreground',
-                    sidebarCollapsed && 'justify-center px-0'
+                    compactSidebar && 'justify-center px-0'
                   )}
                 >
                   <div
@@ -374,7 +351,7 @@ export function AppSidebar({
                       active ? 'bg-foreground/55' : 'bg-border'
                     )}
                   />
-                  {!sidebarCollapsed && (
+                  {!compactSidebar && (
                     <>
                       {editingTopicId === topic.id ? (
                         <input
@@ -430,7 +407,7 @@ export function AppSidebar({
                 </div>
               )
 
-              return sidebarCollapsed ? (
+              return compactSidebar ? (
                 <Tooltip key={topic.id} content={topic.title} side="right">
                   {topicItem}
                 </Tooltip>
@@ -442,8 +419,8 @@ export function AppSidebar({
         </div>
       )}
 
-      <div className={cn('mt-auto p-3', sidebarCollapsed && 'px-2')}>
-        {sidebarCollapsed ? (
+      <div className={cn('mt-auto p-3', compactSidebar && 'px-2')}>
+        {compactSidebar ? (
           <Tooltip content={`${statusText}：${statusDescription}`} side="right">
             <div className="glass-control flex h-9 items-center justify-center rounded-lg">
               <ShieldAlert

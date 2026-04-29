@@ -45,9 +45,16 @@ module.exports = {
           'sans-serif'
         ]
       },
+      transitionTimingFunction: {
+        ui: 'var(--motion-ease-standard)',
+        'ui-out': 'var(--motion-ease-out)',
+        'ui-in': 'var(--motion-ease-in)',
+        'ui-emphasized': 'var(--motion-ease-emphasized)',
+        'ui-interactive': 'var(--motion-ease-interactive)'
+      },
       animation: {
-        in: 'fadeIn 0.2s ease',
-        'zoom-in-95': 'zoomIn 0.2s ease'
+        in: 'fadeIn var(--motion-duration-medium) var(--motion-ease-out)',
+        'zoom-in-95': 'zoomIn var(--motion-duration-medium) var(--motion-ease-out)'
       }
     }
   },

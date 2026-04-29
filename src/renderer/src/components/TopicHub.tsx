@@ -198,8 +198,8 @@ export function TopicHub({
   }
 
   return (
-    <div className="light-sidebar hidden h-full w-72 shrink-0 flex-col border-y-0 border-r-0 lg:flex">
-      <div className="border-b border-black/[0.06] bg-white px-3 py-2">
+    <div className="hidden h-full w-72 shrink-0 flex-col bg-transparent lg:flex">
+      <div className="border-b border-black/[0.05] bg-white/70 px-3 py-2">
         <div className="flex items-center gap-2">
           <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
             <Server size={13} className="text-accent" />
@@ -222,7 +222,7 @@ export function TopicHub({
         onValueChange={(next) => setView(next as WorkspaceView)}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="border-b border-black/[0.06] bg-white px-2 py-1.5">
+        <div className="border-b border-black/[0.05] bg-white/55 px-2 py-1.5">
           <TabsList className="grid h-8 w-full grid-cols-4 rounded-lg border-0 bg-black/[0.025] p-0.5 shadow-none backdrop-blur-0">
             <TabsTrigger
               value="hosts"
@@ -302,7 +302,7 @@ export function TopicHub({
         </div>
       </Tabs>
 
-      <div className="border-t border-black/[0.06] bg-white px-3 py-2">
+      <div className="border-t border-black/[0.05] bg-white/55 px-3 py-2">
         <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
           <span>TOPIC-{topicId.slice(0, 4)}</span>
           <Badge variant="neutral" className="border-black/[0.06] bg-black/[0.02] backdrop-blur-0">

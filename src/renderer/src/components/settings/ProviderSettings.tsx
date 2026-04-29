@@ -357,7 +357,7 @@ export function ProviderSettings({
 
           <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
             {models.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/70 bg-white/55 py-8 text-center backdrop-blur-xl">
+              <div className="rounded-2xl border border-dashed border-white/70 bg-white/55 py-8 text-center">
                 <p className="text-sm text-muted-foreground">暂无模型，请添加模型</p>
               </div>
             ) : (

@@ -33,6 +33,7 @@ export interface FileDragData {
 interface FileBrowserProps {
   hostId: string
   hostAlias: string
+  embedded?: boolean
   onClose: () => void
   onFileDrop?: (
     sourceHostId: string,
@@ -67,6 +68,7 @@ function formatDate(ts: number): string {
 export function FileBrowser({
   hostId,
   hostAlias,
+  embedded = false,
   onClose,
   onFileDrop
 }: FileBrowserProps): React.ReactElement {
@@ -346,13 +348,19 @@ export function FileBrowser({
 
   return (
     <div
-      className="relative flex h-full flex-col overflow-hidden rounded-xl bg-workspace text-sm text-workspace-foreground"
+      className={`relative flex h-full flex-col overflow-hidden text-sm text-workspace-foreground ${
+        embedded ? 'bg-transparent' : 'rounded-xl bg-workspace'
+      }`}
       onDragOver={handleContainerDragOver}
       onDragLeave={handleContainerDragLeave}
       onDrop={handleContainerDrop}
     >
       {isDragOver && (
-        <div className="absolute inset-0 z-10 flex pointer-events-none items-center justify-center rounded-xl border-2 border-accent/45 bg-accent/10">
+        <div
+          className={`absolute inset-0 z-10 flex pointer-events-none items-center justify-center border-2 border-accent/45 bg-accent/10 ${
+            embedded ? '' : 'rounded-xl'
+          }`}
+        >
           <span className="rounded-full border border-white/75 bg-white/85 px-3 py-1.5 text-xs font-semibold text-accent shadow-sm backdrop-blur-xl">
             释放以传输文件
           </span>

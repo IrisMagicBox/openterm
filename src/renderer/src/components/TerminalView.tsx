@@ -98,6 +98,7 @@ export function TerminalView({
   const updateAnchorRef = useRef<() => void>(() => undefined)
   const sendTerminalInputRef = useRef<(data: string) => void>(() => undefined)
   const terminalContextRef = useRef({ hostAlias, terminalName, terminalRole })
+  const sidebarResizingRef = useRef(false)
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -579,23 +580,39 @@ export function TerminalView({
       }
     })
 
-    const resizeObserver = new ResizeObserver(() => {
+    const fitTerminal = (): void => {
       try {
         fitAddon.fit()
       } catch {
         // Ignore fit errors when element is not visible
       }
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (sidebarResizingRef.current || document.body.dataset.sidebarResizing === 'true') return
+      fitTerminal()
     })
 
     resizeObserver.observe(terminalNode)
 
     const handleResize = (): void => {
-      fitAddon.fit()
+      fitTerminal()
+    }
+    const handleSidebarResizeStart = (): void => {
+      sidebarResizingRef.current = true
+    }
+    const handleSidebarResizeEnd = (): void => {
+      sidebarResizingRef.current = false
+      window.requestAnimationFrame(fitTerminal)
     }
     window.addEventListener('resize', handleResize)
+    window.addEventListener('openterm:sidebar-resize-start', handleSidebarResizeStart)
+    window.addEventListener('openterm:sidebar-resize-end', handleSidebarResizeEnd)
 
     return () => {
       window.removeEventListener('resize', handleResize)
+      window.removeEventListener('openterm:sidebar-resize-start', handleSidebarResizeStart)
+      window.removeEventListener('openterm:sidebar-resize-end', handleSidebarResizeEnd)
       resizeObserver.disconnect()
       cleanupData()
       cleanupClosed()

@@ -60,8 +60,8 @@ export function ProviderList({
   const enabledCount = providers.filter((p) => p.enabled).length
 
   return (
-    <div className="glass-sidebar glass-sidebar-joined flex h-full w-72 flex-col border-y-0 border-l-0">
-      <div className="border-b border-white/55 bg-white/35 p-4 backdrop-blur-2xl">
+    <div className="settings-sidebar-surface flex h-full w-72 flex-col">
+      <div className="border-b border-white/55 bg-white/35 p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-foreground">AI 提供商</h2>
           <Badge variant="neutral">
@@ -164,7 +164,7 @@ export function ProviderList({
         )}
       </div>
 
-      <div className="border-t border-white/55 bg-white/35 p-3 text-xs text-muted-foreground backdrop-blur-2xl">
+      <div className="border-t border-white/55 bg-white/35 p-3 text-xs text-muted-foreground">
         点击提供商以配置其设置
       </div>
     </div>

@@ -263,18 +263,19 @@ export function TerminalLayout({
 
       return (
         <div
-          className={`relative flex h-full flex-col overflow-hidden rounded-xl border bg-workspace shadow-sm transition-colors ${
-            paneManager.focusedLeafId === leaf.id
-              ? 'border-accent/35 ring-2 ring-accent/15'
-              : 'border-workspace-border/75'
-          }`}
+          className={cn(
+            'relative flex h-full flex-col overflow-hidden bg-white/65 transition-colors',
+            leafCount > 1 && 'border border-workspace-border/60',
+            paneManager.focusedLeafId === leaf.id &&
+              'shadow-[inset_0_0_0_1px_rgba(41,120,245,0.24)]'
+          )}
           onMouseDown={() => paneManager.setFocusedLeafId(leaf.id)}
           onDragOver={(e) => handlePaneDragOver(e, leaf.id)}
           onDragLeave={handlePaneDragLeave}
           onDrop={(e) => handlePaneDrop(e, leaf.id)}
         >
           {showPaneTitle && (
-            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted/90 px-1.5 pt-1 no-scrollbar">
+            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted/70 px-1.5 pt-1 no-scrollbar">
               {tabs.map((tab) => (
                 <div
                   key={tab.sessionId}
@@ -371,9 +372,9 @@ export function TerminalLayout({
   const splitDisabledTitle = '需要至少 2 个标签才能分屏'
 
   return (
-    <div className="relative flex flex-1 gap-3 overflow-hidden bg-workspace-muted/45 p-3">
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-workspace-border/75 bg-workspace shadow-sm">
-        <div className="flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/85 backdrop-blur-2xl">
+    <div className="workspace-canvas relative flex flex-1 gap-0 overflow-hidden bg-transparent">
+      <div className="workspace-primary-content flex min-w-0 flex-1 flex-col">
+        <div className="workspace-layer-header flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/70 backdrop-blur-2xl">
           <div className="h-11 px-5 flex items-center justify-between flex-shrink-0 drag text-workspace-foreground">
             <div className="flex items-center gap-3 no-drag">
               <TerminalIcon size={13} className="text-accent" />
@@ -466,9 +467,9 @@ export function TerminalLayout({
           </div>
         </div>
 
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-workspace-muted/35 p-3">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-white/45">
           {paneManager.isEmpty ? (
-            <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-workspace-border/80 bg-workspace">
+            <div className="flex flex-1 items-center justify-center">
               <div className="text-center">
                 <TerminalIcon size={40} className="text-workspace-border mx-auto mb-4" />
                 <p className="text-workspace-muted-foreground text-sm font-semibold">无活跃终端</p>
@@ -523,10 +524,11 @@ export function TerminalLayout({
       </div>
 
       {fileBrowserHostId && (
-        <div className="w-96 flex-shrink-0 overflow-hidden rounded-2xl border border-workspace-border/75 bg-workspace shadow-sm">
+        <div className="workspace-layer side-workspace-layer w-96 flex-shrink-0 overflow-hidden">
           <FileBrowser
             hostId={fileBrowserHostId}
             hostAlias={fileBrowserHostAlias}
+            embedded
             onClose={() => {
               setFileBrowserHostId(null)
               setFileBrowserHostAlias('')

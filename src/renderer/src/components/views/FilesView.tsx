@@ -297,10 +297,12 @@ export function FilesView({
 
       return (
         <div
-          className={`relative flex h-full flex-col overflow-hidden rounded-xl border bg-workspace shadow-sm transition-colors ${
+          className={`relative flex h-full flex-col overflow-hidden bg-white/65 transition-colors ${
+            leafCount > 1 ? 'border border-workspace-border/60' : ''
+          } ${
             paneManager.focusedLeafId === leaf.id
-              ? 'border-accent/35 ring-2 ring-accent/15'
-              : 'border-workspace-border/75'
+              ? 'shadow-[inset_0_0_0_1px_rgba(41,120,245,0.24)]'
+              : ''
           }`}
           onMouseDown={() => paneManager.setFocusedLeafId(leaf.id)}
           onDragOver={(e) => handlePaneDragOver(e, leaf.id)}
@@ -308,7 +310,7 @@ export function FilesView({
           onDrop={(e) => handlePaneDrop(e, leaf.id)}
         >
           {showPaneTitle && (
-            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted/90 px-1.5 pt-1 no-scrollbar">
+            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted/70 px-1.5 pt-1 no-scrollbar">
               {tabs.map((tab) => (
                 <div
                   key={tab.tabId}
@@ -361,6 +363,7 @@ export function FilesView({
                 <FileBrowser
                   hostId={tab.hostId}
                   hostAlias={tab.hostAlias}
+                  embedded
                   onClose={() => handleCloseTab(tab.tabId)}
                   onFileDrop={(sourceHostId, sourcePath, fileName, destHostId, destPath) => {
                     const transferId = `ft-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -403,9 +406,9 @@ export function FilesView({
   const allTabs = paneManager.getAllTabs()
 
   return (
-    <div className="relative flex flex-1 flex-col overflow-hidden bg-workspace-muted/45 p-3">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-workspace-border/75 bg-workspace shadow-sm">
-        <div className="flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/85 backdrop-blur-2xl">
+    <div className="workspace-canvas relative flex flex-1 flex-col overflow-hidden bg-transparent">
+      <div className="workspace-primary-content flex min-h-0 flex-1 flex-col">
+        <div className="workspace-layer-header flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/70 backdrop-blur-2xl">
           <div className="h-11 text-workspace-foreground px-5 flex items-center justify-between flex-shrink-0 drag">
             <div className="flex items-center gap-3 no-drag">
               <Folder size={13} className="text-accent" />
@@ -473,9 +476,9 @@ export function FilesView({
           </div>
         </div>
 
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-workspace-muted/35 p-3">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-white/45">
           {paneManager.isEmpty ? (
-            <div className="flex h-full flex-1 items-center justify-center rounded-xl border border-dashed border-workspace-border/80 bg-workspace">
+            <div className="flex h-full flex-1 items-center justify-center">
               <div className="text-center">
                 <Folder size={40} className="text-workspace-border mx-auto mb-4" />
                 <p className="text-workspace-muted-foreground text-sm font-semibold mb-4">

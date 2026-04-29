@@ -323,79 +323,77 @@ function StageTerminalPane({
   const controlBadge = takeoverBadge(session)
 
   return (
-    <div className="min-h-0 flex-1 p-3">
-      <div
-        className={cn(
-          'flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border bg-white/80 shadow-[0_18px_55px_rgba(37,99,235,0.08)] backdrop-blur-2xl',
-          highlighted ? 'border-accent/45 ring-2 ring-accent/20' : 'border-white/70'
-        )}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-white/70 bg-white/65 px-3 py-2">
-          <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2">
-              <TerminalIcon size={13} className="text-accent" />
-              <span className="truncate text-sm font-bold text-foreground">
-                {session.name || session.hostAlias}
-              </span>
-              {session.role === 'agent_command' && <Badge variant="accent">Agent</Badge>}
-              {session.commandSource === 'user' && <Badge variant="neutral">用户</Badge>}
-              {controlBadge && <Badge variant={controlBadge.variant}>{controlBadge.label}</Badge>}
-              <Badge variant={tone}>{activity ? statusLabel(activity.status) : '空闲'}</Badge>
-            </div>
-            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs font-semibold text-muted-foreground">
-              <span className="truncate">{session.hostAlias}</span>
-              {activity?.command && (
-                <>
-                  <span className="text-border">/</span>
-                  <span className="truncate font-mono">{activity.command}</span>
-                </>
-              )}
-            </div>
+    <div
+      className={cn(
+        'flex min-h-0 flex-1 flex-col overflow-hidden bg-white/65',
+        highlighted && 'shadow-[inset_0_0_0_1px_rgba(41,120,245,0.22)]'
+      )}
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-black/[0.045] bg-white/60 px-4 py-2.5">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <TerminalIcon size={13} className="text-accent" />
+            <span className="truncate text-sm font-bold text-foreground">
+              {session.name || session.hostAlias}
+            </span>
+            {session.role === 'agent_command' && <Badge variant="accent">Agent</Badge>}
+            {session.commandSource === 'user' && <Badge variant="neutral">用户</Badge>}
+            {controlBadge && <Badge variant={controlBadge.variant}>{controlBadge.label}</Badge>}
+            <Badge variant={tone}>{activity ? statusLabel(activity.status) : '空闲'}</Badge>
           </div>
-          <TerminalControls
-            session={session}
-            onTogglePaused={() => onToggleAgentTerminalPaused(session.id, !session.paused)}
-            onClose={() => onCloseWithConfirm(session.id)}
-            onOpenCommandPalette={() => onOpenCommandPalette(session.id)}
-            onOpenPortForward={onOpenPortForward ? () => onOpenPortForward(session) : undefined}
-          />
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-xs font-semibold text-muted-foreground">
+            <span className="truncate">{session.hostAlias}</span>
+            {activity?.command && (
+              <>
+                <span className="text-border">/</span>
+                <span className="truncate font-mono">{activity.command}</span>
+              </>
+            )}
+          </div>
         </div>
+        <TerminalControls
+          session={session}
+          onTogglePaused={() => onToggleAgentTerminalPaused(session.id, !session.paused)}
+          onClose={() => onCloseWithConfirm(session.id)}
+          onOpenCommandPalette={() => onOpenCommandPalette(session.id)}
+          onOpenPortForward={onOpenPortForward ? () => onOpenPortForward(session) : undefined}
+        />
+      </div>
 
-        <div className="relative min-h-0 flex-1 bg-white">
-          <TerminalView
-            key={session.id}
-            id={session.id}
-            topicId={topicId}
-            hostId={session.hostId}
-            hostAlias={session.hostAlias}
-            terminalName={session.name}
-            terminalRole={session.role}
-            fontSize={terminalFontSize}
-            onFocusSession={() => onFocusSession(session.id, { userInitiated: true })}
-            onClose={() => onCloseTerminal(session.id)}
-            command={session.command}
-            commandStatus={session.commandStatus}
-            commandSource={session.commandSource}
-            paused={session.paused}
-            lockedBy={session.lockedBy}
-            takeoverMode={session.takeoverMode}
-            commandAssist={
-              commandAssist?.sessionId === session.id
-                ? {
-                    open: true,
-                    value: commandAssist.value,
-                    targetLabel: `${session.hostAlias} / ${session.name || '终端'}`,
-                    historyCommands: commandAssist.historyCommands,
-                    busy: commandAssist.busy,
-                    error: commandAssist.error,
-                    onChange: commandAssist.onChange,
-                    onSubmit: commandAssist.onSubmit,
-                    onClose: commandAssist.onClose
-                  }
-                : null
-            }
-          />
-        </div>
+      <div className="relative min-h-0 flex-1 bg-white">
+        <TerminalView
+          key={session.id}
+          id={session.id}
+          topicId={topicId}
+          hostId={session.hostId}
+          hostAlias={session.hostAlias}
+          terminalName={session.name}
+          terminalRole={session.role}
+          fontSize={terminalFontSize}
+          onFocusSession={() => onFocusSession(session.id, { userInitiated: true })}
+          onClose={() => onCloseTerminal(session.id)}
+          command={session.command}
+          commandStatus={session.commandStatus}
+          commandSource={session.commandSource}
+          paused={session.paused}
+          lockedBy={session.lockedBy}
+          takeoverMode={session.takeoverMode}
+          commandAssist={
+            commandAssist?.sessionId === session.id
+              ? {
+                  open: true,
+                  value: commandAssist.value,
+                  targetLabel: `${session.hostAlias} / ${session.name || '终端'}`,
+                  historyCommands: commandAssist.historyCommands,
+                  busy: commandAssist.busy,
+                  error: commandAssist.error,
+                  onChange: commandAssist.onChange,
+                  onSubmit: commandAssist.onSubmit,
+                  onClose: commandAssist.onClose
+                }
+              : null
+          }
+        />
       </div>
     </div>
   )
@@ -726,8 +724,8 @@ export function TerminalStage({
     <>
       <div
         className={cn(
-          'z-20 w-1.5 cursor-col-resize bg-transparent transition-all hover:w-2 hover:bg-accent/15 active:bg-accent/25',
-          isResizing && 'w-2 bg-accent/25'
+          'terminal-resize-handle w-3 cursor-col-resize bg-transparent transition-all hover:bg-accent/[0.12] active:bg-accent/[0.2]',
+          isResizing && 'bg-accent/[0.2]'
         )}
         onMouseDown={(event) => {
           event.preventDefault()
@@ -737,11 +735,11 @@ export function TerminalStage({
       />
       <div
         style={{ width: terminalWidth, minWidth: 360 }}
-        className="flex shrink-0 flex-col border-l border-white/70 bg-white/45 backdrop-blur-2xl"
+        className="workspace-layer terminal-stage-layer flex shrink-0 flex-col"
       >
         <div
           className={cn(
-            'flex min-h-12 items-center justify-between gap-2 border-b border-black/[0.05] bg-white/60 px-3 py-2 backdrop-blur-2xl',
+            'workspace-layer-header flex min-h-12 items-center justify-between gap-2 border-b border-black/[0.05] bg-white/70 px-3 py-2 backdrop-blur-2xl',
             highlightedSessionId && 'shadow-[inset_0_-1px_0_rgba(37,99,235,0.18)]'
           )}
         >

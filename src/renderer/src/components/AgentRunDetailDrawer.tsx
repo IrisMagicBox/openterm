@@ -190,6 +190,7 @@ export function AgentRunDetailDrawer({
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent
         className="left-auto right-0 top-0 h-screen max-h-screen w-[min(760px,calc(100vw-1rem))] max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none border-y-0 border-r-0 p-0"
+        motion="drawer"
         showClose={false}
       >
         <div className="flex h-full min-h-0 flex-col">

@@ -152,7 +152,7 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
       />
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="glass-sidebar glass-sidebar-joined w-64 border-y-0 border-l-0">
+        <div className="settings-sidebar-surface w-64">
           <nav className="p-4 space-y-1">
             <button
               onClick={() => setActiveTab('providers')}

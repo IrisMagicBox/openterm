@@ -15,7 +15,7 @@ export const TooltipContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        'glass-menu z-[300] overflow-hidden rounded-md px-2 py-1 text-xs font-medium text-foreground animate-in fade-in',
+        'glass-menu tooltip-pop-in z-[300] overflow-hidden rounded-md px-2 py-1 text-xs font-medium text-foreground',
         className
       )}
       {...props}

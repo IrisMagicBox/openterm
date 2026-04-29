@@ -16,7 +16,7 @@ export const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-[100] bg-slate-950/10 backdrop-blur-lg animate-in fade-in',
+      'dialog-overlay fixed inset-0 z-[100] bg-slate-950/10 backdrop-blur-lg',
       className
     )}
     {...props}
@@ -24,16 +24,23 @@ export const DialogOverlay = React.forwardRef<
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
+type DialogContentMotion = 'center' | 'drawer' | 'none'
+
 export const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { showClose?: boolean }
->(({ className, children, showClose = true, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    motion?: DialogContentMotion
+    showClose?: boolean
+  }
+>(({ className, children, motion = 'center', showClose = true, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'glass-menu dialog-pop-in fixed left-1/2 top-1/2 z-[110] grid w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl p-5 text-foreground no-drag',
+        'glass-menu fixed z-[110] grid w-[calc(100vw-2rem)] max-w-lg gap-4 rounded-2xl p-5 text-foreground no-drag',
+        motion === 'center' && 'dialog-pop-in left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
+        motion === 'drawer' && 'dialog-drawer-in',
         className
       )}
       {...props}

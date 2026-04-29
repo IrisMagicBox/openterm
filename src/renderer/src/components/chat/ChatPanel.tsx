@@ -31,6 +31,7 @@ const MIN_CHAT_ZOOM = 0.25
 const MAX_CHAT_ZOOM = 1.18
 const MIN_TERMINAL_STAGE_WIDTH = 360
 const MIN_CHAT_COLUMN_WIDTH = 420
+const TOPIC_WORKSPACE_EXIT_MS = 320
 
 function clampChatZoom(value: number): number {
   return Math.max(MIN_CHAT_ZOOM, Math.min(MAX_CHAT_ZOOM, value))
@@ -116,8 +117,12 @@ export function ChatPanel({
   const [workspaceOpen, setWorkspaceOpen] = useState(
     () => window.localStorage.getItem('openterm.topicWorkspace.open') !== 'false'
   )
+  const [workspacePresent, setWorkspacePresent] = useState(workspaceOpen)
+  const [workspaceMotionOpen, setWorkspaceMotionOpen] = useState(workspaceOpen)
   const panelRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const workspaceCloseTimerRef = useRef<number | null>(null)
+  const workspaceMotionReadyRef = useRef(false)
   const { animationKey } = useVisibilityRestore()
   const { providers, models, defaultProviderId, defaultModelId } = useProvider()
   const runtimeProviders = providers.filter((provider) => isAgentRuntimeProvider(provider))
@@ -195,6 +200,39 @@ export function ChatPanel({
   useEffect(() => {
     window.localStorage.setItem('openterm.topicWorkspace.open', String(workspaceOpen))
   }, [workspaceOpen])
+  useEffect(() => {
+    if (!workspaceMotionReadyRef.current) {
+      workspaceMotionReadyRef.current = true
+      return undefined
+    }
+
+    if (workspaceCloseTimerRef.current !== null) {
+      window.clearTimeout(workspaceCloseTimerRef.current)
+      workspaceCloseTimerRef.current = null
+    }
+
+    if (workspaceOpen) {
+      setWorkspacePresent(true)
+      setWorkspaceMotionOpen(false)
+      const frame = window.requestAnimationFrame(() => setWorkspaceMotionOpen(true))
+      return () => window.cancelAnimationFrame(frame)
+    }
+
+    setWorkspaceMotionOpen(false)
+    workspaceCloseTimerRef.current = window.setTimeout(() => {
+      setWorkspacePresent(false)
+      workspaceCloseTimerRef.current = null
+    }, TOPIC_WORKSPACE_EXIT_MS)
+    return undefined
+  }, [workspaceOpen])
+  useEffect(
+    () => () => {
+      if (workspaceCloseTimerRef.current !== null) {
+        window.clearTimeout(workspaceCloseTimerRef.current)
+      }
+    },
+    []
+  )
   useEffect(() => {
     window.localStorage.setItem(CHAT_ZOOM_STORAGE_KEY, chatZoom.toFixed(2))
   }, [chatZoom])
@@ -377,77 +415,81 @@ export function ChatPanel({
     terminalStage.focusSession(id, { userInitiated: true })
 
   return (
-    <div ref={panelRef} className="flex h-full flex-col bg-transparent">
-      <PageHeader
-        title={topic.title}
-        dense
-        description={
-          <>
-            <Clock size={12} />
-            {messages.length > 0 ? `${messages.length} 条消息` : '暂无消息'}
-          </>
-        }
-        actions={
-          <>
-            {visibleSessions.length > 0 && (
-              <Badge variant="neutral" className="hidden lg:flex">
-                <Monitor size={13} />
-                <span>共驾终端 {visibleSessions.length}</span>
-                {terminalStage.focusedSession && (
-                  <span className="text-accent">
-                    当前: {terminalStage.focusedSession.hostAlias}
+    <div
+      ref={panelRef}
+      className="workspace-canvas flex h-full min-w-0 overflow-hidden bg-transparent"
+    >
+      <section
+        className="workspace-primary-content flex min-w-0 flex-1 flex-col"
+        onMouseEnter={() => {
+          document.documentElement.dataset.zoomTarget = 'chat'
+        }}
+        onMouseLeave={() => {
+          if (document.documentElement.dataset.zoomTarget === 'chat') {
+            delete document.documentElement.dataset.zoomTarget
+          }
+        }}
+      >
+        <PageHeader
+          title={topic.title}
+          dense
+          className="workspace-layer-header border-black/[0.05] bg-white/75"
+          description={
+            <>
+              <Clock size={12} />
+              {messages.length > 0 ? `${messages.length} 条消息` : '暂无消息'}
+            </>
+          }
+          actions={
+            <>
+              {visibleSessions.length > 0 && (
+                <Badge variant="neutral" className="hidden lg:flex">
+                  <Monitor size={13} />
+                  <span>共驾终端 {visibleSessions.length}</span>
+                  {terminalStage.focusedSession && (
+                    <span className="text-accent">
+                      当前: {terminalStage.focusedSession.hostAlias}
+                    </span>
+                  )}
+                </Badge>
+              )}
+              {topicHosts.length > 0 && (
+                <div className="flex -space-x-2">
+                  {topicHosts.slice(0, 4).map((h) => (
+                    <div
+                      key={h.id}
+                      title={h.alias}
+                      className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white/80 bg-white/70 text-[11px] font-semibold text-accent shadow-sm ring-1 ring-accent/15 backdrop-blur-xl"
+                    >
+                      {h.alias.slice(0, 2).toUpperCase()}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Tooltip
+                side="bottom"
+                content={
+                  <span className="flex items-center gap-2">
+                    切换作战中心
+                    <kbd className="rounded bg-black/[0.06] px-1.5 py-0.5 font-mono text-[10px]">
+                      ⌥⌘B
+                    </kbd>
                   </span>
-                )}
-              </Badge>
-            )}
-            {topicHosts.length > 0 && (
-              <div className="flex -space-x-2">
-                {topicHosts.slice(0, 4).map((h) => (
-                  <div
-                    key={h.id}
-                    title={h.alias}
-                    className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white/80 bg-white/70 text-[11px] font-semibold text-accent shadow-sm ring-1 ring-accent/15 backdrop-blur-xl"
-                  >
-                    {h.alias.slice(0, 2).toUpperCase()}
-                  </div>
-                ))}
-              </div>
-            )}
-            <Tooltip
-              side="bottom"
-              content={
-                <span className="flex items-center gap-2">
-                  切换作战中心
-                  <kbd className="rounded bg-black/[0.06] px-1.5 py-0.5 font-mono text-[10px]">
-                    ⌥⌘B
-                  </kbd>
-                </span>
-              }
-            >
-              <IconButton
-                aria-label={workspaceOpen ? '隐藏作战中心' : '显示作战中心'}
-                onClick={() => setWorkspaceOpen((open) => !open)}
-                className="h-8 w-8 rounded-lg border border-black/[0.06] bg-white text-muted-foreground shadow-sm hover:bg-black/[0.02] hover:text-foreground"
+                }
               >
-                {workspaceOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-              </IconButton>
-            </Tooltip>
-          </>
-        }
-      />
+                <IconButton
+                  aria-label={workspaceOpen ? '隐藏作战中心' : '显示作战中心'}
+                  onClick={() => setWorkspaceOpen((open) => !open)}
+                  className="h-8 w-8 rounded-lg border border-black/[0.06] bg-white text-muted-foreground shadow-sm hover:bg-black/[0.02] hover:text-foreground"
+                >
+                  {workspaceOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+                </IconButton>
+              </Tooltip>
+            </>
+          }
+        />
 
-      <div className="flex flex-1 overflow-hidden">
-        <div
-          className="flex min-w-0 flex-1 flex-col"
-          onMouseEnter={() => {
-            document.documentElement.dataset.zoomTarget = 'chat'
-          }}
-          onMouseLeave={() => {
-            if (document.documentElement.dataset.zoomTarget === 'chat') {
-              delete document.documentElement.dataset.zoomTarget
-            }
-          }}
-        >
+        <div className="flex min-h-0 flex-1 flex-col">
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-7">
             <div style={chatScaleStyle} className="space-y-7">
               {messages.length === 0 && (
@@ -514,59 +556,65 @@ export function ChatPanel({
             />
           </div>
         </div>
+      </section>
 
-        {visibleSessions.length > 0 && (
-          <TerminalStage
-            visibleSessions={visibleSessions}
-            focusedSession={terminalStage.focusedSession}
-            focusedSessionId={terminalStage.focusedSessionId}
-            activeParts={activeParts}
-            activities={terminalActivities}
-            previews={terminalPreviews}
-            mode={terminalStage.mode}
-            followAgent={terminalStage.followAgent}
-            focusedPartId={terminalStage.focusedPartId}
-            terminalFontSize={terminalFontSize}
-            terminalWidth={terminalWidth}
-            isResizing={isResizing}
-            topicId={topic.id}
-            topicHosts={topicHosts}
-            commandAssist={
-              commandPaletteOpen
-                ? {
-                    sessionId: commandPaletteSessionId,
-                    value: commandPaletteValue,
-                    historyCommands: commandPaletteHistory,
-                    busy: commandPaletteBusy,
-                    error: commandPaletteError,
-                    onChange: (value) => {
-                      setCommandPaletteValue(value)
-                      if (commandPaletteError) setCommandPaletteError(null)
-                    },
-                    onSubmit: handleSubmitCommandPalette,
-                    onClose: () => {
-                      setCommandPaletteOpen(false)
-                      setCommandPaletteError(null)
-                    }
+      {visibleSessions.length > 0 && (
+        <TerminalStage
+          visibleSessions={visibleSessions}
+          focusedSession={terminalStage.focusedSession}
+          focusedSessionId={terminalStage.focusedSessionId}
+          activeParts={activeParts}
+          activities={terminalActivities}
+          previews={terminalPreviews}
+          mode={terminalStage.mode}
+          followAgent={terminalStage.followAgent}
+          focusedPartId={terminalStage.focusedPartId}
+          terminalFontSize={terminalFontSize}
+          terminalWidth={terminalWidth}
+          isResizing={isResizing}
+          topicId={topic.id}
+          topicHosts={topicHosts}
+          commandAssist={
+            commandPaletteOpen
+              ? {
+                  sessionId: commandPaletteSessionId,
+                  value: commandPaletteValue,
+                  historyCommands: commandPaletteHistory,
+                  busy: commandPaletteBusy,
+                  error: commandPaletteError,
+                  onChange: (value) => {
+                    setCommandPaletteValue(value)
+                    if (commandPaletteError) setCommandPaletteError(null)
+                  },
+                  onSubmit: handleSubmitCommandPalette,
+                  onClose: () => {
+                    setCommandPaletteOpen(false)
+                    setCommandPaletteError(null)
                   }
-                : null
-            }
-            onCloseAgentTerminal={onCloseAgentTerminal}
-            onToggleAgentTerminalPaused={onToggleAgentTerminalPaused}
-            onCloseTerminal={onCloseTerminal}
-            onOpenCommandPalette={openTerminalCommandPalette}
-            onCreateTerminal={onCreateTerminal}
-            onResizeStart={setResizeRightEdge}
-            onSetMode={terminalStage.setMode}
-            onSetFollowAgent={terminalStage.setFollowAgent}
-            onFocusSession={handleFocusSession}
-            onRevealTerminal={terminalStage.revealTerminal}
-            onOpenPortForward={(session) =>
-              setPortForwardHost({ id: session.hostId, alias: session.hostAlias })
-            }
-          />
-        )}
-        {workspaceOpen && (
+                }
+              : null
+          }
+          onCloseAgentTerminal={onCloseAgentTerminal}
+          onToggleAgentTerminalPaused={onToggleAgentTerminalPaused}
+          onCloseTerminal={onCloseTerminal}
+          onOpenCommandPalette={openTerminalCommandPalette}
+          onCreateTerminal={onCreateTerminal}
+          onResizeStart={setResizeRightEdge}
+          onSetMode={terminalStage.setMode}
+          onSetFollowAgent={terminalStage.setFollowAgent}
+          onFocusSession={handleFocusSession}
+          onRevealTerminal={terminalStage.revealTerminal}
+          onOpenPortForward={(session) =>
+            setPortForwardHost({ id: session.hostId, alias: session.hostAlias })
+          }
+        />
+      )}
+      {workspacePresent && (
+        <div
+          className="topic-workspace-presence workspace-layer hidden h-full shrink-0 overflow-hidden lg:block"
+          data-state={workspaceMotionOpen ? 'open' : 'closed'}
+          aria-hidden={!workspaceMotionOpen}
+        >
           <TopicHub
             topicId={topic.id}
             hosts={topicHosts}
@@ -583,9 +631,8 @@ export function ChatPanel({
             onOpenPortForward={(host) => setPortForwardHost({ id: host.id, alias: host.alias })}
             onOpenRunDetail={setRunDetailId}
           />
-        )}
-      </div>
-
+        </div>
+      )}
       {portForwardHost && (
         <Dialog open onOpenChange={(open) => !open && setPortForwardHost(null)}>
           <DialogContent className="h-[520px] max-w-2xl overflow-hidden p-0" showClose={false}>
