@@ -9,6 +9,8 @@ import type { TerminalCommandCompletionUiEvent } from '../../../shared/terminal-
 import type { TerminalSessionRole, TerminalTakeoverMode } from '../../../shared/types'
 import {
   buildTerminalModelCompletion,
+  contextualCompletionDelayForTerminalInput,
+  expandSingleTokenCompletionFromHistory,
   getTerminalShiftTabCompletionAction,
   updateTerminalInputBuffer,
   type TerminalCompletionResult
@@ -333,7 +335,7 @@ export function TerminalView({
 
           const nextCompletion = buildTerminalModelCompletion(
             input,
-            result.command,
+            expandSingleTokenCompletionFromHistory(input, result.command, historyCommands),
             result.confidence || 'medium'
           )
 
@@ -392,6 +394,39 @@ export function TerminalView({
         () => runCompletionRequest(input, requestId, { trigger: 'prefetch' }),
         Math.max(TERMINAL_COMPLETION_PREFETCH_DEBOUNCE_MS, minIntervalDelay)
       )
+    }
+
+    const requestContextualCompletionFromPrompt = (delayMs: number): void => {
+      if (completionTimerRef.current) {
+        window.clearTimeout(completionTimerRef.current)
+        completionTimerRef.current = null
+      }
+
+      completionRequestRef.current += 1
+      const requestId = completionRequestRef.current
+      const scheduledInput = inputBufferRef.current
+      setNextCompletion(null, { reason: 'empty-prompt-enter' })
+
+      logCompletionUiEvent({
+        event: 'contextual-request-scheduled',
+        trigger: 'prefetch',
+        visible: false,
+        pending: false,
+        input: scheduledInput,
+        reason: `enter-delay-${delayMs}ms`
+      })
+
+      completionTimerRef.current = window.setTimeout(() => {
+        logCompletionUiEvent({
+          event: 'contextual-request-started',
+          trigger: 'prefetch',
+          visible: false,
+          pending: false,
+          input: '',
+          reason: 'enter-context'
+        })
+        runCompletionRequest('', requestId, { trigger: 'prefetch' })
+      }, delayMs)
     }
 
     const doFitAndResize = (): void => {
@@ -461,11 +496,22 @@ export function TerminalView({
         return
       }
 
-      const nextInput = updateTerminalInputBuffer(inputBufferRef.current, data)
+      const previousInput = inputBufferRef.current
+      const contextualCompletionDelay = contextualCompletionDelayForTerminalInput(
+        previousInput,
+        data
+      )
+      const nextInput = updateTerminalInputBuffer(previousInput, data)
       inputBufferRef.current = nextInput
       sendTerminalInput(data)
       requestAnimationFrame(updateCompletionAnchor)
-      refreshCompletion(nextInput)
+      if (contextualCompletionDelay !== null) {
+        requestAnimationFrame(() =>
+          requestContextualCompletionFromPrompt(contextualCompletionDelay)
+        )
+      } else {
+        refreshCompletion(nextInput)
+      }
     }
 
     term.attachCustomKeyEventHandler((event) => {
@@ -740,8 +786,9 @@ export function TerminalView({
       )}
       {commandAssist?.open && (
         <div
-          className="absolute z-30 w-[min(460px,calc(100%-24px))] overflow-hidden rounded-xl border border-black/[0.08] bg-white/96 text-foreground shadow-[0_18px_48px_rgba(15,23,42,0.16)] backdrop-blur-2xl"
-          style={{ left: completionAnchor.left, top: completionAnchor.top }}
+          className="absolute bottom-3 left-1/2 z-40 flex max-h-[calc(100%-24px)] w-[min(520px,calc(100%-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-black/[0.08] bg-white/96 text-foreground shadow-[0_18px_48px_rgba(15,23,42,0.16)] backdrop-blur-2xl"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
         >
           <div className="flex items-center gap-2 border-b border-black/[0.06] px-3 py-2">
             <Sparkles size={13} className="shrink-0 text-accent" />
@@ -759,7 +806,7 @@ export function TerminalView({
               <X size={13} />
             </button>
           </div>
-          <div className="px-3 py-2.5">
+          <div className="min-h-0 overflow-y-auto px-3 py-2.5">
             <textarea
               ref={commandAssistInputRef}
               value={commandAssist.value}

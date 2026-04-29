@@ -31,6 +31,22 @@ describe('provider presets', () => {
     expect(getSystemModels('coreshub')).toEqual([])
   })
 
+  it('ships the latest Kimi K2.6 Moonshot preset', () => {
+    const kimi = getSystemModels('moonshot').find((model) => model.providerModelId === 'kimi-k2.6')
+
+    expect(kimi).toMatchObject({
+      id: 'moonshot:kimi-k2.6',
+      name: 'Kimi K2.6',
+      group: 'Kimi'
+    })
+    expect(kimi?.capabilities).toContain('tool-use')
+    expect(kimi?.capabilities).toContain('vision')
+    expect(getModelApiId(kimi!)).toBe('kimi-k2.6')
+
+    const runtime = inferModelRuntimeCapabilities('kimi-k2.6', 'moonshot')
+    expect(runtime.contextWindow).toBe(256_000)
+  })
+
   it('infers agent-relevant capabilities from common model names', () => {
     expect(inferModelCapabilities('text-embedding-3-large')).toEqual(['embedding'])
     expect(inferModelCapabilities('jina-reranker-v2-base-multilingual')).toEqual(['rerank'])

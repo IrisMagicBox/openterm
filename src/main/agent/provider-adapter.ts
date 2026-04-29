@@ -125,7 +125,7 @@ export class ProviderAdapter {
     ) {
       request.tools = params.tools
       request.tool_choice = params.toolChoice
-    } else if (params.toolChoice === 'none') {
+    } else if (params.toolChoice === 'none' && params.tools && params.tools.length > 0) {
       request.tool_choice = 'none'
     }
 
@@ -138,7 +138,7 @@ export class ProviderAdapter {
     this.accumulateUsage(usage)
 
     return {
-      content: choice.message.content,
+      content: this.extractOpenAIMessageContent(choice.message),
       toolCalls: choice.message.tool_calls
         ?.filter((tc): tc is Extract<typeof tc, { type: 'function' }> => tc.type === 'function')
         .map((tc) => ({
@@ -187,7 +187,7 @@ export class ProviderAdapter {
     ) {
       request.tools = params.tools
       request.tool_choice = params.toolChoice
-    } else if (params.toolChoice === 'none') {
+    } else if (params.toolChoice === 'none' && params.tools && params.tools.length > 0) {
       request.tool_choice = 'none'
     }
 
@@ -553,6 +553,28 @@ export class ProviderAdapter {
         .join('')
     }
     return content == null ? '' : String(content)
+  }
+
+  private extractOpenAIMessageContent(message: unknown): string | null {
+    const record =
+      message && typeof message === 'object' ? (message as Record<string, unknown>) : {}
+    const content = record.content
+    if (typeof content === 'string') return content
+    if (Array.isArray(content)) {
+      const text = content
+        .map((part) => {
+          if (typeof part === 'string') return part
+          if (part && typeof part === 'object' && 'text' in part) {
+            return String((part as { text?: unknown }).text ?? '')
+          }
+          return ''
+        })
+        .join('')
+      return text || null
+    }
+
+    const reasoningContent = record.reasoning_content
+    return typeof reasoningContent === 'string' && reasoningContent.trim() ? reasoningContent : null
   }
 
   private parseToolInput(raw: string): unknown {

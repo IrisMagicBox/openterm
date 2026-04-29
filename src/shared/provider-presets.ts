@@ -119,7 +119,8 @@ const EMBEDDING_REGEX =
 const RERANK_REGEX = /(?:rerank|re-rank|re-ranker|re-ranking|retrieval|retriever)/i
 const IMAGE_REGEX =
   /(?:dall-e|gpt-image|imagen|image-generation|text-to-image|stable-diffusion|flux)/i
-const VISION_REGEX = /(?:vision|gpt-4o|gpt-4\.1|gemini|claude|qwen.*vl|vl\b|llava|grok-vision)/i
+const VISION_REGEX =
+  /(?:vision|gpt-4o|gpt-4\.1|gemini|claude|kimi-k2\.6|qwen.*vl|vl\b|llava|grok-vision)/i
 const REASONING_REGEX =
   /(?:^o[134](?:[-\s]|$)|reason|reasoner|thinking|think|deepseek-r1|deepseek-reasoner|\br1\b|qwq|gpt-5|grok-4)/i
 const TOOL_USE_REGEX =
@@ -278,6 +279,7 @@ export const SYSTEM_MODELS_CONFIG: Record<SystemProviderId, Model[]> = {
     model('dashscope', 'qwen-turbo', 'Qwen Turbo', 'Qwen')
   ],
   moonshot: [
+    model('moonshot', 'kimi-k2.6', 'Kimi K2.6', 'Kimi'),
     model('moonshot', 'moonshot-v1-8k', 'Moonshot v1 8K', 'Moonshot'),
     model('moonshot', 'moonshot-v1-32k', 'Moonshot v1 32K', 'Moonshot'),
     model('moonshot', 'kimi-k2-0711-preview', 'Kimi K2', 'Kimi')
@@ -360,6 +362,7 @@ function supportsPromptCaching(subject: string, providerId?: string): boolean {
 }
 
 function inferContextWindow(subject: string, providerId?: string): number {
+  if (/kimi-k2\.6|kimi-k2\.5|kimi-k2-(?:0905|turbo|thinking)/.test(subject)) return 256_000
   if (/gpt-4\.1|gpt-5|gemini-2\.5|claude/.test(subject)) return 200_000
   if (/gpt-4o|o[134]|deepseek|qwen|glm|kimi|moonshot/.test(subject)) return 128_000
   if (/llama|mistral|mixtral/.test(subject)) return 32_000

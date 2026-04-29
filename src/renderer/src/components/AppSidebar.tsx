@@ -206,21 +206,29 @@ export function AppSidebar({
   return (
     <aside
       className={cn(
-        'glass-sidebar relative flex flex-col border-y-0 border-l-0 no-drag transition-[width] duration-200',
+        'glass-sidebar relative z-50 flex flex-col overflow-visible border-y-0 border-l-0 no-drag transition-[width] duration-200',
         sidebarCollapsed ? 'w-16' : 'w-72'
       )}
     >
       <Tooltip content={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'} side="right">
-        <IconButton
+        <button
+          type="button"
           aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          onMouseDown={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onClick={(event) => {
+            event.stopPropagation()
+            setSidebarCollapsed(!sidebarCollapsed)
+          }}
           className={cn(
-            'absolute -right-4 top-11 z-30 h-9 w-9 rounded-full border border-white/85 bg-white/95 text-muted-foreground shadow-md shadow-black/[0.06] backdrop-blur-xl hover:border-accent/30 hover:text-accent',
+            'blue-ring no-drag absolute -right-2 top-14 z-[120] flex h-12 w-4 items-center justify-center rounded-full border border-white/80 bg-white/80 text-muted-foreground/75 shadow-sm shadow-black/[0.05] backdrop-blur-xl transition hover:border-accent/25 hover:bg-white/95 hover:text-accent hover:shadow-md',
             sidebarCollapsed && 'rotate-180'
           )}
         >
-          <ChevronLeft size={18} />
-        </IconButton>
+          <ChevronLeft size={13} />
+        </button>
       </Tooltip>
 
       <div className={cn('drag px-4 pb-5 pt-4', sidebarCollapsed && 'px-3 pt-12')}>

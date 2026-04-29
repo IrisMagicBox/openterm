@@ -62,7 +62,7 @@ function isObviousTokenCorrection(inputToken: string, commandToken: string): boo
 function isCommandCompatibleWithInput(command: string, input: string): boolean {
   const trimmedInput = input.trim()
   const trimmedCommand = command.trim()
-  if (!trimmedInput) return false
+  if (!trimmedInput) return true
   if (!trimmedCommand || trimmedCommand === trimmedInput) return false
   if (trimmedCommand.startsWith(trimmedInput)) return true
 
@@ -83,8 +83,7 @@ export function getTerminalShiftTabCompletionAction(
   if (state.hasVisibleCompletion) return 'accept'
   if (state.hasCompletionCandidate) return 'accept'
   if (state.completionPending) return 'wait'
-  const trimmedInput = state.input.trim()
-  return trimmedInput.length > 0 && trimmedInput.length <= 200 ? 'request' : 'hide'
+  return state.input.trim().length <= 200 ? 'request' : 'hide'
 }
 
 export function updateTerminalInputBuffer(current: string, data: string): string {
@@ -110,6 +109,79 @@ export function updateTerminalInputBuffer(current: string, data: string): string
   return next
 }
 
+export function shouldRequestContextualCompletionOnTerminalInput(
+  currentInput: string,
+  data: string
+): boolean {
+  const submittedInput = inputBeforeFirstEnter(currentInput, data)
+  return submittedInput !== null && !submittedInput.trim()
+}
+
+export function contextualCompletionDelayForTerminalInput(
+  currentInput: string,
+  data: string
+): number | null {
+  const submittedInput = inputBeforeFirstEnter(currentInput, data)
+  if (submittedInput === null) return null
+  return submittedInput.trim() ? 1600 : 250
+}
+
+function inputBeforeFirstEnter(currentInput: string, data: string): string | null {
+  let input = currentInput
+
+  for (const char of data) {
+    if (char === '\r' || char === '\n') return input
+    if (char === '\x03' || char === '\x15') {
+      input = ''
+      continue
+    }
+    if (char === '\x7f' || char === '\b') {
+      input = input.slice(0, -1)
+      continue
+    }
+
+    const code = char.charCodeAt(0)
+    if (code >= 32 && code !== 127) input += char
+  }
+
+  return null
+}
+
+function normalizeHistoryCommand(command: string): string {
+  return (
+    command
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean) ?? ''
+  )
+}
+
+function firstShellToken(command: string): string {
+  return command.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+}
+
+export function expandSingleTokenCompletionFromHistory(
+  input: string,
+  command: string,
+  historyCommands: string[]
+): string {
+  const trimmedInput = input.trim()
+  const trimmedCommand = normalizeHistoryCommand(command)
+  if (!trimmedInput || /\s/.test(trimmedInput) || /\s/.test(trimmedCommand)) return command
+  if (!isCommandCompatibleWithInput(trimmedCommand, input)) return command
+
+  const completedToken = trimmedCommand.toLowerCase()
+  const historyMatch = historyCommands.map(normalizeHistoryCommand).find((historyCommand) => {
+    if (!historyCommand || historyCommand.length > 300 || !/\s/.test(historyCommand)) return false
+    if (historyCommand.trim() === trimmedCommand) return false
+    if (firstShellToken(historyCommand) !== completedToken) return false
+    return isCommandCompatibleWithInput(historyCommand, input)
+  })
+
+  return historyMatch ?? command
+}
+
 export function buildTerminalModelCompletion(
   input: string,
   command: string,
@@ -122,7 +194,7 @@ export function buildTerminalModelCompletion(
     .split(/\r?\n/)
     .map((line) => line.trim())
     .find(Boolean)
-  if (!trimmedLeftInput || !trimmedCommand) return null
+  if (!trimmedCommand) return null
 
   const leadingWhitespace = input.length - trimmedLeftInput.length
   const prefix = input.slice(0, leadingWhitespace)

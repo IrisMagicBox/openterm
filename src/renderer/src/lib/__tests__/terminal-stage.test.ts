@@ -109,17 +109,22 @@ describe('terminal stage helpers', () => {
     })
   })
 
-  it('sorts running, failed, and focused terminals before other activity', () => {
+  it('sorts by activity without moving the focused terminal', () => {
     const activities: TerminalActivity[] = [
       { sessionId: 'idle', hostAlias: 'idle', status: 'idle', updatedAt: 400 },
-      { sessionId: 'focused', hostAlias: 'focused', status: 'completed', updatedAt: 100 },
+      { sessionId: 'focused', hostAlias: 'focused', status: 'idle', updatedAt: 100 },
+      { sessionId: 'completed', hostAlias: 'completed', status: 'completed', updatedAt: 50 },
       { sessionId: 'failed', hostAlias: 'failed', status: 'failed', updatedAt: 200 },
       { sessionId: 'running', hostAlias: 'running', status: 'running', updatedAt: 50 }
     ]
 
-    expect(
-      sortTerminalActivities(activities, 'focused').map((activity) => activity.sessionId)
-    ).toEqual(['running', 'failed', 'focused', 'idle'])
+    expect(sortTerminalActivities(activities).map((activity) => activity.sessionId)).toEqual([
+      'running',
+      'failed',
+      'completed',
+      'idle',
+      'focused'
+    ])
   })
 
   it('follows the latest running command or associated agent part', () => {

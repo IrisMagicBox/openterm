@@ -4,6 +4,7 @@ import type {
   ChatCompletionTool
 } from 'openai/resources/chat/completions/completions'
 import { ProviderAdapter } from '../agent/provider-adapter'
+import { resolveProviderSelection } from '../ai'
 import { logger } from '../logger'
 import {
   buildTerminalCommandCompletionMessages,
@@ -18,10 +19,13 @@ import {
   type TerminalCommandDraftRequest,
   type TerminalCommandDraftResult
 } from '../../shared/terminal-command-assist'
+import type { TerminalCompletionBackendMode } from '../../shared/types'
 import { modelSettingsDB, terminalIODB } from '../db'
 
 const TERMINAL_COMPLETION_MANUAL_TIMEOUT_MS = 30_000
 const TERMINAL_COMPLETION_PREFETCH_TIMEOUT_MS = 12_000
+const TERMINAL_COMPLETION_FUNCTION_MAX_TOKENS = 800
+const TERMINAL_COMPLETION_PROMPT_MAX_TOKENS = 240
 const TERMINAL_COMPLETION_PROVIDER_BACKOFF_MS = 60_000
 const TERMINAL_COMPLETION_TRANSIENT_BACKOFF_MS = 10_000
 const TERMINAL_COMPLETION_TOOL_NAME = 'complete_terminal_command'
@@ -92,6 +96,28 @@ function completionSessionKey(request: TerminalCommandCompletionRequest): string
   return (
     request.session?.id || `${request.topicId || 'unknown'}:${request.session?.hostId || 'unknown'}`
   )
+}
+
+function shouldUseFunctionCompletionForModel(
+  modelId: string | undefined,
+  modelRecordId: string | undefined
+): boolean {
+  const subject = `${modelId || ''} ${modelRecordId || ''}`
+  return /kimi[-:]?k2\.?6/i.test(subject)
+}
+
+function shouldRetryCompletionWithTool(
+  mode: TerminalCompletionBackendMode,
+  completion: TerminalCommandCompletionResult,
+  response: { content: string | null; finishReason: string | null },
+  signal: AbortSignal
+): string | undefined {
+  if (mode !== 'prompt' || signal.aborted) return undefined
+  if (!response.content) return 'empty-content-tool-retry'
+  if (response.finishReason === 'length') return 'length-tool-retry'
+  if (!completion.command && completion.reason === 'invalid-format')
+    return 'invalid-format-tool-retry'
+  return undefined
 }
 
 function completionTimeoutMs(trigger: 'prefetch' | 'manual'): number {
@@ -181,20 +207,49 @@ export async function completeTerminalCommand(
     return { command: '', confidence: 'low', reason: 'backoff' }
   }
 
-  const completionMode = normalizeTerminalCompletionMode(
+  const configuredCompletionMode = normalizeTerminalCompletionMode(
     modelSettingsDB.getSettings().terminalCompletionMode
   )
+  const providerSelection = (() => {
+    try {
+      return resolveProviderSelection({ topicId: request.topicId })
+    } catch {
+      return null
+    }
+  })()
+  const completionMode = shouldUseFunctionCompletionForModel(
+    providerSelection?.modelId,
+    providerSelection?.modelRecordId
+  )
+    ? 'function'
+    : configuredCompletionMode
   const executionContext = buildExecutionContextFromHistory(request)
   const enrichedRequest: TerminalCommandCompletionRequest = {
     ...request,
     executionContext
   }
+  const selectedModelForLog = (() => {
+    try {
+      const selection = providerSelection ?? resolveProviderSelection({ topicId: request.topicId })
+      return {
+        providerId: selection.provider.id,
+        modelId: selection.modelId,
+        modelRecordId: selection.modelRecordId
+      }
+    } catch (error) {
+      return {
+        providerSelectionError: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })()
 
   logger.info('TerminalCompletion', `#${requestId} request`, {
     requestId,
     mode: completionMode,
+    configuredMode: configuredCompletionMode,
     trigger,
     topicId: request.topicId,
+    ...selectedModelForLog,
     currentInput: request.currentInput,
     sessionId: request.session?.id,
     hostId: request.session?.hostId,
@@ -238,7 +293,10 @@ export async function completeTerminalCommand(
     const chatParams: Parameters<ProviderAdapter['chat']>[0] = {
       messages,
       temperature: 0,
-      maxTokens: completionMode === 'function' ? 220 : 180,
+      maxTokens:
+        completionMode === 'function'
+          ? TERMINAL_COMPLETION_FUNCTION_MAX_TOKENS
+          : TERMINAL_COMPLETION_PROMPT_MAX_TOKENS,
       abortSignal: controller.signal
     }
 
@@ -248,26 +306,58 @@ export async function completeTerminalCommand(
         type: 'function',
         function: { name: TERMINAL_COMPLETION_TOOL_NAME }
       }
-    } else {
-      chatParams.toolChoice = 'none'
     }
 
-    const response = await adapter.chat(chatParams)
-    const completion =
-      (completionMode === 'function'
+    let response = await adapter.chat(chatParams)
+    let responseMode = completionMode
+    let fallbackReason: string | undefined
+    let completion =
+      (responseMode === 'function'
         ? completionFromToolCall(response, request.currentInput)
         : null) ??
       sanitizeTerminalCommandCompletion(response.content, request.currentInput, {
-        formats: completionMode === 'function' ? ['json'] : ['xml', 'json']
+        formats: responseMode === 'function' ? ['json'] : ['xml', 'json']
       })
+
+    fallbackReason = shouldRetryCompletionWithTool(
+      completionMode,
+      completion,
+      response,
+      controller.signal
+    )
+    if (fallbackReason) {
+      responseMode = 'function'
+      response = await adapter.chat({
+        messages: buildTerminalCommandCompletionMessages(
+          enrichedRequest,
+          responseMode
+        ) as ChatCompletionMessageParam[],
+        temperature: 0,
+        maxTokens: TERMINAL_COMPLETION_FUNCTION_MAX_TOKENS,
+        abortSignal: controller.signal,
+        tools: [TERMINAL_COMPLETION_TOOL],
+        toolChoice: {
+          type: 'function',
+          function: { name: TERMINAL_COMPLETION_TOOL_NAME }
+        }
+      })
+      completion =
+        completionFromToolCall(response, request.currentInput) ??
+        sanitizeTerminalCommandCompletion(response.content, request.currentInput, {
+          formats: ['json']
+        })
+    }
     const durationMs = Date.now() - startedAt
 
     logger.info('TerminalCompletion', `#${requestId} response`, {
       requestId,
       mode: completionMode,
+      responseMode,
+      fallbackReason,
       trigger,
       durationMs,
       raw: response.content,
+      finishReason: response.finishReason,
       toolCalls: response.toolCalls?.map((toolCall) => ({
         name: toolCall.function.name,
         arguments: toolCall.function.arguments

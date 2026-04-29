@@ -254,6 +254,32 @@ const migrations: Migration[] = [
         );
       `)
     }
+  },
+  {
+    id: '016_kimi_k2_6_model',
+    run: (db) => {
+      const kimiK26 = SYSTEM_MODELS.find((model) => model.id === 'moonshot:kimi-k2.6')
+      if (!kimiK26) return
+
+      db.prepare(
+        `
+        INSERT OR IGNORE INTO models
+          (id, providerId, providerModelId, name, group_name, capabilities, endpointType, pricing, createdAt)
+        VALUES
+          (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+      ).run(
+        kimiK26.id,
+        kimiK26.providerId,
+        kimiK26.providerModelId ?? getModelApiId(kimiK26),
+        kimiK26.name,
+        kimiK26.group,
+        kimiK26.capabilities ? JSON.stringify(kimiK26.capabilities) : null,
+        kimiK26.endpointType,
+        kimiK26.pricing ? JSON.stringify(kimiK26.pricing) : null,
+        kimiK26.createdAt || Date.now()
+      )
+    }
   }
 ]
 

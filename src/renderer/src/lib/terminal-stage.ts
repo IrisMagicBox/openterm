@@ -127,22 +127,12 @@ export function deriveTerminalActivities(
   })
 }
 
-export function sortTerminalActivities(
-  activities: TerminalActivity[],
-  focusedSessionId?: string | null
-): TerminalActivity[] {
+export function sortTerminalActivities(activities: TerminalActivity[]): TerminalActivity[] {
   return [...activities].sort((a, b) => {
-    const priorityA =
-      a.sessionId === focusedSessionId
-        ? Math.min(statusPriority(a.status), 2)
-        : statusPriority(a.status)
-    const priorityB =
-      b.sessionId === focusedSessionId
-        ? Math.min(statusPriority(b.status), 2)
-        : statusPriority(b.status)
-
     return (
-      priorityA - priorityB || b.updatedAt - a.updatedAt || a.hostAlias.localeCompare(b.hostAlias)
+      statusPriority(a.status) - statusPriority(b.status) ||
+      b.updatedAt - a.updatedAt ||
+      a.hostAlias.localeCompare(b.hostAlias)
     )
   })
 }

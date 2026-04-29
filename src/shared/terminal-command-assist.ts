@@ -53,7 +53,13 @@ export interface TerminalCommandCompletionResult {
 }
 
 export interface TerminalCommandCompletionUiEvent {
-  event: 'candidate-stored' | 'candidate-cleared' | 'shift-tab' | 'candidate-accepted'
+  event:
+    | 'candidate-stored'
+    | 'candidate-cleared'
+    | 'shift-tab'
+    | 'candidate-accepted'
+    | 'contextual-request-scheduled'
+    | 'contextual-request-started'
   sessionId?: string
   topicId?: string
   trigger?: 'prefetch' | 'manual'
@@ -192,8 +198,14 @@ export function buildTerminalCommandCompletionMessages(
           'Do not explain. Do not use Markdown.',
           'Complete or correct currentInput using the terminal execution context, screen, and recent command history.',
           'Use recent commands, outputs, exit codes, cwd, errors, and visible terminal state to infer the next useful completion.',
+          'When currentInput is empty, infer the most likely next command from the visible prompt, repeated attempts, recent errors, and successful history.',
           'Prefer extending currentInput. Replace the whole command only for obvious typos.',
+          'If currentInput is only a command name or a typo of one, and recent history contains a longer matching command, prefer the full recent command over only the executable name.',
+          'Never invent destructive commands from an empty prompt. Repair commands like "colima start" are allowed, but destructive deletes, shutdowns, disk formatting, and prune-all commands should be low confidence unless the user already typed that command prefix.',
           'Examples:',
+          'currentInput=(empty), screen shows "-bash: docker: command not found" after docker attempts => {"command":"which docker","confidence":"medium","reason":"check whether docker is installed or on PATH"}',
+          'currentInput=(empty), screen shows "Cannot connect to the Docker daemon" and a colima docker.sock path => {"command":"colima start","confidence":"high","reason":"start the Colima Docker runtime"}',
+          'currentInput=docke, recent history includes docker images => {"command":"docker images","confidence":"high","reason":"complete typo to recent full docker command"}',
           'currentInput=docker im => {"command":"docker images","confidence":"high","reason":"common docker image listing command"}',
           'currentInput=git st => {"command":"git status","confidence":"high","reason":"common git status abbreviation"}',
           'currentInput=kuebclt ge => {"command":"kubectl get pods","confidence":"medium","reason":"obvious kubectl typo"}',
@@ -211,8 +223,14 @@ export function buildTerminalCommandCompletionMessages(
           'Do not explain. Do not use Markdown. Do not include text outside the XML block.',
           'Complete or correct currentInput using the terminal execution context, screen, and recent command history.',
           'Use recent commands, outputs, exit codes, cwd, errors, and visible terminal state to infer the next useful completion.',
+          'When currentInput is empty, infer the most likely next command from the visible prompt, repeated attempts, recent errors, and successful history.',
           'Prefer extending currentInput. Replace the whole command only for obvious typos.',
+          'If currentInput is only a command name or a typo of one, and recent history contains a longer matching command, prefer the full recent command over only the executable name.',
+          'Never invent destructive commands from an empty prompt. Repair commands like "colima start" are allowed, but destructive deletes, shutdowns, disk formatting, and prune-all commands should be low confidence unless the user already typed that command prefix.',
           'Examples:',
+          'currentInput=(empty), screen shows "-bash: docker: command not found" after docker attempts => <terminal_completion><command>which docker</command><confidence>medium</confidence><reason>check whether docker is installed or on PATH</reason></terminal_completion>',
+          'currentInput=(empty), screen shows "Cannot connect to the Docker daemon" and a colima docker.sock path => <terminal_completion><command>colima start</command><confidence>high</confidence><reason>start the Colima Docker runtime</reason></terminal_completion>',
+          'currentInput=docke, recent history includes docker images => <terminal_completion><command>docker images</command><confidence>high</confidence><reason>complete typo to recent full docker command</reason></terminal_completion>',
           'currentInput=docker im => <terminal_completion><command>docker images</command><confidence>high</confidence><reason>common docker image listing command</reason></terminal_completion>',
           'currentInput=git st => <terminal_completion><command>git status</command><confidence>high</confidence><reason>common git status abbreviation</reason></terminal_completion>',
           'currentInput=kuebclt ge => <terminal_completion><command>kubectl get pods</command><confidence>medium</confidence><reason>obvious kubectl typo</reason></terminal_completion>',
@@ -240,7 +258,7 @@ export function buildTerminalCommandCompletionMessages(
         formatHistory(input.historyCommands),
         '',
         'currentInput:',
-        input.currentInput.trim(),
+        input.currentInput.trim() || '(empty)',
         '',
         mode === 'function'
           ? 'Use the function call when available. Otherwise return only JSON.'
@@ -299,16 +317,50 @@ interface CompletionParseOptions {
 
 function parseJsonObject(value: string): Record<string, unknown> | null {
   const text = value.trim()
-  if (!text.startsWith('{') || !text.endsWith('}')) return null
+  if (!text.startsWith('{') && !text.startsWith('[')) return null
 
   try {
     const parsed = JSON.parse(text)
+    if (Array.isArray(parsed)) return parseToolLikeJsonArray(parsed)
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
+      ? unwrapToolLikeJsonObject(parsed as Record<string, unknown>)
       : null
   } catch {
     return null
   }
+}
+
+function parseToolLikeJsonArray(items: unknown[]): Record<string, unknown> | null {
+  for (const item of items) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const parsed = unwrapToolLikeJsonObject(item as Record<string, unknown>)
+    if (parsed) return parsed
+  }
+  return null
+}
+
+function unwrapToolLikeJsonObject(value: Record<string, unknown>): Record<string, unknown> | null {
+  if (typeof value.command === 'string') return value
+
+  const name = typeof value.name === 'string' ? value.name : undefined
+  if (name && name !== 'complete_terminal_command') return null
+
+  const parameters = value.parameters ?? value.arguments
+  if (parameters && typeof parameters === 'object' && !Array.isArray(parameters)) {
+    return parameters as Record<string, unknown>
+  }
+  if (typeof parameters === 'string') {
+    try {
+      const parsed = JSON.parse(parameters)
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null
+    } catch {
+      return null
+    }
+  }
+
+  return name ? null : value
 }
 
 function extractXmlTag(value: string, tagName: string): string | undefined {
@@ -402,6 +454,55 @@ function commandMatchesCurrentInput(command: string, currentInput: string | unde
   )
 }
 
+function hasUnsafeCommandCharacters(value: string): boolean {
+  return /[\x00-\x1f\x7f]/.test(value)
+}
+
+function isRecursiveForceRm(normalizedCommand: string): boolean {
+  const tokens = normalizedCommand.split(/\s+/)
+  const commandIndex = tokens[0] === 'sudo' ? 1 : 0
+  if (tokens[commandIndex] !== 'rm') return false
+
+  const flags = tokens.slice(commandIndex + 1).filter((token) => token.startsWith('-'))
+  const hasCompactRecursiveForce = flags.some(
+    (flag) => flag.startsWith('-') && flag.includes('r') && flag.includes('f')
+  )
+  const hasRecursive = flags.some((flag) => flag === '-r' || flag === '--recursive')
+  const hasForce = flags.some((flag) => flag === '-f' || flag === '--force')
+  return hasCompactRecursiveForce || (hasRecursive && hasForce)
+}
+
+function isDangerousCompletionCommand(command: string): boolean {
+  const normalized = command.trim().toLowerCase()
+  if (isRecursiveForceRm(normalized)) return true
+
+  return [
+    /^(?:sudo\s+)?(?:shutdown|reboot|halt|poweroff)\b/,
+    /^(?:sudo\s+)?docker\s+(?:system|image|container|volume|network)\s+prune\b.*(?:\s-a\b|--all\b)/,
+    /^(?:sudo\s+)?find\b.*\s-delete\b/,
+    /^(?:sudo\s+)?(?:mkfs|diskutil\s+erase|dd\s+)/
+  ].some((pattern) => pattern.test(normalized))
+}
+
+function hasExplicitDangerousCommandPrefix(
+  command: string,
+  currentInput: string | undefined
+): boolean {
+  const input = currentInput?.trim().toLowerCase()
+  if (!input) return false
+
+  const normalized = command.trim().toLowerCase()
+  if (!normalized.startsWith(input)) return false
+
+  return [
+    /^(?:sudo\s+)?rm\s+-.*/,
+    /^(?:sudo\s+)?(?:shutdown|reboot|halt|poweroff)\b/,
+    /^(?:sudo\s+)?docker\s+(?:system|image|container|volume|network)\s+prune\b/,
+    /^(?:sudo\s+)?find\b.*\s-delete\b/,
+    /^(?:sudo\s+)?(?:mkfs|diskutil\s+erase|dd)\b/
+  ].some((pattern) => pattern.test(input))
+}
+
 export function sanitizeTerminalCommandCompletion(
   content: string | null | undefined,
   currentInput?: string,
@@ -416,10 +517,21 @@ export function sanitizeTerminalCommandCompletion(
     (formats.includes('json') ? parseJsonObject(text) : null)
 
   if (parsed) {
-    const command =
-      typeof parsed.command === 'string' ? sanitizeTerminalCommandDraft(parsed.command) : ''
+    const rawCommand = typeof parsed.command === 'string' ? parsed.command : ''
+    if (rawCommand && hasUnsafeCommandCharacters(rawCommand)) {
+      return { command: '', confidence: 'low', reason: 'unsafe-characters' }
+    }
+
+    const command = rawCommand ? sanitizeTerminalCommandDraft(rawCommand) : ''
     if (command && !looksLikePlainShellCommand(command)) {
       return { command: '', confidence: 'low', reason: 'invalid-command' }
+    }
+    if (
+      command &&
+      isDangerousCompletionCommand(command) &&
+      !hasExplicitDangerousCommandPrefix(command, currentInput)
+    ) {
+      return { command: '', confidence: 'low', reason: 'dangerous-command' }
     }
     if (command && !commandMatchesCurrentInput(command, currentInput)) {
       return { command: '', confidence: 'low', reason: 'mismatched-input' }

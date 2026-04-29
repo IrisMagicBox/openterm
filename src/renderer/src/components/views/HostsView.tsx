@@ -59,6 +59,18 @@ export function HostsView({
     })
   }
 
+  const openLocalTerminal = async (): Promise<void> => {
+    try {
+      const session = await window.api.connectLocal(WORKSPACE_TERMINALS_TOPIC_ID)
+      setSelectedHost(LOCAL_HOST)
+      setTerminalSessionId(session.id)
+      addTerminalTab({ host: LOCAL_HOST, sessionId: session.id })
+      setActiveView('terminal')
+    } catch (e) {
+      console.error('Local terminal connection failed:', e)
+    }
+  }
+
   return (
     <div className="flex-1 overflow-y-auto bg-transparent">
       <PageHeader
@@ -87,22 +99,7 @@ export function HostsView({
       />
 
       <div className="px-6 py-5">
-        <Surface
-          onClick={async () => {
-            try {
-              const session = await window.api.connectLocal(WORKSPACE_TERMINALS_TOPIC_ID)
-              setSelectedHost(LOCAL_HOST)
-              setTerminalSessionId(session.id)
-              addTerminalTab({ host: LOCAL_HOST, sessionId: session.id })
-              setActiveView('terminal')
-            } catch (e) {
-              console.error('Local terminal connection failed:', e)
-            }
-          }}
-          role="button"
-          tabIndex={0}
-          className="mb-5 cursor-pointer transition-all hover:-translate-y-0.5 hover:border-success/30 hover:bg-white/80"
-        >
+        <Surface className="mb-5 transition-all hover:border-success/30 hover:bg-white/80">
           <div className="flex items-center gap-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-success-soft text-success shadow-sm shadow-success/10">
               <Monitor size={22} strokeWidth={2.2} />
@@ -122,7 +119,7 @@ export function HostsView({
               >
                 Agent 对话
               </Button>
-              <IconButton aria-label="打开本机终端" variant="primary">
+              <IconButton aria-label="打开本机终端" onClick={openLocalTerminal} variant="primary">
                 <Monitor size={14} />
               </IconButton>
             </div>

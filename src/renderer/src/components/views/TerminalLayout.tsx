@@ -16,6 +16,7 @@ import {
   resolvePaneDropEdgeFromPoint,
   type PaneDropEdge
 } from '../../lib/pane-drop'
+import { WORKSPACE_TERMINALS_TOPIC_ID } from '../../../../shared/constants'
 
 interface TerminalLayoutProps {
   terminalTabs: TerminalTab[]
@@ -318,6 +319,7 @@ export function TerminalLayout({
               >
                 <TerminalView
                   id={tab.sessionId}
+                  topicId={WORKSPACE_TERMINALS_TOPIC_ID}
                   hostId={tab.host.id}
                   hostAlias={tab.host.alias}
                   fontSize={terminalFontSize}

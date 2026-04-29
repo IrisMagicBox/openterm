@@ -694,10 +694,7 @@ export function TerminalStage({
     () => new Map(visibleSessions.map((session) => [session.id, session])),
     [visibleSessions]
   )
-  const sortedActivities = useMemo(
-    () => sortTerminalActivities(activities, focusedSessionId),
-    [activities, focusedSessionId]
-  )
+  const sortedActivities = useMemo(() => sortTerminalActivities(activities), [activities])
   const sortedSessions = useMemo(
     () =>
       sortedActivities

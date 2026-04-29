@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildTerminalModelCompletion,
+  contextualCompletionDelayForTerminalInput,
+  expandSingleTokenCompletionFromHistory,
   getTerminalShiftTabCompletionAction,
+  shouldRequestContextualCompletionOnTerminalInput,
   updateTerminalInputBuffer
 } from '../terminal-completion'
 
@@ -47,6 +50,41 @@ describe('terminal completion helpers', () => {
     })
   })
 
+  it('can build a next-command completion for an empty prompt', () => {
+    const completion = buildTerminalModelCompletion('', 'which docker', 'medium')
+
+    expect(completion).toMatchObject({
+      input: '',
+      value: 'which docker',
+      suffix: 'which docker',
+      insertText: 'which docker',
+      mode: 'append',
+      source: 'model',
+      confidence: 'medium',
+      displayLabel: 'AI'
+    })
+  })
+
+  it('expands single-token model completions to matching recent history commands', () => {
+    expect(
+      expandSingleTokenCompletionFromHistory('docke', 'docker', [
+        'docker images',
+        'docker tag --help'
+      ])
+    ).toBe('docker images')
+    expect(
+      buildTerminalModelCompletion(
+        'docke',
+        expandSingleTokenCompletionFromHistory('docke', 'docker', ['docker images']),
+        'high'
+      )
+    ).toMatchObject({
+      value: 'docker images',
+      insertText: 'r images',
+      mode: 'append'
+    })
+  })
+
   it('ignores empty, unchanged, and low-confidence model output', () => {
     expect(buildTerminalModelCompletion('git st', '')).toBeNull()
     expect(buildTerminalModelCompletion('git status', 'git status')).toBeNull()
@@ -73,6 +111,21 @@ describe('terminal completion helpers', () => {
     expect(updateTerminalInputBuffer('docke', '\t')).toBe('docke')
   })
 
+  it('detects empty prompt enter as a contextual next-command completion trigger', () => {
+    expect(shouldRequestContextualCompletionOnTerminalInput('', '\r')).toBe(true)
+    expect(shouldRequestContextualCompletionOnTerminalInput('   ', '\r\n')).toBe(true)
+    expect(shouldRequestContextualCompletionOnTerminalInput('docker images', '\r')).toBe(false)
+    expect(shouldRequestContextualCompletionOnTerminalInput('', 'docker images\r')).toBe(false)
+  })
+
+  it('delays contextual completion after submitted commands so output can arrive', () => {
+    expect(contextualCompletionDelayForTerminalInput('', '\r')).toBe(250)
+    expect(contextualCompletionDelayForTerminalInput('docker images', '\r')).toBe(1600)
+    expect(contextualCompletionDelayForTerminalInput('', 'docker images\r')).toBe(1600)
+    expect(contextualCompletionDelayForTerminalInput('docker image', 's\r')).toBe(1600)
+    expect(contextualCompletionDelayForTerminalInput('', 'docker images')).toBeNull()
+  })
+
   it('accepts an available model candidate with shift-tab', () => {
     expect(
       getTerminalShiftTabCompletionAction({
@@ -92,7 +145,7 @@ describe('terminal completion helpers', () => {
     ).toBe('accept')
   })
 
-  it('requests model completion only when shift-tab has usable input and no candidate', () => {
+  it('requests model completion when shift-tab has no candidate', () => {
     expect(
       getTerminalShiftTabCompletionAction({
         hasVisibleCompletion: false,
@@ -116,6 +169,6 @@ describe('terminal completion helpers', () => {
         completionPending: false,
         input: '   '
       })
-    ).toBe('hide')
+    ).toBe('request')
   })
 })
