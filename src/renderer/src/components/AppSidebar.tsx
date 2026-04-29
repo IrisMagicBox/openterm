@@ -206,10 +206,16 @@ export function AppSidebar({
   return (
     <aside
       className={cn(
-        'app-sidebar-content relative z-10 flex shrink-0 flex-col overflow-visible border-y-0 border-l-0 no-drag',
+        'app-sidebar-content relative z-10 flex shrink-0 flex-col overflow-hidden border-y-0 border-l-0 no-drag',
         isResizingSidebar ? 'transition-none' : 'transition-[width] duration-300 ease-ui-emphasized'
       )}
     >
+      <div aria-hidden className="sidebar-brand-glow" />
+      <div aria-hidden className="sidebar-brand-mark">
+        <img src={logo} alt="" />
+      </div>
+      <div aria-hidden className="sidebar-frosted-veil" />
+
       <div className={cn('drag px-4 pb-5 pt-4', compactSidebar && 'px-3')}>
         {!compactSidebar && <div aria-hidden className="mb-5 h-3" />}
         <div className={cn('flex items-center gap-3 no-drag', compactSidebar && 'justify-center')}>
