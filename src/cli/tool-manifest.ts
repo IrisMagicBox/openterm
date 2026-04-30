@@ -11,6 +11,7 @@ export interface CliToolManifestItem {
     | 'settings'
     | 'terminal'
     | 'topic'
+    | 'web'
   mode: 'read' | 'write' | 'interactive' | 'orchestration'
   requiresAppRuntime: boolean
   summary: string
@@ -254,6 +255,13 @@ export const CLI_TOOL_MANIFEST: CliToolManifestItem[] = [
     mode: 'read',
     requiresAppRuntime: false,
     summary: 'Search saved topics and conversation records.'
+  },
+  {
+    id: 'websearch',
+    category: 'web',
+    mode: 'read',
+    requiresAppRuntime: false,
+    summary: 'Search the web through Exa hosted MCP without requiring an API key.'
   },
   {
     id: 'read_notes',

@@ -103,7 +103,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
     description: 'Primary agent for executing multi-step tasks on remote hosts',
     mode: 'primary',
     allowedTools: [], // All tools allowed
-    permissions: [{ tool: '*', allowed: true }],
+    permissions: [{ tool: 'websearch', action: 'ask' }, { tool: '*', allowed: true }],
     maxSteps: 10,
     temperature: 0.1
   },
@@ -119,7 +119,8 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       'list_hosts',
       'list_terminals',
       'search_memory',
-      'search_topics'
+      'search_topics',
+      'websearch'
     ],
     permissions: [
       { tool: 'execute_command', allowed: true, maxAutoApproveRisk: 'low' },
@@ -128,7 +129,8 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       { tool: 'list_hosts', allowed: true },
       { tool: 'list_terminals', allowed: true },
       { tool: 'search_memory', allowed: true },
-      { tool: 'search_topics', allowed: true }
+      { tool: 'search_topics', allowed: true },
+      { tool: 'websearch', allowed: true }
     ],
     maxSteps: 5,
     temperature: 0.3
@@ -164,7 +166,8 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       'list_hosts',
       'list_terminals',
       'search_memory',
-      'search_topics'
+      'search_topics',
+      'websearch'
     ],
     permissions: [
       {
@@ -183,7 +186,8 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       { tool: 'list_hosts', allowed: true },
       { tool: 'list_terminals', allowed: true },
       { tool: 'search_memory', allowed: true },
-      { tool: 'search_topics', allowed: true }
+      { tool: 'search_topics', allowed: true },
+      { tool: 'websearch', allowed: true }
     ],
     maxSteps: 5,
     temperature: 0.1

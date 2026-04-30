@@ -153,6 +153,7 @@ describe('ToolRegistry.getFilteredDefinitions', () => {
     registry.register(makeMockTool('manage_host'))
     registry.register(makeMockTool('search_memory'))
     registry.register(makeMockTool('search_topics'))
+    registry.register(makeMockTool('websearch'))
     await registry.initializeTools()
   })
 

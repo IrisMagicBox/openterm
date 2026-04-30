@@ -25,6 +25,7 @@ import globTool from './glob'
 import editTool from './edit'
 import lsTool from './ls'
 import lspTool from './lsp'
+import websearchTool from './websearch'
 import taskTool from '../agent/task-tool'
 
 export { ToolRegistry } from './tool-registry'
@@ -59,6 +60,7 @@ export function createDefaultRegistry(): ToolRegistry {
   registry.register(editTool)
   registry.register(lsTool)
   registry.register(lspTool)
+  registry.register(websearchTool)
   registry.register(taskTool)
   return registry
 }
