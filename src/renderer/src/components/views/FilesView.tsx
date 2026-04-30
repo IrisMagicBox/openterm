@@ -409,7 +409,7 @@ export function FilesView({
     <div className="workspace-canvas relative flex flex-1 flex-col overflow-hidden bg-transparent">
       <div className="workspace-primary-content flex min-h-0 flex-1 flex-col">
         <div className="workspace-layer-header flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/70 backdrop-blur-2xl">
-          <div className="h-11 text-workspace-foreground px-5 flex items-center justify-between flex-shrink-0 drag">
+          <div className="h-[var(--workspace-header-height)] text-workspace-foreground px-5 flex items-center justify-between flex-shrink-0 drag">
             <div className="flex items-center gap-3 no-drag">
               <Folder size={13} className="text-accent" />
               <span className="text-xs font-semibold font-mono text-workspace-foreground">
@@ -417,7 +417,7 @@ export function FilesView({
               </span>
               <span className="text-xs text-workspace-muted-foreground font-mono">文件管理</span>
             </div>
-            <div className="flex items-center gap-2 no-drag">
+            <div className="flex items-center gap-1.5 no-drag">
               {allTabs.length > 0 && (
                 <div className="flex gap-1">
                   {(() => {
@@ -428,17 +428,19 @@ export function FilesView({
                       <>
                         <button
                           onClick={() => handleSplit(leafToSplit.id, 'horizontal')}
-                          className="flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
+                          className="workspace-top-icon-button text-workspace-muted-foreground"
                           title="水平分屏"
+                          aria-label="水平分屏"
                         >
-                          <Columns size={12} />
+                          <Columns />
                         </button>
                         <button
                           onClick={() => handleSplit(leafToSplit.id, 'vertical')}
-                          className="flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
+                          className="workspace-top-icon-button text-workspace-muted-foreground"
                           title="垂直分屏"
+                          aria-label="垂直分屏"
                         >
-                          <Rows size={12} />
+                          <Rows />
                         </button>
                       </>
                     ) : null
@@ -447,30 +449,29 @@ export function FilesView({
               )}
               <button
                 onClick={() => setShowFileList(!showFileList)}
-                className="flex items-center gap-1 rounded-md bg-workspace px-2.5 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
+                className="workspace-top-icon-button text-workspace-muted-foreground"
                 title="文件列表"
+                aria-label="文件列表"
               >
-                <LayoutGrid size={12} />
+                <LayoutGrid />
               </button>
               <button
                 onClick={() => setShowHostPicker(true)}
-                className="flex items-center gap-1.5 rounded-md bg-workspace px-2.5 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
+                className="workspace-top-icon-button text-workspace-muted-foreground"
                 title="打开文件管理"
+                aria-label="打开文件管理"
               >
-                <Plus size={12} /> 新建
+                <Plus />
               </button>
               <ConfirmActionButton
                 aria-label="关闭全部文件管理"
                 onConfirm={handleDisconnectAll}
-                className="flex items-center gap-1.5 rounded-md bg-workspace px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-danger/15 hover:text-danger"
-                confirmChildren={
-                  <>
-                    <X size={12} /> 关闭
-                  </>
-                }
+                className="workspace-top-icon-button workspace-top-button-danger text-workspace-muted-foreground"
+                confirmChildren={<X />}
                 confirmingTitle="关闭全部"
+                title="关闭全部"
               >
-                <X size={12} /> 关闭全部
+                <X />
               </ConfirmActionButton>
             </div>
           </div>

@@ -18,6 +18,16 @@ import {
 } from '../../lib/pane-drop'
 import { WORKSPACE_TERMINALS_TOPIC_ID } from '../../../../shared/constants'
 
+const FILE_PANEL_WIDTH_STORAGE_KEY = 'openterm.terminalFilePanel.width'
+const DEFAULT_FILE_PANEL_WIDTH = 384
+const MIN_FILE_PANEL_WIDTH = 280
+const MAX_FILE_PANEL_WIDTH = 560
+const MIN_TERMINAL_WORKSPACE_WIDTH = 420
+
+function clampPanelWidth(width: number, minWidth: number, maxWidth: number): number {
+  return Math.max(minWidth, Math.min(maxWidth, width))
+}
+
 interface TerminalLayoutProps {
   terminalTabs: TerminalTab[]
   setTerminalTabs: React.Dispatch<React.SetStateAction<TerminalTab[]>>
@@ -59,19 +69,40 @@ export function TerminalLayout({
   const [showTerminalList, setShowTerminalList] = useState(false)
   const [dragOverPaneId, setDragOverPaneId] = useState<string | null>(null)
   const [dragOverEdge, setDragOverEdge] = useState<PaneDropEdge | null>(null)
+  const [filePanelWidth, setFilePanelWidth] = useState(() => {
+    const stored = Number(window.localStorage.getItem(FILE_PANEL_WIDTH_STORAGE_KEY))
+    return Number.isFinite(stored) && stored > 0
+      ? clampPanelWidth(stored, MIN_FILE_PANEL_WIDTH, MAX_FILE_PANEL_WIDTH)
+      : DEFAULT_FILE_PANEL_WIDTH
+  })
+  const [filePanelResizeRightEdge, setFilePanelResizeRightEdge] = useState<number | null>(null)
 
+  const layoutRef = useRef<HTMLDivElement>(null)
   const syncedSessionIds = useRef<Set<string>>(new Set())
   const openTerminalRef = useRef(paneManager.openTerminal)
   const registerTerminalRef = useRef(paneManager.registerTab)
   const closeTerminalRef = useRef(paneManager.closeTerminalTab)
   const lastFocusRequestId = useRef<number | null>(null)
   const lastCloseRequestId = useRef<number | null>(null)
+  const isResizingFilePanel = filePanelResizeRightEdge !== null
 
   useEffect(() => {
     openTerminalRef.current = paneManager.openTerminal
     registerTerminalRef.current = paneManager.registerTab
     closeTerminalRef.current = paneManager.closeTerminalTab
   }, [paneManager.openTerminal, paneManager.registerTab, paneManager.closeTerminalTab])
+
+  useEffect(() => {
+    window.localStorage.setItem(FILE_PANEL_WIDTH_STORAGE_KEY, String(Math.round(filePanelWidth)))
+  }, [filePanelWidth])
+
+  useEffect(() => {
+    if (!isResizingFilePanel) return undefined
+    document.body.dataset.panelResizing = 'true'
+    return () => {
+      delete document.body.dataset.panelResizing
+    }
+  }, [isResizingFilePanel])
 
   useEffect(() => {
     const nextSessionIds = new Set(legacyTabs.map((tab) => tab.sessionId))
@@ -372,10 +403,13 @@ export function TerminalLayout({
   const splitDisabledTitle = '需要至少 2 个标签才能分屏'
 
   return (
-    <div className="workspace-canvas relative flex flex-1 gap-0 overflow-hidden bg-transparent">
+    <div
+      ref={layoutRef}
+      className="workspace-canvas relative flex flex-1 gap-0 overflow-hidden bg-transparent"
+    >
       <div className="workspace-primary-content flex min-w-0 flex-1 flex-col">
         <div className="workspace-layer-header flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/70 backdrop-blur-2xl">
-          <div className="h-11 px-5 flex items-center justify-between flex-shrink-0 drag text-workspace-foreground">
+          <div className="h-[var(--workspace-header-height)] px-5 flex items-center justify-between flex-shrink-0 drag text-workspace-foreground">
             <div className="flex items-center gap-3 no-drag">
               <TerminalIcon size={13} className="text-accent" />
               <span className="font-mono text-xs font-semibold text-workspace-foreground">
@@ -391,7 +425,7 @@ export function TerminalLayout({
                       : ''}
               </span>
             </div>
-            <div className="flex items-center gap-2 no-drag">
+            <div className="flex items-center gap-1.5 no-drag">
               {allTabs.length > 0 && (
                 <div className="flex gap-1">
                   {leafToSplit && (
@@ -400,31 +434,31 @@ export function TerminalLayout({
                         onClick={() => handleSplit(leafToSplit.id, 'horizontal')}
                         disabled={!canSplitFocusedLeaf}
                         className={cn(
-                          'flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent',
+                          'workspace-top-icon-button text-workspace-muted-foreground',
                           !canSplitFocusedLeaf &&
-                            'cursor-not-allowed opacity-45 hover:bg-workspace hover:text-workspace-muted-foreground'
+                            'cursor-not-allowed opacity-45 hover:text-workspace-muted-foreground'
                         )}
                         title={canSplitFocusedLeaf ? '水平分屏' : splitDisabledTitle}
                         aria-label={
                           canSplitFocusedLeaf ? '水平分屏' : `水平分屏：${splitDisabledTitle}`
                         }
                       >
-                        <Columns size={12} />
+                        <Columns />
                       </button>
                       <button
                         onClick={() => handleSplit(leafToSplit.id, 'vertical')}
                         disabled={!canSplitFocusedLeaf}
                         className={cn(
-                          'flex items-center gap-1 rounded-md bg-workspace px-2 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent',
+                          'workspace-top-icon-button text-workspace-muted-foreground',
                           !canSplitFocusedLeaf &&
-                            'cursor-not-allowed opacity-45 hover:bg-workspace hover:text-workspace-muted-foreground'
+                            'cursor-not-allowed opacity-45 hover:text-workspace-muted-foreground'
                         )}
                         title={canSplitFocusedLeaf ? '垂直分屏' : splitDisabledTitle}
                         aria-label={
                           canSplitFocusedLeaf ? '垂直分屏' : `垂直分屏：${splitDisabledTitle}`
                         }
                       >
-                        <Rows size={12} />
+                        <Rows />
                       </button>
                     </>
                   )}
@@ -432,10 +466,11 @@ export function TerminalLayout({
               )}
               <button
                 onClick={() => setShowTerminalList(!showTerminalList)}
-                className="flex items-center gap-1 rounded-md border border-workspace-border bg-workspace px-2.5 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
+                className="workspace-top-icon-button text-workspace-muted-foreground"
                 title="终端列表"
+                aria-label="终端列表"
               >
-                <LayoutGrid size={12} />
+                <LayoutGrid />
               </button>
               <button
                 onClick={() => {
@@ -445,23 +480,21 @@ export function TerminalLayout({
                     setFileBrowserHostAlias(h.alias)
                   }
                 }}
-                className="flex items-center gap-1.5 rounded-md border border-workspace-border bg-workspace px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-accent"
+                className="workspace-top-icon-button text-workspace-muted-foreground"
                 title="文件管理"
+                aria-label="文件管理"
               >
-                <Folder size={12} /> 文件
+                <Folder />
               </button>
               <ConfirmActionButton
                 aria-label="断开全部终端"
                 onConfirm={handleDisconnectAll}
-                className="flex items-center gap-1.5 rounded-md border border-workspace-border bg-workspace px-3 py-1.5 text-xs font-semibold text-workspace-muted-foreground transition hover:bg-danger/10 hover:text-danger"
-                confirmChildren={
-                  <>
-                    <X size={12} /> 断开
-                  </>
-                }
+                className="workspace-top-icon-button workspace-top-button-danger text-workspace-muted-foreground"
+                confirmChildren={<X />}
                 confirmingTitle="断开全部"
+                title="断开全部"
               >
-                <X size={12} /> 断开全部
+                <X />
               </ConfirmActionButton>
             </div>
           </div>
@@ -524,36 +557,81 @@ export function TerminalLayout({
       </div>
 
       {fileBrowserHostId && (
-        <div className="workspace-side-panel side-workspace-layer w-96 flex-shrink-0 overflow-hidden">
-          <FileBrowser
-            hostId={fileBrowserHostId}
-            hostAlias={fileBrowserHostAlias}
-            embedded
-            onClose={() => {
-              setFileBrowserHostId(null)
-              setFileBrowserHostAlias('')
-            }}
-            onFileDrop={(sourceHostId, sourcePath, fileName, destHostId, destPath) => {
-              const transferId = `ft-${Date.now()}-${Math.random().toString(36).slice(2)}`
-              const currentTabs = paneManager.getAllTabs()
-              const sourceAlias =
-                currentTabs.find((t) => t.host.id === sourceHostId)?.host.alias || sourceHostId
-              startTransfer(
-                transferId,
-                fileName,
-                sourceAlias,
-                fileBrowserHostAlias,
-                sourceHostId,
-                sourcePath,
-                destHostId,
-                destPath
+        <>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整文件边栏宽度"
+            aria-valuemin={MIN_FILE_PANEL_WIDTH}
+            aria-valuemax={MAX_FILE_PANEL_WIDTH}
+            aria-valuenow={Math.round(filePanelWidth)}
+            tabIndex={0}
+            data-resizing={isResizingFilePanel ? 'true' : 'false'}
+            className="workspace-resize-handle no-drag"
+            onMouseDown={(event) => {
+              event.preventDefault()
+              const filePanel = event.currentTarget.nextElementSibling as HTMLElement | null
+              setFilePanelResizeRightEdge(
+                filePanel?.getBoundingClientRect().right ?? window.innerWidth
               )
             }}
+            onDoubleClick={(event) => {
+              event.preventDefault()
+              setFilePanelWidth(DEFAULT_FILE_PANEL_WIDTH)
+            }}
           />
-        </div>
+          <div
+            className="workspace-side-panel side-workspace-layer flex-shrink-0 overflow-hidden"
+            style={{ width: filePanelWidth }}
+          >
+            <FileBrowser
+              hostId={fileBrowserHostId}
+              hostAlias={fileBrowserHostAlias}
+              embedded
+              onClose={() => {
+                setFileBrowserHostId(null)
+                setFileBrowserHostAlias('')
+              }}
+              onFileDrop={(sourceHostId, sourcePath, fileName, destHostId, destPath) => {
+                const transferId = `ft-${Date.now()}-${Math.random().toString(36).slice(2)}`
+                const currentTabs = paneManager.getAllTabs()
+                const sourceAlias =
+                  currentTabs.find((t) => t.host.id === sourceHostId)?.host.alias || sourceHostId
+                startTransfer(
+                  transferId,
+                  fileName,
+                  sourceAlias,
+                  fileBrowserHostAlias,
+                  sourceHostId,
+                  sourcePath,
+                  destHostId,
+                  destPath
+                )
+              }}
+            />
+          </div>
+        </>
       )}
 
       <FileTransferToast transfers={transfers} onRemove={removeTransfer} />
+      {isResizingFilePanel && (
+        <div
+          className="fixed inset-0 z-[100] cursor-col-resize select-none pointer-events-auto bg-transparent"
+          onMouseDown={(event) => event.preventDefault()}
+          onMouseMove={(event) => {
+            const rightEdge = filePanelResizeRightEdge ?? window.innerWidth
+            const layoutLeft = layoutRef.current?.getBoundingClientRect().left ?? 0
+            const maxWidth = Math.min(
+              MAX_FILE_PANEL_WIDTH,
+              Math.max(MIN_FILE_PANEL_WIDTH, rightEdge - layoutLeft - MIN_TERMINAL_WORKSPACE_WIDTH)
+            )
+            setFilePanelWidth(
+              clampPanelWidth(rightEdge - event.clientX, MIN_FILE_PANEL_WIDTH, maxWidth)
+            )
+          }}
+          onMouseUp={() => setFilePanelResizeRightEdge(null)}
+        />
+      )}
     </div>
   )
 }

@@ -24,7 +24,9 @@ export function PageHeader({
     <header
       className={cn(
         'flex shrink-0 items-center justify-between gap-4 border-b border-black/[0.06] bg-white/88',
-        dense ? 'px-5 py-2.5' : 'px-6 py-3.5',
+        dense
+          ? 'h-[var(--workspace-header-height)] px-5 py-0'
+          : 'min-h-[var(--workspace-header-height)] px-6 py-3.5',
         drag && 'drag',
         className
       )}

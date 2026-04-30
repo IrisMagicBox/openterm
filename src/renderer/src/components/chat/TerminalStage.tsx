@@ -724,9 +724,13 @@ export function TerminalStage({
     <>
       <div
         className={cn(
-          'terminal-resize-handle w-3 cursor-col-resize bg-transparent transition-all hover:bg-accent/[0.12] active:bg-accent/[0.2]',
+          'workspace-resize-handle terminal-resize-handle transition-all active:bg-accent/[0.2]',
           isResizing && 'bg-accent/[0.2]'
         )}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整终端边栏宽度"
+        data-resizing={isResizing ? 'true' : 'false'}
         onMouseDown={(event) => {
           event.preventDefault()
           const terminalPanel = event.currentTarget.nextElementSibling as HTMLElement | null
@@ -739,7 +743,7 @@ export function TerminalStage({
       >
         <div
           className={cn(
-            'workspace-layer-header flex min-h-12 items-center justify-between gap-2 border-b border-black/[0.05] bg-white/70 px-3 py-2 backdrop-blur-2xl',
+            'workspace-layer-header flex h-[var(--workspace-header-height)] items-center justify-between gap-2 border-b border-black/[0.05] bg-white/70 px-3 py-0 backdrop-blur-2xl',
             highlightedSessionId && 'shadow-[inset_0_-1px_0_rgba(37,99,235,0.18)]'
           )}
         >
@@ -793,28 +797,31 @@ export function TerminalStage({
                 aria-pressed={followAgent}
                 onClick={() => onSetFollowAgent(!followAgent)}
                 className={cn(
-                  'blue-ring flex h-8 items-center gap-1 rounded-md px-2 text-[11px] font-semibold transition',
+                  'blue-ring workspace-top-icon-button',
                   followAgent
-                    ? 'bg-accent-soft text-accent'
-                    : 'text-muted-foreground hover:bg-black/[0.04] hover:text-foreground'
+                    ? 'workspace-top-button-primary'
+                    : 'text-muted-foreground hover:text-foreground'
                 )}
               >
-                <Eye size={12} />
+                <Eye />
               </button>
             </Tooltip>
-            <Tooltip content="命令入口 Command+K" side="bottom">
+            <Tooltip content="命令入口" side="bottom">
               <button
                 aria-label="打开命令入口"
                 onClick={() => onOpenCommandPalette(focusedSession?.id)}
-                className="blue-ring flex h-8 items-center gap-1 rounded-md bg-accent px-2.5 text-[11px] font-bold text-white shadow-sm transition hover:bg-accent-strong"
+                className="blue-ring workspace-top-icon-button workspace-top-button-primary"
               >
-                <Command size={12} />
-                <span>⌘K</span>
+                <Command />
               </button>
             </Tooltip>
             <Tooltip content="新建终端" side="bottom">
-              <IconButton aria-label="新建终端" onClick={createTerminal} className="h-8 w-8">
-                <Plus size={14} />
+              <IconButton
+                aria-label="新建终端"
+                onClick={createTerminal}
+                className="workspace-top-icon-button text-muted-foreground"
+              >
+                <Plus />
               </IconButton>
             </Tooltip>
           </div>

@@ -768,9 +768,6 @@ export function TerminalView({
           className="pointer-events-none absolute z-20 flex max-w-[min(420px,calc(100%-24px))] items-center gap-2 rounded-lg border border-black/[0.08] bg-white/95 px-2.5 py-1.5 text-xs shadow-[0_12px_34px_rgba(15,23,42,0.12)] backdrop-blur-xl"
           style={{ left: completionAnchor.left, top: completionAnchor.top }}
         >
-          <kbd className="rounded border border-black/[0.08] bg-black/[0.035] px-1.5 py-0.5 font-mono text-[10px] font-bold text-muted-foreground">
-            Shift+Tab
-          </kbd>
           {completion ? (
             <span className="min-w-0 truncate font-mono">
               {completion.mode === 'replace' ? (

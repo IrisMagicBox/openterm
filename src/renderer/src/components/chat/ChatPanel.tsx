@@ -24,6 +24,7 @@ import { Badge, Dialog, DialogContent, IconButton, PageHeader, Tooltip } from '.
 import { LOCAL_HOST } from '../../constants'
 
 const CHAT_ZOOM_STORAGE_KEY = 'openterm.chat.zoom'
+const TOPIC_WORKSPACE_WIDTH_STORAGE_KEY = 'openterm.topicWorkspace.width'
 const DEFAULT_CHAT_ZOOM = 1
 const CHAT_BASE_FONT_SIZE = 14
 const CHAT_ZOOM_STEP = 0.06
@@ -31,10 +32,17 @@ const MIN_CHAT_ZOOM = 0.25
 const MAX_CHAT_ZOOM = 1.18
 const MIN_TERMINAL_STAGE_WIDTH = 360
 const MIN_CHAT_COLUMN_WIDTH = 420
+const DEFAULT_TOPIC_WORKSPACE_WIDTH = 288
+const MIN_TOPIC_WORKSPACE_WIDTH = 248
+const MAX_TOPIC_WORKSPACE_WIDTH = 520
 const TOPIC_WORKSPACE_EXIT_MS = 320
 
 function clampChatZoom(value: number): number {
   return Math.max(MIN_CHAT_ZOOM, Math.min(MAX_CHAT_ZOOM, value))
+}
+
+function clampPanelWidth(width: number, minWidth: number, maxWidth: number): number {
+  return Math.max(minWidth, Math.min(maxWidth, width))
 }
 
 function isZoomInKey(event: KeyboardEvent): boolean {
@@ -117,8 +125,15 @@ export function ChatPanel({
   const [workspaceOpen, setWorkspaceOpen] = useState(
     () => window.localStorage.getItem('openterm.topicWorkspace.open') !== 'false'
   )
+  const [workspaceWidth, setWorkspaceWidth] = useState(() => {
+    const stored = Number(window.localStorage.getItem(TOPIC_WORKSPACE_WIDTH_STORAGE_KEY))
+    return Number.isFinite(stored) && stored > 0
+      ? clampPanelWidth(stored, MIN_TOPIC_WORKSPACE_WIDTH, MAX_TOPIC_WORKSPACE_WIDTH)
+      : DEFAULT_TOPIC_WORKSPACE_WIDTH
+  })
   const [workspacePresent, setWorkspacePresent] = useState(workspaceOpen)
   const [workspaceMotionOpen, setWorkspaceMotionOpen] = useState(workspaceOpen)
+  const [workspaceResizeRightEdge, setWorkspaceResizeRightEdge] = useState<number | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const workspaceCloseTimerRef = useRef<number | null>(null)
@@ -236,6 +251,12 @@ export function ChatPanel({
   useEffect(() => {
     window.localStorage.setItem(CHAT_ZOOM_STORAGE_KEY, chatZoom.toFixed(2))
   }, [chatZoom])
+  useEffect(() => {
+    window.localStorage.setItem(
+      TOPIC_WORKSPACE_WIDTH_STORAGE_KEY,
+      String(Math.round(workspaceWidth))
+    )
+  }, [workspaceWidth])
   const openTerminalCommandPalette = useCallback(
     (sessionId?: string): void => {
       const targetSessionId =
@@ -345,6 +366,15 @@ export function ChatPanel({
     '--chat-line-height': `${Math.round(CHAT_BASE_FONT_SIZE * 1.8)}px`
   } as React.CSSProperties
   const isResizing = resizeRightEdge !== null
+  const isResizingWorkspace = workspaceResizeRightEdge !== null
+
+  useEffect(() => {
+    if (!isResizing && !isResizingWorkspace) return undefined
+    document.body.dataset.panelResizing = 'true'
+    return () => {
+      delete document.body.dataset.panelResizing
+    }
+  }, [isResizing, isResizingWorkspace])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
     const value = e.target.value
@@ -466,23 +496,13 @@ export function ChatPanel({
                   ))}
                 </div>
               )}
-              <Tooltip
-                side="bottom"
-                content={
-                  <span className="flex items-center gap-2">
-                    切换作战中心
-                    <kbd className="rounded bg-black/[0.06] px-1.5 py-0.5 font-mono text-[10px]">
-                      ⌥⌘B
-                    </kbd>
-                  </span>
-                }
-              >
+              <Tooltip side="bottom" content="切换作战中心">
                 <IconButton
                   aria-label={workspaceOpen ? '隐藏作战中心' : '显示作战中心'}
                   onClick={() => setWorkspaceOpen((open) => !open)}
-                  className="h-8 w-8 rounded-lg border border-black/[0.06] bg-white text-muted-foreground shadow-sm hover:bg-black/[0.02] hover:text-foreground"
+                  className="workspace-top-icon-button text-muted-foreground"
                 >
-                  {workspaceOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+                  {workspaceOpen ? <PanelRightClose /> : <PanelRightOpen />}
                 </IconButton>
               </Tooltip>
             </>
@@ -609,11 +629,36 @@ export function ChatPanel({
           }
         />
       )}
+      {workspacePresent && workspaceMotionOpen && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整作战中心宽度"
+          aria-valuemin={MIN_TOPIC_WORKSPACE_WIDTH}
+          aria-valuemax={MAX_TOPIC_WORKSPACE_WIDTH}
+          aria-valuenow={Math.round(workspaceWidth)}
+          tabIndex={0}
+          data-resizing={isResizingWorkspace ? 'true' : 'false'}
+          className="workspace-resize-handle no-drag hidden lg:block"
+          onMouseDown={(event) => {
+            event.preventDefault()
+            const workspacePanel = event.currentTarget.nextElementSibling as HTMLElement | null
+            setWorkspaceResizeRightEdge(
+              workspacePanel?.getBoundingClientRect().right ?? window.innerWidth
+            )
+          }}
+          onDoubleClick={(event) => {
+            event.preventDefault()
+            setWorkspaceWidth(DEFAULT_TOPIC_WORKSPACE_WIDTH)
+          }}
+        />
+      )}
       {workspacePresent && (
         <div
           className="topic-workspace-presence workspace-side-panel hidden h-full shrink-0 overflow-hidden lg:block"
           data-state={workspaceMotionOpen ? 'open' : 'closed'}
           aria-hidden={!workspaceMotionOpen}
+          style={{ width: workspaceWidth }}
         >
           <TopicHub
             topicId={topic.id}
@@ -668,6 +713,29 @@ export function ChatPanel({
             setTerminalWidth(nextWidth)
           }}
           onMouseUp={() => setResizeRightEdge(null)}
+        />
+      )}
+      {isResizingWorkspace && (
+        <div
+          className="fixed inset-0 z-[100] cursor-col-resize select-none pointer-events-auto bg-transparent"
+          onMouseDown={(e) => e.preventDefault()}
+          onMouseMove={(e) => {
+            const rightEdge = workspaceResizeRightEdge ?? window.innerWidth
+            const panelLeft = panelRef.current?.getBoundingClientRect().left ?? 0
+            const reservedWidth =
+              MIN_CHAT_COLUMN_WIDTH + (visibleSessions.length > 0 ? terminalWidth : 0)
+            const maxWidth = Math.min(
+              MAX_TOPIC_WORKSPACE_WIDTH,
+              Math.max(MIN_TOPIC_WORKSPACE_WIDTH, rightEdge - panelLeft - reservedWidth)
+            )
+            const nextWidth = clampPanelWidth(
+              rightEdge - e.clientX,
+              MIN_TOPIC_WORKSPACE_WIDTH,
+              maxWidth
+            )
+            setWorkspaceWidth(nextWidth)
+          }}
+          onMouseUp={() => setWorkspaceResizeRightEdge(null)}
         />
       )}
     </div>

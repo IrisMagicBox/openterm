@@ -198,8 +198,8 @@ export function TopicHub({
   }
 
   return (
-    <div className="hidden h-full w-72 shrink-0 flex-col bg-transparent lg:flex">
-      <div className="border-b border-black/[0.05] bg-white/70 px-3 py-2">
+    <div className="flex h-full w-full min-w-0 flex-col bg-transparent">
+      <div className="workspace-layer-header flex items-center border-b border-black/[0.05] bg-white/70 px-3">
         <div className="flex items-center gap-2">
           <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
             <Server size={13} className="text-accent" />
@@ -211,8 +211,12 @@ export function TopicHub({
             <Metric icon={History} label="Run" value={runs.length} />
             <Metric icon={Globe} label="转发" value={tunnels.length} />
           </div>
-          <IconButton aria-label="管理话题主机" onClick={onAddHost} className="h-7 w-7">
-            <Plus size={14} />
+          <IconButton
+            aria-label="管理话题主机"
+            onClick={onAddHost}
+            className="workspace-top-icon-button text-muted-foreground"
+          >
+            <Plus />
           </IconButton>
         </div>
       </div>
