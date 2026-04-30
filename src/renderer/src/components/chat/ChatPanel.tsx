@@ -611,7 +611,7 @@ export function ChatPanel({
       )}
       {workspacePresent && (
         <div
-          className="topic-workspace-presence workspace-layer hidden h-full shrink-0 overflow-hidden lg:block"
+          className="topic-workspace-presence workspace-side-panel hidden h-full shrink-0 overflow-hidden lg:block"
           data-state={workspaceMotionOpen ? 'open' : 'closed'}
           aria-hidden={!workspaceMotionOpen}
         >

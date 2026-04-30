@@ -106,6 +106,7 @@
   .app-sidebar-content {
     --sidebar-brand-size: clamp(460px, calc(var(--sidebar-width, 288px) * 2.22), 760px);
     width: var(--sidebar-width, 288px);
+    padding-right: var(--workspace-intrusion, 28px);
     border-color: transparent;
     background: transparent;
     box-shadow: none;
@@ -207,7 +208,7 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    left: calc(var(--sidebar-width, 288px) - 8px);
+    left: calc(var(--sidebar-width, 288px) - var(--workspace-intrusion, 28px) - 8px);
     z-index: 80;
     width: 16px;
     cursor: col-resize;
@@ -248,6 +249,7 @@
 
   body[data-sidebar-resizing='true'] .app-workspace-frame,
   body[data-sidebar-resizing='true'] .workspace-layer,
+  body[data-sidebar-resizing='true'] .workspace-side-panel,
   body[data-sidebar-resizing='true'] .glass-sidebar,
   body[data-sidebar-resizing='true'] .glass-panel,
   body[data-sidebar-resizing='true'] .glass-control,
@@ -268,6 +270,7 @@
 
   body[data-sidebar-resizing='true'] .app-workspace-frame,
   body[data-sidebar-resizing='true'] .workspace-layer,
+  body[data-sidebar-resizing='true'] .workspace-side-panel,
   body[data-sidebar-resizing='true'] .topic-workspace-presence {
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.88) !important;
     transform: none !important;
@@ -334,6 +337,8 @@
   .app-workspace-frame {
     position: relative;
     min-width: 0;
+    margin-left: calc(var(--workspace-intrusion, 28px) * -1);
+    padding-left: var(--workspace-intrusion, 28px);
     overflow: hidden;
     border: 1px solid rgb(15 23 42 / 0.055);
     border-left-color: rgb(15 23 42 / 0.045);
@@ -361,6 +366,16 @@
       inset 0 1px 0 rgb(255 255 255 / 0.9),
       0 1px 2px rgb(15 23 42 / 0.04),
       0 12px 34px rgb(15 23 42 / 0.05);
+  }
+
+  .workspace-side-panel {
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+    border-left: 1px solid rgb(15 23 42 / 0.06);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: inset 1px 0 0 rgb(255 255 255 / 0.72);
   }
 
   .settings-sidebar-surface {
@@ -392,9 +407,8 @@
   }
 
   .terminal-stage-layer {
-    z-index: 2;
-    margin-left: -6px;
-    transition-property: width, min-width, box-shadow, transform;
+    margin-left: 0;
+    transition-property: width, min-width;
     transition-duration: var(--motion-duration-slow);
     transition-timing-function: var(--motion-ease-emphasized);
   }
@@ -406,8 +420,7 @@
   }
 
   .side-workspace-layer {
-    z-index: 2;
-    margin-left: -6px;
+    margin-left: 0;
   }
 
   .material-row {
@@ -489,20 +502,12 @@ textarea,
 }
 
 .topic-workspace-presence {
-  z-index: 5;
   width: 18rem;
   max-width: 18rem;
-  margin-left: -24px;
+  margin-left: 0;
   opacity: 1;
-  border-radius: 28px 28px 0 0;
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.92),
-    -1px 0 0 rgb(255 255 255 / 0.72),
-    -10px 0 28px rgb(15 23 42 / 0.045),
-    0 1px 2px rgb(15 23 42 / 0.04),
-    0 12px 34px rgb(15 23 42 / 0.05);
   transform: translateX(0);
-  transition-property: width, max-width, opacity, transform;
+  transition-property: width, max-width, opacity;
   transition-duration: var(--motion-duration-slow);
   transition-timing-function: var(--motion-ease-emphasized);
 }
@@ -512,7 +517,7 @@ textarea,
   max-width: 0;
   opacity: 0;
   pointer-events: none;
-  transform: translateX(28px);
+  transform: translateX(0);
 }
 
 /* Custom Scrollbar */

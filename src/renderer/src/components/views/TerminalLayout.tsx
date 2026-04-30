@@ -524,7 +524,7 @@ export function TerminalLayout({
       </div>
 
       {fileBrowserHostId && (
-        <div className="workspace-layer side-workspace-layer w-96 flex-shrink-0 overflow-hidden">
+        <div className="workspace-side-panel side-workspace-layer w-96 flex-shrink-0 overflow-hidden">
           <FileBrowser
             hostId={fileBrowserHostId}
             hostAlias={fileBrowserHostAlias}

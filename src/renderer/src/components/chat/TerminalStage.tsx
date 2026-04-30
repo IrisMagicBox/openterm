@@ -735,7 +735,7 @@ export function TerminalStage({
       />
       <div
         style={{ width: terminalWidth, minWidth: 360 }}
-        className="workspace-layer terminal-stage-layer flex shrink-0 flex-col"
+        className="workspace-side-panel terminal-stage-layer flex shrink-0 flex-col"
       >
         <div
           className={cn(

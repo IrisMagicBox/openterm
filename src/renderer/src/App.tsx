@@ -432,7 +432,12 @@ export default function App(): JSX.Element {
       <div
         ref={appShellRef}
         className="app-shell relative flex h-screen w-screen overflow-hidden text-foreground select-none"
-        style={{ '--sidebar-width': `${Math.round(sidebarWidth)}px` } as CSSProperties}
+        style={
+          {
+            '--sidebar-width': `${Math.round(sidebarWidth)}px`,
+            '--workspace-intrusion': compactSidebar ? '0px' : '28px'
+          } as CSSProperties
+        }
       >
         <div aria-hidden className="app-sidebar-backdrop" />
 
