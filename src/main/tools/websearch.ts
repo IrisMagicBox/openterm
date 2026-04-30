@@ -5,59 +5,193 @@ import { getErrorMessage } from '../../shared/errors'
 
 const parameters = z.object({
   query: z.string().min(1).describe('Web search query'),
-  numResults: z.number().int().positive().default(8).describe('Number of search results to return'),
-  livecrawl: z
-    .enum(['fallback', 'preferred'])
-    .default('fallback')
-    .describe('Live crawl mode for Exa search results'),
-  type: z.enum(['auto', 'fast', 'deep']).default('auto').describe('Search type'),
-  contextMaxCharacters: z
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .describe('Maximum characters for the LLM-optimized context string')
+  numResults: z.number().int().positive().default(8).describe('Number of search results to return')
 })
+
+const STRICT_FRESHNESS_WINDOW_DAYS = 7
+const RELATIVE_DATE_QUERY_PATTERN = /(今天|今日|现在|当前|最新|最近|此刻|today|now|latest|recent|current)/i
+const CURRENT_NEWS_QUERY_PATTERN = /(新闻|要闻|快讯|热点|时事|资讯|news|headlines|current events)/i
+const DAY_MS = 24 * 60 * 60 * 1000
+
+interface SearchTimeContext {
+  isoDate: string
+  localizedDate: string
+  localDateTime: string
+  timeZone: string
+}
+
+interface FreshnessOutput {
+  output: string
+  stale: boolean
+  latestResultDate?: string
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+function formatIsoDate(year: number, month: number, day: number): string {
+  return `${year}-${pad(month)}-${pad(day)}`
+}
+
+function toDayNumber(isoDate: string): number | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate)
+  if (!match) return undefined
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return undefined
+  }
+
+  return Math.floor(date.getTime() / DAY_MS)
+}
+
+export function getSearchTimeContext(now = new Date()): SearchTimeContext {
+  const year = now.getFullYear()
+  const month = now.getMonth() + 1
+  const day = now.getDate()
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local'
+  const localDateTime = new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZoneName: 'short'
+  }).format(now)
+
+  return {
+    isoDate: formatIsoDate(year, month, day),
+    localizedDate: `${year}年${month}月${day}日`,
+    localDateTime,
+    timeZone
+  }
+}
+
+export function queryNeedsStrictFreshness(query: string): boolean {
+  return RELATIVE_DATE_QUERY_PATTERN.test(query) && CURRENT_NEWS_QUERY_PATTERN.test(query)
+}
+
+export function buildFreshnessSearchQuery(query: string, context: SearchTimeContext): string {
+  const datedQuery = queryNeedsStrictFreshness(query)
+    ? `${query} ${context.isoDate} ${context.localizedDate}`
+    : query
+
+  return [
+    datedQuery,
+    '',
+    `Current date context: ${context.isoDate} (${context.localizedDate}); local time: ${context.localDateTime}; timezone: ${context.timeZone}.`,
+    `Interpret relative words such as latest, recent, today, now, 当前, 最新, 最近, 今天, 现在 against this date. For current-news queries, search for reports published on or very near ${context.isoDate} / ${context.localizedDate}. Do not return historical result pages unless the query explicitly asks for a historical period.`
+  ].join('\n')
+}
+
+function collectIsoDate(dates: Set<string>, year: number, month: number, day: number): void {
+  const isoDate = formatIsoDate(year, month, day)
+  if (toDayNumber(isoDate) !== undefined) {
+    dates.add(isoDate)
+  }
+}
+
+export function extractLatestResultDate(text: string): string | undefined {
+  const dates = new Set<string>()
+
+  for (const match of text.matchAll(/\b(20\d{2})-(0[1-9]|1[0-2])-([0-2]\d|3[01])(?:T|\b)/g)) {
+    collectIsoDate(dates, Number(match[1]), Number(match[2]), Number(match[3]))
+  }
+
+  for (const match of text.matchAll(/\b(20\d{2})年\s*(1[0-2]|0?[1-9])月\s*([0-2]?\d|3[01])日/g)) {
+    collectIsoDate(dates, Number(match[1]), Number(match[2]), Number(match[3]))
+  }
+
+  return Array.from(dates).sort().at(-1)
+}
+
+export function buildSearchOutput(
+  query: string,
+  rawOutput: string | undefined,
+  context: SearchTimeContext
+): FreshnessOutput {
+  const reference = `Search reference time: ${context.localDateTime} (${context.timeZone}). Treat this as authoritative for relative terms such as "today", "latest", "now", "当前", "最新", "现在".`
+  const fallback = rawOutput ?? 'No search results found. Please try a different query.'
+
+  if (rawOutput && queryNeedsStrictFreshness(query)) {
+    const latestResultDate = extractLatestResultDate(rawOutput)
+    const currentDay = toDayNumber(context.isoDate)
+    const latestDay = latestResultDate ? toDayNumber(latestResultDate) : undefined
+
+    if (
+      currentDay !== undefined &&
+      latestDay !== undefined &&
+      currentDay - latestDay > STRICT_FRESHNESS_WINDOW_DAYS
+    ) {
+      return {
+        stale: true,
+        latestResultDate,
+        output: [
+          reference,
+          `Freshness guard: This is a current-news query for ${context.isoDate} (${context.localizedDate}), but the newest date found in the returned search results is ${latestResultDate}, more than ${STRICT_FRESHNESS_WINDOW_DAYS} days older. The stale matches were omitted so they are not reported as today's news. Tell the user no sufficiently current results were found, or run a more specific search for ${context.isoDate} / ${context.localizedDate}.`
+        ].join('\n\n')
+      }
+    }
+  }
+
+  return {
+    stale: false,
+    latestResultDate: rawOutput ? extractLatestResultDate(rawOutput) : undefined,
+    output: [reference, fallback].join('\n\n')
+  }
+}
 
 export default define('websearch', {
   description:
-    'Search the web using Exa AI hosted MCP. Use this for current information, third-party docs, release notes, recent events, or facts beyond the model cutoff. No API key is required.',
+    'Search the web using Exa AI hosted MCP. Use this for current information, third-party docs, release notes, recent events, or facts beyond the model cutoff. Relative-date searches are anchored to the current local date. No API key is required.',
   parameters,
   async execute(args: z.infer<typeof parameters>, ctx: Tool.Context): Promise<Tool.ExecuteResult> {
+    const timeContext = getSearchTimeContext()
+    const effectiveQuery = buildFreshnessSearchQuery(args.query, timeContext)
+
     await ctx.ask({
       permission: 'websearch',
       pattern: args.query,
       metadata: {
         query: args.query,
         numResults: args.numResults,
-        livecrawl: args.livecrawl,
-        type: args.type,
-        contextMaxCharacters: args.contextMaxCharacters
+        searchDate: timeContext.isoDate,
+        searchTimeZone: timeContext.timeZone
       }
     })
 
     try {
       const output = await callMcpExaSearch(
         {
-          query: args.query,
-          numResults: args.numResults,
-          livecrawl: args.livecrawl,
-          type: args.type,
-          contextMaxCharacters: args.contextMaxCharacters
+          query: effectiveQuery,
+          numResults: args.numResults
         },
         { signal: ctx.abort }
       )
+      const searchOutput = buildSearchOutput(args.query, output, timeContext)
 
       return {
         title: `Web search: ${args.query}`,
-        output: output ?? 'No search results found. Please try a different query.',
+        output: searchOutput.output,
         metadata: {
           provider: 'exa',
           query: args.query,
+          effectiveQuery,
+          searchDate: timeContext.isoDate,
+          searchTimeZone: timeContext.timeZone,
+          latestResultDate: searchOutput.latestResultDate,
+          staleCurrentNewsResults: searchOutput.stale,
           numResults: args.numResults,
-          livecrawl: args.livecrawl,
-          type: args.type,
-          contextMaxCharacters: args.contextMaxCharacters
         }
       }
     } catch (error) {
@@ -67,6 +201,9 @@ export default define('websearch', {
         metadata: {
           provider: 'exa',
           query: args.query,
+          effectiveQuery,
+          searchDate: timeContext.isoDate,
+          searchTimeZone: timeContext.timeZone,
           error: true
         }
       }

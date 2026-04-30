@@ -1,15 +1,9 @@
 const EXA_MCP_BASE_URL = 'https://mcp.exa.ai/mcp'
 const DEFAULT_TIMEOUT_MS = 25_000
 
-export type ExaSearchType = 'auto' | 'fast' | 'deep'
-export type ExaLivecrawlMode = 'fallback' | 'preferred'
-
 export interface ExaSearchArgs {
   query: string
-  type: ExaSearchType
   numResults: number
-  livecrawl: ExaLivecrawlMode
-  contextMaxCharacters?: number
 }
 
 export interface McpExaCallOptions {

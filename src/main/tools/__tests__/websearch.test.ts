@@ -4,7 +4,12 @@ vi.mock('electron', () => ({
   app: { getPath: (name: string) => `/tmp/test-openterm/${name}` }
 }))
 
-import websearchTool from '../websearch'
+import websearchTool, {
+  buildFreshnessSearchQuery,
+  buildSearchOutput,
+  extractLatestResultDate,
+  queryNeedsStrictFreshness
+} from '../websearch'
 import type { Tool } from '../tool-factory'
 
 function makeCtx(): Tool.Context {
@@ -30,6 +35,49 @@ describe('websearch tool', () => {
     vi.unstubAllGlobals()
   })
 
+  it('adds explicit freshness context to relative-date searches', () => {
+    const query = buildFreshnessSearchQuery('搜索现在的新闻', {
+      isoDate: '2026-05-01',
+      localizedDate: '2026年5月1日',
+      localDateTime: '2026/05/01 01:16:00 GMT+8',
+      timeZone: 'Asia/Shanghai'
+    })
+
+    expect(query).toContain('搜索现在的新闻 2026-05-01 2026年5月1日')
+    expect(query).toContain('Current date context: 2026-05-01 (2026年5月1日)')
+    expect(query).toContain('local time: 2026/05/01 01:16:00 GMT+8')
+    expect(query).toContain('timezone: Asia/Shanghai')
+    expect(query).toContain('最新')
+    expect(query).toContain('published on or very near 2026-05-01 / 2026年5月1日')
+  })
+
+  it('omits stale current-news results instead of presenting them as today', () => {
+    const result = buildSearchOutput(
+      '今天的新闻',
+      [
+        'Title: 正当时：2025年6月25日-新华网',
+        'URL: http://www.news.cn/government/20250625/example.html',
+        'Published: 2025-06-25T00:00:00.000Z'
+      ].join('\n'),
+      {
+        isoDate: '2026-05-01',
+        localizedDate: '2026年5月1日',
+        localDateTime: '2026/05/01 01:20:00 GMT+8',
+        timeZone: 'Asia/Shanghai'
+      }
+    )
+
+    expect(queryNeedsStrictFreshness('今天的新闻')).toBe(true)
+    expect(extractLatestResultDate('来源：央视新闻 | 2026年04月29日 10:16:33')).toBe(
+      '2026-04-29'
+    )
+    expect(result.stale).toBe(true)
+    expect(result.latestResultDate).toBe('2025-06-25')
+    expect(result.output).toContain('Freshness guard:')
+    expect(result.output).toContain('stale matches were omitted')
+    expect(result.output).not.toContain('正当时')
+  })
+
   it('uses default Exa parameters and asks permission for the query', async () => {
     const fetchMock = vi.fn(async () => {
       return new Response(
@@ -52,24 +100,35 @@ describe('websearch tool', () => {
       metadata: {
         query: 'latest openterm release',
         numResults: 8,
-        livecrawl: 'fallback',
-        type: 'auto',
-        contextMaxCharacters: undefined
+        searchDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        searchTimeZone: expect.any(String)
       }
     })
-    expect(result.output).toBe('default result')
+    expect(result.output).toContain('Search reference time:')
+    expect(result.output).toContain('Treat this as authoritative')
+    expect(result.output).toContain('default result')
+    expect(result.metadata).toMatchObject({
+      provider: 'exa',
+      query: 'latest openterm release',
+      effectiveQuery: expect.stringContaining('Current date context:'),
+      searchDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      searchTimeZone: expect.any(String),
+      staleCurrentNewsResults: false,
+      numResults: 8
+    })
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(JSON.parse(String(init.body))).toMatchObject({
+    const body = JSON.parse(String(init.body))
+    expect(body).toMatchObject({
       params: {
         name: 'web_search_exa',
         arguments: {
-          query: 'latest openterm release',
-          numResults: 8,
-          livecrawl: 'fallback',
-          type: 'auto'
+          numResults: 8
         }
       }
     })
+    expect(body.params.arguments.query).toContain('latest openterm release')
+    expect(body.params.arguments.query).toContain('Current date context:')
+    expect(body.params.arguments.query).toContain('Interpret relative words')
   })
 
   it('returns a readable error when the hosted MCP request fails', async () => {

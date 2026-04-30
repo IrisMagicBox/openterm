@@ -8,9 +8,7 @@ import {
 
 const searchArgs: ExaSearchArgs = {
   query: 'openterm web search',
-  type: 'auto',
-  numResults: 8,
-  livecrawl: 'fallback'
+  numResults: 8
 }
 
 describe('mcp-exa', () => {
