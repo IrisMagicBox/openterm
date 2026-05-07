@@ -23,10 +23,8 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        'app-page-header flex shrink-0 items-center justify-between gap-4 border-b border-black/[0.06] bg-white/88',
-        dense
-          ? 'h-[var(--workspace-header-height)] px-4 py-0'
-          : 'min-h-[var(--workspace-header-height)] px-6 py-3.5',
+        'app-page-header flex h-[var(--workspace-header-height)] shrink-0 items-center justify-between gap-4 overflow-hidden border-b border-black/[0.06] bg-white/88 py-0',
+        dense ? 'px-4' : 'px-5',
         drag && 'drag',
         className
       )}
@@ -35,11 +33,11 @@ export function PageHeader({
       {drag && <span aria-hidden className="sidebar-toggle-drag-exclusion" />}
       <div className="flex min-w-0 items-center gap-3 no-drag">
         {leading}
-        <div className={cn('min-w-0', dense && 'flex items-center gap-2 overflow-hidden')}>
+        <div className="flex min-w-0 items-center gap-2 overflow-hidden">
           <h2
             className={cn(
-              'truncate font-semibold text-foreground',
-              dense ? 'max-w-[38rem] text-sm leading-none' : 'text-lg'
+              'shrink-0 truncate font-semibold leading-none text-foreground',
+              dense ? 'max-w-[38rem] text-sm' : 'text-base'
             )}
           >
             {title}
@@ -47,8 +45,8 @@ export function PageHeader({
           {description && (
             <div
               className={cn(
-                'flex min-w-0 items-center gap-1.5 text-muted-foreground',
-                dense ? 'shrink-0 text-xs leading-none' : 'mt-0.5 text-sm'
+                'flex min-w-0 items-center gap-1.5 leading-none text-muted-foreground',
+                dense ? 'shrink-0 text-xs' : 'text-sm'
               )}
             >
               {description}

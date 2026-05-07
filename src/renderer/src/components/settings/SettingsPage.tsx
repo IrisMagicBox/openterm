@@ -21,16 +21,7 @@ import {
   DEFAULT_TERMINAL_COMPLETION_MODE,
   normalizeTerminalCompletionMode
 } from '../../lib/terminal-command-assist'
-import {
-  Badge,
-  Button,
-  FormField,
-  IconButton,
-  Input,
-  PageHeader,
-  Surface,
-  Switch
-} from '../ui'
+import { Badge, Button, FormField, IconButton, Input, PageHeader, Surface, Switch } from '../ui'
 
 interface SettingsPageProps {
   onBack?: () => void

@@ -10,6 +10,7 @@ import {
   XCircle
 } from 'lucide-react'
 import type { AgentPart } from '../../../shared/types'
+import { stripInternalToolCallMarkup } from '../../../shared/internal-tool-call-markup'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { AgentTaskList } from './AgentTaskList'
 import { agentPartSessionId } from '../lib/terminal-stage'
@@ -96,10 +97,12 @@ export function AgentLiveStream({
 }: AgentLiveStreamProps): React.ReactElement | null {
   const [expanded, setExpanded] = useState(true)
   const visibleParts = useMemo(() => sortParts(parts).filter(shouldShowAgentLivePart), [parts])
-  const textContent = visibleParts
-    .filter((part) => part.type === 'text' && part.role === 'assistant' && part.output)
-    .map((part) => part.output)
-    .join('\n\n')
+  const textContent = stripInternalToolCallMarkup(
+    visibleParts
+      .filter((part) => part.type === 'text' && part.role === 'assistant' && part.output)
+      .map((part) => part.output)
+      .join('\n\n')
+  )
   const activityParts = visibleParts.filter((part) => part.type !== 'text')
   const activityLines = agentActivityLines(activityParts)
   const summary = agentActivitySummary(activityParts)

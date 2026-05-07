@@ -7,6 +7,7 @@ import {
   Loader2
 } from 'lucide-react'
 import { Message, Host } from '../../../../shared/types'
+import { stripInternalToolCallMarkup } from '../../../../shared/internal-tool-call-markup'
 import logo from '../../assets/logo.png'
 import { AgentRunTimeline } from '../AgentRunTimeline'
 import { MarkdownRenderer } from '../MarkdownRenderer'
@@ -25,6 +26,10 @@ export function MessageBubble({
 }: MessageBubbleProps): React.ReactElement {
   const msg = message
   const isExpanded = !!expandedThoughts[msg.id]
+  const assistantContent =
+    msg.role === 'assistant' || msg.role === 'system'
+      ? stripInternalToolCallMarkup(msg.content)
+      : msg.content
 
   if (msg.role === 'user') {
     return (
@@ -86,7 +91,7 @@ export function MessageBubble({
               <CheckCircle2 size={10} /> 已验证
             </Badge>
           )}
-          <MarkdownRenderer content={msg.content} />
+          {assistantContent && <MarkdownRenderer content={assistantContent} />}
         </div>
 
         {msg.toolCalls && msg.toolCalls.length > 0 && (

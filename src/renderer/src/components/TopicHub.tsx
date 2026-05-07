@@ -204,32 +204,32 @@ export function TopicHub({
         onValueChange={(next) => setView(next as WorkspaceView)}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="border-b border-black/[0.05] bg-white/55 px-2 py-1.5">
-          <TabsList className="grid h-8 w-full grid-cols-4 rounded-lg border-0 bg-black/[0.025] p-0.5 shadow-none backdrop-blur-0">
+        <div className="flex h-[var(--workspace-header-height)] shrink-0 items-center border-b border-black/[0.05] bg-white/55 px-2 py-0">
+          <TabsList className="grid h-7 w-full grid-cols-4 rounded-lg border-0 bg-black/[0.025] p-0.5 shadow-none backdrop-blur-0">
             <TabsTrigger
               value="hosts"
-              className="h-7 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              className="h-6 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
             >
               <Server size={12} />
               主机
             </TabsTrigger>
             <TabsTrigger
               value="runs"
-              className="h-7 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              className="h-6 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
             >
               <History size={12} />
               Run
             </TabsTrigger>
             <TabsTrigger
               value="memory"
-              className="h-7 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              className="h-6 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
             >
               <Brain size={12} />
               记忆
             </TabsTrigger>
             <TabsTrigger
               value="tunnels"
-              className="h-7 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              className="h-6 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
             >
               <Globe size={12} />
               转发

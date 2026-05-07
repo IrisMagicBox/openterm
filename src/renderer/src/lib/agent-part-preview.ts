@@ -1,17 +1,21 @@
 import type { AgentPart } from '../../../shared/types'
+import { stripInternalToolCallMarkup } from '../../../shared/internal-tool-call-markup'
 
 const ANSI_PATTERN =
   // eslint-disable-next-line no-control-regex
   /[\u001b\u009b][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g
 
 export function sanitizeAgentText(value: string): string {
-  return value
-    .replace(ANSI_PATTERN, '')
-    .replace(/\\u0000/gi, '')
-    .replace(/\\u001b/gi, '')
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
-    .replace(/[ \t]+\n/g, '\n')
-    .trim()
+  return (
+    stripInternalToolCallMarkup(value)
+      .replace(ANSI_PATTERN, '')
+      .replace(/\\u0000/gi, '')
+      .replace(/\\u001b/gi, '')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+      .replace(/[ \t]+\n/g, '\n')
+      .trim()
+  )
 }
 
 function parseJson(value: string): Record<string, unknown> | undefined {

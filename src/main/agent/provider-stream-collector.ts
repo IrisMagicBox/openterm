@@ -27,6 +27,11 @@ export interface ExtractedXmlToolCalls {
   toolCalls: ChatCompletionMessageFunctionToolCall[]
 }
 
+interface ResolvedExtractedToolName {
+  name: string
+  invalidToolName?: string
+}
+
 function nonEmptyString(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim()
   return trimmed && trimmed.length > 0 ? trimmed : undefined
@@ -92,6 +97,52 @@ function coerceXmlParameter(value: string): unknown {
   return decoded
 }
 
+function stripToolNamespace(toolName: string): string {
+  return toolName.trim().replace(/^functions?\./i, '')
+}
+
+function resolveExtractedToolName(
+  toolName: string,
+  registeredToolNames?: Set<string>
+): ResolvedExtractedToolName {
+  const normalized = stripToolNamespace(toolName)
+  if (!registeredToolNames) return { name: normalized }
+  if (registeredToolNames.has(normalized)) return { name: normalized }
+
+  const lower = normalized.toLowerCase()
+  if (registeredToolNames.has(lower)) return { name: lower }
+
+  return { name: 'invalid_tool', invalidToolName: normalized }
+}
+
+function invalidToolArguments(
+  invalidToolName: string,
+  args: Record<string, unknown>
+): Record<string, unknown> {
+  return {
+    ...args,
+    tool: invalidToolName,
+    error: `Unknown tool "${invalidToolName}".`
+  }
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function parseTextToolCallName(header: string): string {
+  const firstToken = header.trim().split(/\s+/)[0] ?? ''
+  const withoutCallIndex = firstToken.split(':')[0] ?? firstToken
+  return stripToolNamespace(withoutCallIndex)
+}
+
 export function extractXmlToolCalls(
   rawContent: string,
   registeredToolNames?: Set<string>
@@ -109,22 +160,17 @@ export function extractXmlToolCalls(
       args[parameterMatch[2]] = coerceXmlParameter(parameterMatch[3])
     }
 
-    const normalizedToolName = (() => {
-      if (!registeredToolNames) return toolName
-      if (registeredToolNames.has(toolName)) return toolName
-      const lower = toolName.toLowerCase()
-      if (registeredToolNames.has(lower)) return lower
-      args.tool = toolName
-      args.error = `Unknown tool "${toolName}".`
-      return 'invalid_tool'
-    })()
+    const resolved = resolveExtractedToolName(toolName, registeredToolNames)
+    const finalArgs = resolved.invalidToolName
+      ? invalidToolArguments(resolved.invalidToolName, args)
+      : args
 
     toolCalls.push({
-      id: `call_xml_${toolCalls.length}`,
+      id: `call_xml_${uuidv4()}`,
       type: 'function',
       function: {
-        name: normalizedToolName,
-        arguments: JSON.stringify(args)
+        name: resolved.name,
+        arguments: JSON.stringify(finalArgs)
       }
     })
 
@@ -132,6 +178,60 @@ export function extractXmlToolCalls(
   })
 
   cleaned = cleaned.replace(/<\/[A-Za-z0-9_-]+:tool_call>/gi, '').trim()
+  return { content: cleaned, toolCalls }
+}
+
+export function extractTextToolCalls(
+  rawContent: string,
+  registeredToolNames?: Set<string>
+): ExtractedXmlToolCalls {
+  const toolCalls: ChatCompletionMessageFunctionToolCall[] = []
+
+  const replaceToolCalls = (value: string): { content: string; count: number } => {
+    const before = toolCalls.length
+    const pattern =
+      /<tool_call_begin>\s*([^<]*?)\s*<tool_call_argument_begin>\s*([\s\S]*?)\s*<tool_call_end>/gi
+    const content = value.replace(pattern, (_fullMatch, header: string, rawArgs: string) => {
+      const toolName = parseTextToolCallName(header)
+      const resolved = resolveExtractedToolName(toolName, registeredToolNames)
+      const args = rawArgs.trim()
+      const finalArgs = resolved.invalidToolName
+        ? JSON.stringify(
+            invalidToolArguments(
+              resolved.invalidToolName,
+              parseJsonObject(args) ?? { rawArgs: args }
+            )
+          )
+        : args || '{}'
+
+      toolCalls.push({
+        id: `call_text_${uuidv4()}`,
+        type: 'function',
+        function: {
+          name: resolved.name,
+          arguments: finalArgs
+        }
+      })
+
+      return ''
+    })
+    return { content, count: toolCalls.length - before }
+  }
+
+  const sectionPattern = /<tool_calls_section_begin>\s*([\s\S]*?)\s*<tool_calls_section_end>/gi
+  let cleaned = rawContent.replace(sectionPattern, (fullMatch, body: string) => {
+    const replaced = replaceToolCalls(body)
+    if (replaced.count === 0) return fullMatch
+    return replaced.content.trim() ? replaced.content : ''
+  })
+
+  cleaned = replaceToolCalls(cleaned).content
+  cleaned = cleaned
+    .replace(/<tool_calls_section_(?:begin|end)>/gi, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
   return { content: cleaned, toolCalls }
 }
 
@@ -285,14 +385,22 @@ export class ProviderStreamCollector {
 
     const registeredToolNames = this.getRegisteredToolNames()
     const extractedXml = extractXmlToolCalls(content, registeredToolNames)
-    content = extractedXml.content
+    const extractedText = extractTextToolCalls(extractedXml.content, registeredToolNames)
+    const extractedToolCalls = [...extractedXml.toolCalls, ...extractedText.toolCalls]
+    content = extractedText.content
 
     if (textPart) {
       this.parts.updatePart(textPart.id, {
         status: 'completed',
         output: content,
         endedAt: Date.now(),
-        metadata: extractedXml.toolCalls.length > 0 ? { extractedXmlToolCalls: true } : undefined
+        metadata:
+          extractedToolCalls.length > 0
+            ? {
+                ...(extractedXml.toolCalls.length > 0 ? { extractedXmlToolCalls: true } : {}),
+                ...(extractedText.toolCalls.length > 0 ? { extractedTextToolCalls: true } : {})
+              }
+            : undefined
       })
     }
 
@@ -307,7 +415,7 @@ export class ProviderStreamCollector {
 
     return {
       content,
-      toolCalls: [...streamedToolCalls, ...extractedXml.toolCalls],
+      toolCalls: [...streamedToolCalls, ...extractedToolCalls],
       usage,
       finishReason,
       assistantPartId: textPart?.id

@@ -724,6 +724,11 @@ export function TerminalView({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      <div
+        ref={terminalRef}
+        className="relative z-0 h-full w-full overflow-hidden rounded-xl p-2"
+        onMouseDown={() => xtermRef.current?.focus()}
+      />
       {isDragOver && (
         <div className="absolute inset-0 z-10 flex pointer-events-none items-center justify-center rounded-xl border-2 border-accent/45 bg-accent/10">
           <span className="rounded-full border border-white/75 bg-white/85 px-3 py-1.5 text-xs font-bold text-accent shadow-sm backdrop-blur-xl">
@@ -800,7 +805,8 @@ export function TerminalView({
       )}
       {commandAssist?.open && (
         <div
-          className="absolute bottom-3 left-1/2 z-40 flex max-h-[calc(100%-24px)] w-[min(520px,calc(100%-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-black/[0.08] bg-white/96 text-foreground shadow-[0_18px_48px_rgba(15,23,42,0.16)] backdrop-blur-2xl"
+          className="absolute bottom-3 left-1/2 z-[80] isolate flex max-h-[calc(100%-24px)] w-[min(520px,calc(100%-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-black/[0.08] bg-white text-foreground shadow-[0_18px_48px_rgba(15,23,42,0.18)] ring-1 ring-black/[0.04]"
+          onPointerDown={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
@@ -869,11 +875,6 @@ export function TerminalView({
           </div>
         </div>
       )}
-      <div
-        ref={terminalRef}
-        className="h-full w-full overflow-hidden rounded-xl p-2"
-        onMouseDown={() => xtermRef.current?.focus()}
-      />
     </div>
   )
 }
