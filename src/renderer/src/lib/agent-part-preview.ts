@@ -23,6 +23,9 @@ function parseJson(value: string): Record<string, unknown> | undefined {
 }
 
 export function parseAgentPartCommand(part: AgentPart): string {
+  if (part.toolName === 'websearch' && typeof part.metadata?.displayQuery === 'string') {
+    return sanitizeAgentText(part.metadata.displayQuery)
+  }
   if (!part.input) return ''
   const parsed = parseJson(part.input)
   if (!parsed) return sanitizeAgentText(part.input)

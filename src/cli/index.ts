@@ -1896,7 +1896,7 @@ Commands:
   files local|sftp|transfer   Manage local files, SFTP sessions, and transfers.
   pf list|create|close        Manage SSH port forwards.
   settings providers|models|permissions|model-settings
-                               Manage providers, models, and permission settings.
+                               Manage providers, models, permission settings, and web search keys.
   memory list|create|update|delete|global
                                Manage scoped and global memory.
   history search              Search recorded terminal command inputs.

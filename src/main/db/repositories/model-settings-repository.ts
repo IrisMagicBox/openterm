@@ -13,6 +13,7 @@ const DEFAULT_MODEL_SETTINGS: ModelSettings = {
   apiKey: '',
   baseURL: DEFAULT_BASE_URL,
   model: DEFAULT_MODEL,
+  exaApiKey: '',
   terminalCompletionMode: DEFAULT_TERMINAL_COMPLETION_MODE,
   updatedAt: Date.now()
 }
@@ -35,6 +36,7 @@ export class ModelSettingsRepository extends BaseRepository<ModelSettingsRow> {
       apiKey: row.apiKey,
       baseURL: row.baseURL,
       model: row.model,
+      exaApiKey: row.exaApiKey ?? '',
       terminalCompletionMode: normalizeTerminalCompletionMode(row.terminalCompletionMode),
       updatedAt: row.updatedAt
     }
@@ -53,6 +55,7 @@ export class ModelSettingsRepository extends BaseRepository<ModelSettingsRow> {
         SET apiKey = COALESCE(?, apiKey),
             baseURL = COALESCE(?, baseURL),
             model = COALESCE(?, model),
+            exaApiKey = COALESCE(?, exaApiKey),
             terminalCompletionMode = COALESCE(?, terminalCompletionMode),
             updatedAt = ?
         WHERE id = ?
@@ -61,6 +64,7 @@ export class ModelSettingsRepository extends BaseRepository<ModelSettingsRow> {
         settings.apiKey ?? null,
         settings.baseURL ?? null,
         settings.model ?? null,
+        settings.exaApiKey ?? null,
         settings.terminalCompletionMode
           ? normalizeTerminalCompletionMode(settings.terminalCompletionMode)
           : null,
@@ -70,14 +74,15 @@ export class ModelSettingsRepository extends BaseRepository<ModelSettingsRow> {
     } else {
       this.stmt(
         `
-        INSERT INTO model_settings (id, apiKey, baseURL, model, terminalCompletionMode, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO model_settings (id, apiKey, baseURL, model, exaApiKey, terminalCompletionMode, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `
       ).run(
         'default',
         settings.apiKey || DEFAULT_MODEL_SETTINGS.apiKey,
         settings.baseURL || DEFAULT_MODEL_SETTINGS.baseURL,
         settings.model || DEFAULT_MODEL_SETTINGS.model,
+        settings.exaApiKey || DEFAULT_MODEL_SETTINGS.exaApiKey,
         settings.terminalCompletionMode
           ? normalizeTerminalCompletionMode(settings.terminalCompletionMode)
           : DEFAULT_MODEL_SETTINGS.terminalCompletionMode,

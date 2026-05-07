@@ -10,7 +10,6 @@ import {
   Trash2,
   ShieldAlert
 } from 'lucide-react'
-import logo from '../assets/logo.png'
 import { NavItem } from './NavItem'
 import { View, WorkspaceWindowItem } from '../types'
 import { Topic } from '../../../shared/types'
@@ -126,10 +125,10 @@ export function AppSidebar({
                     }
                   }}
                   className={cn(
-                    'group flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-left text-sm font-medium transition-all',
+                    'group flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-left text-[13px] font-medium transition-all',
                     active
-                      ? 'border-white/55 bg-black/5 text-foreground shadow-sm backdrop-blur-xl'
-                      : 'border-transparent text-muted-foreground hover:border-white/70 hover:bg-white/60 hover:text-foreground'
+                      ? 'border-black/[0.045] bg-black/[0.055] text-foreground shadow-none backdrop-blur-0'
+                      : 'border-transparent text-muted-foreground hover:border-black/[0.04] hover:bg-black/[0.035] hover:text-foreground'
                   )}
                 >
                   <span
@@ -158,7 +157,7 @@ export function AppSidebar({
                             setEditingWindowTitle('')
                           }
                         }}
-                        className="block w-full bg-transparent text-sm font-medium text-inherit outline-none"
+                        className="block w-full bg-transparent text-[13px] font-medium text-inherit outline-none"
                       />
                     ) : (
                       <span className="block truncate">{item.title}</span>
@@ -210,18 +209,14 @@ export function AppSidebar({
         isResizingSidebar ? 'transition-none' : 'transition-[width] duration-300 ease-ui-emphasized'
       )}
     >
-      <div aria-hidden className="sidebar-brand-glow" />
-      <div aria-hidden className="sidebar-brand-mark">
-        <img src={logo} alt="" />
-      </div>
       <div aria-hidden className="sidebar-frosted-veil" />
 
-      <div className={cn('drag px-4 pb-5 pt-4', compactSidebar && 'px-3')}>
+      <div className={cn('relative px-4 pb-5 pt-4', compactSidebar && 'px-3')}>
+        <div aria-hidden className="sidebar-titlebar-drag-region" />
         {!compactSidebar && <div aria-hidden className="mb-5 h-3" />}
-        <div className={cn('flex items-center gap-3 no-drag', compactSidebar && 'justify-center')}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/80 bg-white/75 p-1 shadow-sm shadow-accent/10 backdrop-blur-xl">
-            <img src={logo} alt="OpenTerm" className="h-full w-full object-contain" />
-          </div>
+        <div
+          className={cn('flex min-h-9 items-center no-drag', compactSidebar && 'justify-center')}
+        >
           {!compactSidebar && (
             <h1 className="truncate text-lg font-semibold leading-none tracking-normal text-foreground">
               OpenTerm
@@ -234,7 +229,7 @@ export function AppSidebar({
         <NavItem
           active={activeView === 'hosts'}
           onClick={() => setActiveView('hosts')}
-          icon={<LayoutGrid size={17} />}
+          icon={<LayoutGrid size={15} />}
           label={compactSidebar ? '' : '主机'}
           count={compactSidebar ? undefined : hosts.length}
           tooltip="主机列表"
@@ -242,7 +237,7 @@ export function AppSidebar({
         <NavItem
           active={activeView === 'terminal'}
           onClick={() => setActiveView('terminal')}
-          icon={<Terminal size={17} />}
+          icon={<Terminal size={15} />}
           label={compactSidebar ? '' : '终端'}
           count={terminalWindows.length > 0 ? terminalWindows.length : undefined}
           tooltip="手动终端"
@@ -250,7 +245,7 @@ export function AppSidebar({
         <NavItem
           active={activeView === 'files'}
           onClick={() => setActiveView('files')}
-          icon={<Folder size={17} />}
+          icon={<Folder size={15} />}
           label={compactSidebar ? '' : '文件'}
           count={fileWindows.length > 0 ? fileWindows.length : undefined}
           tooltip="文件窗口"
@@ -261,7 +256,7 @@ export function AppSidebar({
             setActiveView('chat')
             if (!selectedTopic && topics.length > 0) setSelectedTopic(topics[0])
           }}
-          icon={<MessageSquare size={17} />}
+          icon={<MessageSquare size={15} />}
           label={compactSidebar ? '' : 'Agent助手'}
           count={compactSidebar ? undefined : topics.length}
           tooltip="Agent助手"
@@ -269,7 +264,7 @@ export function AppSidebar({
         <NavItem
           active={activeView === 'settings'}
           onClick={() => setActiveView('settings')}
-          icon={<Settings size={17} />}
+          icon={<Settings size={15} />}
           label={compactSidebar ? '' : '设置'}
           tooltip="设置"
         />
@@ -344,10 +339,10 @@ export function AppSidebar({
                     }
                   }}
                   className={cn(
-                    'group flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-sm font-medium transition-all',
+                    'group flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-[13px] font-medium transition-all',
                     active
-                      ? 'border-white/55 bg-black/5 text-foreground shadow-sm backdrop-blur-xl'
-                      : 'border-transparent text-muted-foreground hover:border-white/70 hover:bg-white/60 hover:text-foreground',
+                      ? 'border-black/[0.045] bg-black/[0.055] text-foreground shadow-none backdrop-blur-0'
+                      : 'border-transparent text-muted-foreground hover:border-black/[0.04] hover:bg-black/[0.035] hover:text-foreground',
                     compactSidebar && 'justify-center px-0'
                   )}
                 >
@@ -377,7 +372,7 @@ export function AppSidebar({
                               setEditingTopicTitle('')
                             }
                           }}
-                          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-inherit outline-none"
+                          className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-inherit outline-none"
                         />
                       ) : (
                         <span className="min-w-0 flex-1 truncate">{topic.title}</span>
@@ -436,23 +431,32 @@ export function AppSidebar({
             </div>
           </Tooltip>
         ) : (
-          <Surface padding="sm" className="rounded-lg">
-            <div className="flex items-center gap-3">
+          <Surface
+            variant="subtle"
+            padding="sm"
+            className="rounded-lg border-white/20 bg-white/[0.08] shadow-none backdrop-blur-xl"
+          >
+            <div className="flex items-center gap-2.5">
               <div
                 className={cn(
-                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-md',
+                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
                   requireConfirmation
                     ? 'bg-success-soft text-success'
                     : 'bg-warning-soft text-warning'
                 )}
               >
-                <ShieldAlert size={15} />
+                <ShieldAlert size={14} />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-foreground">{statusText}</div>
+                <div className="truncate text-[13px] font-semibold text-foreground">
+                  {statusText}
+                </div>
                 <div className="truncate text-xs text-muted-foreground">{statusDescription}</div>
               </div>
-              <Badge variant={requireConfirmation ? 'success' : 'warning'}>
+              <Badge
+                variant={requireConfirmation ? 'success' : 'warning'}
+                className="min-h-4 px-1.5 text-[10px]"
+              >
                 {requireConfirmation ? '安全' : '自动'}
               </Badge>
             </div>

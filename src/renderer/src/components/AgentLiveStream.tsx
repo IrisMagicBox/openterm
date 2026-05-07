@@ -94,7 +94,6 @@ export function AgentLiveStream({
   onRevealTerminal,
   focusedPartId
 }: AgentLiveStreamProps): React.ReactElement | null {
-  const scrollRef = useRef<HTMLDivElement>(null)
   const [expanded, setExpanded] = useState(true)
   const visibleParts = useMemo(() => sortParts(parts).filter(shouldShowAgentLivePart), [parts])
   const textContent = visibleParts
@@ -107,28 +106,11 @@ export function AgentLiveStream({
   const status = agentActivityStatus(activityParts)
   const tasks = deriveAgentTasks(activityParts)
 
-  useEffect(() => {
-    const node = scrollRef.current
-    if (node) node.scrollTop = node.scrollHeight
-  }, [visibleParts])
-
   return (
     <div className="mx-auto w-full max-w-[860px]">
-      <div ref={scrollRef} className="max-h-[520px] overflow-y-auto pr-1">
-        {textContent ? (
-          <div className="text-[var(--chat-text-size)] leading-[var(--chat-line-height)] text-foreground">
-            <MarkdownRenderer content={textContent} />
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <Loader2 size={15} className="animate-spin" />
-            正在组织回复
-          </div>
-        )}
-
+      <div>
         {activityParts.length > 0 && (
-          <div className="mt-4">
-            <AgentTaskList tasks={tasks} className="mb-3" />
+          <div className="mb-4">
             <button
               onClick={() => setExpanded((value) => !value)}
               className="flex w-full items-center gap-2 py-1.5 text-left text-sm text-muted-foreground transition hover:text-foreground no-drag"
@@ -189,6 +171,18 @@ export function AgentLiveStream({
                 })}
               </div>
             )}
+            <AgentTaskList tasks={tasks} className="mt-3" />
+          </div>
+        )}
+
+        {textContent ? (
+          <div className="text-[var(--chat-text-size)] leading-[var(--chat-line-height)] text-foreground">
+            <MarkdownRenderer content={textContent} />
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <Loader2 size={15} className="animate-spin" />
+            正在组织回复
           </div>
         )}
       </div>

@@ -1,16 +1,6 @@
 import { ShieldAlert, Check, X, Info, AlertTriangle, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
-import {
-  Badge,
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Switch
-} from './ui'
+import { Badge, Button, Switch } from './ui'
 import { cn } from '../lib/utils'
 
 interface AuthModalProps {
@@ -77,90 +67,105 @@ export function AuthModal({
   const commandPattern =
     typeof metadata?.commandPattern === 'string' ? metadata.commandPattern : undefined
   const requiresVerification = metadata?.requiresVerification === true
+  const permission = typeof metadata?.permission === 'string' ? metadata.permission : undefined
+  const isWebSearch = permission === 'websearch'
+  const actionLabel = isWebSearch ? '网页搜索' : '终端命令'
+  const actionType = isWebSearch ? '搜索请求' : 'SSH 命令'
+  const defaultReason = isWebSearch
+    ? '需要你确认本次网页搜索。'
+    : '由于当前安全策略，此操作需要你的显式授权。'
+  const displayReason =
+    reason && !reason.startsWith('Permission required:') ? reason : defaultReason
 
   return (
-    <Dialog open>
-      <DialogContent className="max-w-lg overflow-hidden p-0" showClose={false}>
-        <div className="p-5">
-          <DialogHeader>
-            <div
-              className={cn(
-                'mb-1 flex h-10 w-10 items-center justify-center rounded-md border',
-                risk.panel
-              )}
-            >
-              {risk.icon}
-            </div>
-            <DialogTitle>安全执行授权</DialogTitle>
-            <DialogDescription>
-              Agent 正在请求执行一个自主命令。请审阅安全评估及具体命令。
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className={cn('mt-4 rounded-lg border p-4', risk.panel)}>
-            <div className="mb-2 flex items-center justify-between gap-3">
+    <section className="overflow-hidden rounded-[16px] border border-black/[0.08] bg-white shadow-[0_14px_36px_rgba(15,23,42,0.12)]">
+      <div className="max-h-[360px] overflow-y-auto p-3 no-scrollbar">
+        <div className="flex items-start gap-3">
+          <div
+            className={cn(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-md border',
+              risk.panel
+            )}
+          >
+            {risk.icon}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-[15px] font-bold leading-6 text-foreground">安全执行授权</h2>
               <Badge variant={risk.badge}>{risk.label}</Badge>
-              <span className="text-xs font-medium text-muted-foreground">策略引擎评估报告</span>
             </div>
-            <p className="text-sm font-semibold leading-relaxed">
-              {reason || '由于当前安全策略，此命令需要您的显式授权。'}
+            <p className="text-[13px] leading-5 text-muted-foreground">
+              Agent 请求执行自主操作，确认后会继续当前任务。
             </p>
           </div>
+        </div>
 
-          <div className="mt-4 rounded-2xl border border-workspace-border bg-workspace/85 p-4">
-            <div className="mb-2 flex items-center justify-between text-xs font-semibold text-workspace-muted-foreground">
-              <span>拟执行命令</span>
-              <span className="font-mono">ssh_execute_v1</span>
-            </div>
-            <code className="block break-all font-mono text-sm font-semibold leading-relaxed text-success">
-              {command}
-            </code>
-            {(riskCategory || commandPattern || requiresVerification) && (
-              <div className="mt-3 grid gap-2 border-t border-workspace-border pt-3 text-xs text-workspace-muted-foreground">
-                {riskCategory && (
-                  <div className="flex justify-between gap-3">
-                    <span>风险类别</span>
-                    <span className="font-mono text-workspace-foreground">{riskCategory}</span>
-                  </div>
-                )}
-                {commandPattern && (
-                  <div className="flex justify-between gap-3">
-                    <span>命令模式</span>
-                    <span className="min-w-0 truncate font-mono text-workspace-foreground">
-                      {commandPattern}
-                    </span>
-                  </div>
-                )}
-                {requiresVerification && (
-                  <div className="flex justify-between gap-3">
-                    <span>完成要求</span>
-                    <span className="font-semibold text-warning">执行后需要只读验证</span>
-                  </div>
-                )}
-              </div>
-            )}
+        <div className={cn('mt-3 rounded-lg border px-3 py-2.5', risk.panel)}>
+          <div className="mb-1.5 flex items-center justify-between gap-3">
+            <span className="text-xs font-semibold">策略评估</span>
+            <span className="text-[11px] font-medium text-muted-foreground">{actionType}</span>
           </div>
+          <p className="text-sm font-semibold leading-5">{displayReason}</p>
+        </div>
 
-          {!isCritical && (
-            <label className="mt-4 flex cursor-pointer select-none items-center gap-3 rounded-2xl border border-white/70 bg-white/55 p-3 backdrop-blur-xl">
-              <Switch checked={alwaysAllow} onCheckedChange={setAlwaysAllow} />
-              <div>
-                <span className="text-sm font-semibold text-foreground">总是允许此类命令</span>
-                <p className="text-xs text-muted-foreground">信任后，相似命令将自动执行无需确认</p>
-              </div>
-            </label>
+        <div className="mt-2.5 rounded-xl border border-workspace-border bg-workspace px-3 py-2.5">
+          <div className="mb-1.5 flex items-center justify-between text-xs font-semibold text-workspace-muted-foreground">
+            <span>{actionLabel}</span>
+            <span>{actionType}</span>
+          </div>
+          <code className="block break-all font-mono text-sm font-semibold leading-6 text-foreground">
+            {command}
+          </code>
+          {(riskCategory || commandPattern || requiresVerification) && (
+            <div className="mt-2.5 grid gap-1.5 border-t border-workspace-border pt-2.5 text-xs text-workspace-muted-foreground">
+              {riskCategory && (
+                <div className="flex justify-between gap-3">
+                  <span>风险类别</span>
+                  <span className="font-mono text-workspace-foreground">{riskCategory}</span>
+                </div>
+              )}
+              {commandPattern && (
+                <div className="flex justify-between gap-3">
+                  <span>命令模式</span>
+                  <span className="min-w-0 truncate font-mono text-workspace-foreground">
+                    {commandPattern}
+                  </span>
+                </div>
+              )}
+              {requiresVerification && (
+                <div className="flex justify-between gap-3">
+                  <span>完成要求</span>
+                  <span className="font-semibold text-warning">执行后需要只读验证</span>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
-        <DialogFooter className="border-t border-white/70 bg-white/45 p-4">
-          <Button onClick={() => onResolve(false)} variant="secondary" className="flex-1">
-            <X size={16} /> 拒绝执行
-          </Button>
-          <Button onClick={() => onResolve(true, alwaysAllow)} variant="primary" className="flex-1">
-            <Check size={16} /> 授权运行
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        {!isCritical && (
+          <label className="mt-2.5 flex cursor-pointer select-none items-center gap-3 rounded-xl border border-black/[0.06] bg-black/[0.015] px-3 py-2">
+            <Switch checked={alwaysAllow} onCheckedChange={setAlwaysAllow} />
+            <div className="min-w-0">
+              <span className="text-sm font-semibold text-foreground">总是允许同类操作</span>
+              <p className="truncate text-xs text-muted-foreground">信任后，相似操作将自动执行</p>
+            </div>
+          </label>
+        )}
+      </div>
+
+      <div className="flex gap-2.5 border-t border-black/[0.06] bg-white p-2.5">
+        <Button onClick={() => onResolve(false)} variant="secondary" size="lg" className="flex-1">
+          <X size={16} /> 拒绝执行
+        </Button>
+        <Button
+          onClick={() => onResolve(true, alwaysAllow)}
+          variant="primary"
+          size="lg"
+          className="flex-1"
+        >
+          <Check size={16} /> 授权运行
+        </Button>
+      </div>
+    </section>
   )
 }

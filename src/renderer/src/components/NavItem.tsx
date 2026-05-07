@@ -24,10 +24,10 @@ export function NavItem({
       onClick={onClick}
       variant="ghost"
       className={cn(
-        'group relative h-9 w-full justify-start gap-3 border px-3',
+        'group relative h-8 w-full justify-start gap-2.5 rounded-lg border px-2.5 text-[13px] font-semibold',
         active
-          ? 'border-white/55 bg-black/5 text-foreground shadow-sm'
-          : 'border-transparent text-muted-foreground hover:border-white/70 hover:bg-white/60 hover:text-foreground',
+          ? 'border-black/[0.045] bg-black/[0.055] text-foreground shadow-none'
+          : 'border-transparent text-muted-foreground hover:border-black/[0.04] hover:bg-black/[0.035] hover:text-foreground',
         !label && 'justify-center px-0'
       )}
     >
@@ -43,7 +43,10 @@ export function NavItem({
       {count !== undefined && label && (
         <Badge
           variant={active ? 'accent' : 'neutral'}
-          className={active ? 'border-white/60 bg-white/55 text-muted-foreground' : ''}
+          className={cn(
+            'min-h-4 px-1.5 text-[10px]',
+            active ? 'border-white/30 bg-white/20 text-muted-foreground' : 'bg-white/[0.12]'
+          )}
         >
           {count}
         </Badge>

@@ -73,6 +73,8 @@ export function MessageBubble({
       </div>
 
       <div className="space-y-4 text-[var(--chat-text-size)] leading-[var(--chat-line-height)] text-foreground">
+        {msg.metadata?.taskId && <AgentRunTimeline taskId={msg.metadata.taskId} />}
+
         <div className="space-y-3">
           {msg.metadata?.memoryRecalled && (
             <Badge variant="accent" className="mb-1 w-fit">
@@ -109,8 +111,6 @@ export function MessageBubble({
             })}
           </div>
         )}
-
-        {msg.metadata?.taskId && <AgentRunTimeline taskId={msg.metadata.taskId} />}
 
         {msg.thought && (
           <div>

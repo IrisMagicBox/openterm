@@ -10,6 +10,7 @@ import { PortForwardingPanel } from '../terminal/PortForwardingPanel'
 import { ChatInput } from './ChatInput'
 import { MessageBubble, ThinkingIndicator, EmptyState } from './MessageBubble'
 import { TerminalStage } from './TerminalStage'
+import { AuthModal } from '../AuthModal'
 import { useProvider } from '../../hooks/useProvider'
 import { isAgentRuntimeProvider, isAgentUsableModel } from '../../config/providers'
 import { useVisibilityRestore } from '../../hooks/useVisibilityRestore'
@@ -32,9 +33,9 @@ const MIN_CHAT_ZOOM = 0.25
 const MAX_CHAT_ZOOM = 1.18
 const MIN_TERMINAL_STAGE_WIDTH = 360
 const MIN_CHAT_COLUMN_WIDTH = 420
-const DEFAULT_TOPIC_WORKSPACE_WIDTH = 288
-const MIN_TOPIC_WORKSPACE_WIDTH = 248
-const MAX_TOPIC_WORKSPACE_WIDTH = 520
+const DEFAULT_TOPIC_WORKSPACE_WIDTH = 264
+const MIN_TOPIC_WORKSPACE_WIDTH = 224
+const MAX_TOPIC_WORKSPACE_WIDTH = 360
 const TOPIC_WORKSPACE_EXIT_MS = 320
 
 function clampChatZoom(value: number): number {
@@ -66,6 +67,14 @@ function isZoomResetKey(event: KeyboardEvent): boolean {
 
 type ZoomDirection = 'in' | 'out' | 'reset'
 
+interface PendingAuth {
+  requestId: string
+  command: string
+  riskLevel?: string
+  reason?: string
+  metadata?: Record<string, unknown>
+}
+
 interface ChatPanelProps {
   topic: Topic
   hosts: Host[]
@@ -85,6 +94,8 @@ interface ChatPanelProps {
   onRenameTerminal: (id: string, name: string) => Promise<void>
   onToggleTerminalPin: (id: string, pinned: boolean) => Promise<void>
   onUpdateModel: (topicId: string, providerId: string, modelId: string) => Promise<void>
+  pendingAuth?: PendingAuth | null
+  onResolveAuth?: (approved: boolean, alwaysAllow?: boolean) => void | Promise<void>
 }
 
 export function ChatPanel({
@@ -105,7 +116,9 @@ export function ChatPanel({
   onCloseTerminal,
   onRenameTerminal,
   onToggleTerminalPin,
-  onUpdateModel
+  onUpdateModel,
+  pendingAuth,
+  onResolveAuth
 }: ChatPanelProps): React.ReactElement {
   const [inputValue, setInputValue] = useState(prefill || '')
   const [showMentions, setShowMentions] = useState(false)
@@ -136,6 +149,7 @@ export function ChatPanel({
   const [workspaceResizeRightEdge, setWorkspaceResizeRightEdge] = useState<number | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const shouldFollowScrollRef = useRef(true)
   const workspaceCloseTimerRef = useRef<number | null>(null)
   const workspaceMotionReadyRef = useRef(false)
   const { animationKey } = useVisibilityRestore()
@@ -210,8 +224,13 @@ export function ChatPanel({
       h.alias.toLowerCase().includes(mentionFilter.toLowerCase()) || h.ip.includes(mentionFilter)
   )
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    const node = scrollRef.current
+    if (!node || !shouldFollowScrollRef.current) return
+    node.scrollTop = node.scrollHeight
   }, [messages, thinking, activeSteps, activeParts])
+  useEffect(() => {
+    shouldFollowScrollRef.current = true
+  }, [topic.id])
   useEffect(() => {
     window.localStorage.setItem('openterm.topicWorkspace.open', String(workspaceOpen))
   }, [workspaceOpen])
@@ -393,6 +412,7 @@ export function ChatPanel({
   }
   const handleSend = async (): Promise<void> => {
     if (!inputValue.trim()) return
+    shouldFollowScrollRef.current = true
     const c = inputValue
     setInputValue('')
     await sendMessage(c)
@@ -448,6 +468,7 @@ export function ChatPanel({
     <div
       ref={panelRef}
       className="workspace-canvas flex h-full min-w-0 overflow-hidden bg-transparent"
+      data-topic-workspace-open={workspaceMotionOpen ? 'true' : 'false'}
     >
       <section
         className="workspace-primary-content flex min-w-0 flex-1 flex-col"
@@ -489,7 +510,7 @@ export function ChatPanel({
                     <div
                       key={h.id}
                       title={h.alias}
-                      className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white/80 bg-white/70 text-[11px] font-semibold text-accent shadow-sm ring-1 ring-accent/15 backdrop-blur-xl"
+                      className="flex h-6 w-6 items-center justify-center rounded-full border border-white/80 bg-white/70 text-[10px] font-semibold text-accent shadow-sm ring-1 ring-accent/12 backdrop-blur-xl"
                     >
                       {h.alias.slice(0, 2).toUpperCase()}
                     </div>
@@ -499,8 +520,9 @@ export function ChatPanel({
               <Tooltip side="bottom" content="切换作战中心">
                 <IconButton
                   aria-label={workspaceOpen ? '隐藏作战中心' : '显示作战中心'}
+                  aria-expanded={workspaceOpen}
                   onClick={() => setWorkspaceOpen((open) => !open)}
-                  className="workspace-top-icon-button text-muted-foreground"
+                  className="workspace-top-icon-button topic-workspace-toggle-button text-muted-foreground"
                 >
                   {workspaceOpen ? <PanelRightClose /> : <PanelRightOpen />}
                 </IconButton>
@@ -510,7 +532,15 @@ export function ChatPanel({
         />
 
         <div className="flex min-h-0 flex-1 flex-col">
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-7">
+          <div
+            ref={scrollRef}
+            className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-5 no-scrollbar"
+            onScroll={(event) => {
+              const node = event.currentTarget
+              const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight
+              shouldFollowScrollRef.current = distanceFromBottom < 96
+            }}
+          >
             <div style={chatScaleStyle} className="space-y-7">
               {messages.length === 0 && (
                 <EmptyState
@@ -573,6 +603,18 @@ export function ChatPanel({
               showMentions={showMentions}
               filteredHosts={filteredHosts}
               onInsertMention={insertMention}
+              authPrompt={
+                pendingAuth && onResolveAuth ? (
+                  <AuthModal
+                    requestId={pendingAuth.requestId}
+                    command={pendingAuth.command}
+                    riskLevel={pendingAuth.riskLevel}
+                    reason={pendingAuth.reason}
+                    metadata={pendingAuth.metadata}
+                    onResolve={onResolveAuth}
+                  />
+                ) : null
+              }
             />
           </div>
         </div>
@@ -655,7 +697,7 @@ export function ChatPanel({
       )}
       {workspacePresent && (
         <div
-          className="topic-workspace-presence workspace-side-panel hidden h-full shrink-0 overflow-hidden lg:block"
+          className="topic-workspace-presence workspace-side-panel h-full shrink-0 overflow-hidden"
           data-state={workspaceMotionOpen ? 'open' : 'closed'}
           aria-hidden={!workspaceMotionOpen}
           style={{ width: workspaceWidth }}

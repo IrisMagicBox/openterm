@@ -787,14 +787,15 @@ function parsePermissionSettings(action: string, rest: string[]): FullCliCommand
 function parseLegacyModelSettings(action: string, rest: string[]): FullCliCommand {
   if (action === 'get') return { name: 'settings-model-settings-get', ...parseCommon(rest) }
   if (action === 'save') {
-    const parsed = parseFlags(rest, { optional: ['api-key', 'base-url', 'model'] })
+    const parsed = parseFlags(rest, { optional: ['api-key', 'base-url', 'model', 'exa-api-key'] })
     return {
       name: 'settings-model-settings-save',
       ...parsed.common,
       settings: {
         apiKey: parsed.flags['api-key'],
         baseURL: parsed.flags['base-url'],
-        model: parsed.flags.model
+        model: parsed.flags.model,
+        exaApiKey: parsed.flags['exa-api-key']
       }
     }
   }
@@ -1917,7 +1918,11 @@ function redactSecrets(value: unknown): unknown {
   const output: Record<string, unknown> = {}
   for (const [key, child] of Object.entries(value)) {
     output[key] =
-      key === 'password' || key === 'apiKey' ? (child ? '[redacted]' : child) : redactSecrets(child)
+      key === 'password' || key === 'apiKey' || key === 'exaApiKey'
+        ? child
+          ? '[redacted]'
+          : child
+        : redactSecrets(child)
   }
   return output
 }

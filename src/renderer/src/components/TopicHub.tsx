@@ -199,28 +199,6 @@ export function TopicHub({
 
   return (
     <div className="flex h-full w-full min-w-0 flex-col bg-transparent">
-      <div className="workspace-layer-header flex items-center border-b border-black/[0.05] bg-white/70 px-3">
-        <div className="flex items-center gap-2">
-          <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
-            <Server size={13} className="text-accent" />
-            作战中心
-          </h3>
-          <div className="ml-auto flex min-w-0 items-center gap-1.5">
-            <Metric icon={Server} label="主机" value={hosts.length} />
-            <Metric icon={Terminal} label="终端" value={sessions.length} />
-            <Metric icon={History} label="Run" value={runs.length} />
-            <Metric icon={Globe} label="转发" value={tunnels.length} />
-          </div>
-          <IconButton
-            aria-label="管理话题主机"
-            onClick={onAddHost}
-            className="workspace-top-icon-button text-muted-foreground"
-          >
-            <Plus />
-          </IconButton>
-        </div>
-      </div>
-
       <Tabs
         value={view}
         onValueChange={(next) => setView(next as WorkspaceView)}
@@ -305,35 +283,7 @@ export function TopicHub({
           </TabsContent>
         </div>
       </Tabs>
-
-      <div className="border-t border-black/[0.05] bg-white/55 px-3 py-2">
-        <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
-          <span>TOPIC-{topicId.slice(0, 4)}</span>
-          <Badge variant="neutral" className="border-black/[0.06] bg-black/[0.02] backdrop-blur-0">
-            串行同主机
-          </Badge>
-        </div>
-      </div>
     </div>
-  )
-}
-
-function Metric({
-  icon: Icon,
-  label,
-  value
-}: {
-  icon: React.ComponentType<{ size?: number; className?: string }>
-  label: string
-  value: number
-}): React.ReactElement {
-  return (
-    <Tooltip content={`${label} ${value}`} side="bottom">
-      <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-semibold text-muted-foreground">
-        <Icon size={11} />
-        <strong className="text-sm leading-none text-foreground">{value}</strong>
-      </span>
-    </Tooltip>
   )
 }
 

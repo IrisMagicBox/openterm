@@ -81,7 +81,6 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
 
       {expanded && (
         <div className="mt-2 space-y-2 pl-6">
-          <AgentTaskList tasks={tasks} />
           <div className="space-y-1">
             {lines.map((line) => (
               <div
@@ -95,6 +94,7 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
               </div>
             ))}
           </div>
+          <AgentTaskList tasks={tasks} />
         </div>
       )}
     </div>

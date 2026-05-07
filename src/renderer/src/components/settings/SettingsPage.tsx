@@ -1,5 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Bot, ShieldAlert, ChevronLeft, Server, Shield } from 'lucide-react'
+import {
+  Bot,
+  ChevronLeft,
+  Eye,
+  EyeOff,
+  Key,
+  Save,
+  Search,
+  Server,
+  Shield,
+  ShieldAlert
+} from 'lucide-react'
 import { ProviderList } from './ProviderList'
 import { ProviderSettings } from './ProviderSettings'
 import { useProvider } from '../../hooks/useProvider'
@@ -10,7 +21,16 @@ import {
   DEFAULT_TERMINAL_COMPLETION_MODE,
   normalizeTerminalCompletionMode
 } from '../../lib/terminal-command-assist'
-import { Badge, IconButton, PageHeader, Surface, Switch } from '../ui'
+import {
+  Badge,
+  Button,
+  FormField,
+  IconButton,
+  Input,
+  PageHeader,
+  Surface,
+  Switch
+} from '../ui'
 
 interface SettingsPageProps {
   onBack?: () => void
@@ -38,8 +58,12 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
   const [activeTab, setActiveTab] = useState<'providers' | 'general' | 'permissions'>('providers')
   const [terminalCompletionMode, setTerminalCompletionMode] =
     useState<TerminalCompletionBackendMode>(DEFAULT_TERMINAL_COMPLETION_MODE)
+  const [exaApiKey, setExaApiKey] = useState('')
+  const [savedExaApiKey, setSavedExaApiKey] = useState('')
+  const [showExaApiKey, setShowExaApiKey] = useState(false)
   const [completionSettingsLoading, setCompletionSettingsLoading] = useState(true)
   const [completionSettingsSaving, setCompletionSettingsSaving] = useState(false)
+  const [webSearchSettingsSaving, setWebSearchSettingsSaving] = useState(false)
 
   const {
     providers,
@@ -73,10 +97,16 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
           setTerminalCompletionMode(
             normalizeTerminalCompletionMode(settings.terminalCompletionMode)
           )
+          setExaApiKey(settings.exaApiKey || '')
+          setSavedExaApiKey(settings.exaApiKey || '')
         }
       })
       .catch(() => {
-        if (!cancelled) setTerminalCompletionMode(DEFAULT_TERMINAL_COMPLETION_MODE)
+        if (!cancelled) {
+          setTerminalCompletionMode(DEFAULT_TERMINAL_COMPLETION_MODE)
+          setExaApiKey('')
+          setSavedExaApiKey('')
+        }
       })
       .finally(() => {
         if (!cancelled) setCompletionSettingsLoading(false)
@@ -90,6 +120,21 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
   const handleResetProvider = async (id: string): Promise<void> => {
     if (isSystemProviderId(id)) {
       await resetSystemProvider(id)
+    }
+  }
+
+  const handleExaApiKeySave = async (): Promise<void> => {
+    if (exaApiKey === savedExaApiKey || webSearchSettingsSaving) return
+
+    const previousKey = savedExaApiKey
+    setSavedExaApiKey(exaApiKey)
+    setWebSearchSettingsSaving(true)
+    try {
+      await window.api.saveModelSettings({ exaApiKey })
+    } catch {
+      setSavedExaApiKey(previousKey)
+    } finally {
+      setWebSearchSettingsSaving(false)
     }
   }
 
@@ -293,6 +338,66 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
                       )
                     })}
                   </div>
+                </Surface>
+
+                <Surface>
+                  <div className="mb-4 flex items-start gap-3">
+                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
+                      <Search size={17} />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-foreground">网页搜索</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        匿名 Exa hosted MCP 可直接使用；配置 Exa API Key 后可避免免费额度限流。
+                      </p>
+                    </div>
+                  </div>
+
+                  <FormField
+                    label={
+                      <span className="flex items-center gap-2">
+                        <Key size={14} />
+                        Exa API Key
+                      </span>
+                    }
+                    hint="留空时使用匿名 hosted MCP；也可通过 EXA_API_KEY 环境变量配置。"
+                  >
+                    <div className="flex gap-2">
+                      <div className="relative min-w-0 flex-1">
+                        <Input
+                          type={showExaApiKey ? 'text' : 'password'}
+                          value={exaApiKey}
+                          onChange={(event) => setExaApiKey(event.target.value)}
+                          placeholder="可选，输入 Exa API Key"
+                          className="pr-10"
+                          disabled={completionSettingsLoading}
+                        />
+                        <IconButton
+                          aria-label={showExaApiKey ? '隐藏 Exa API Key' : '显示 Exa API Key'}
+                          type="button"
+                          onClick={() => setShowExaApiKey(!showExaApiKey)}
+                          className="absolute right-1 top-1/2 -translate-y-1/2"
+                        >
+                          {showExaApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </IconButton>
+                      </div>
+                      <Button
+                        type="button"
+                        variant={exaApiKey !== savedExaApiKey ? 'primary' : 'subtle'}
+                        disabled={
+                          completionSettingsLoading ||
+                          webSearchSettingsSaving ||
+                          exaApiKey === savedExaApiKey
+                        }
+                        onClick={() => {
+                          void handleExaApiKeySave()
+                        }}
+                      >
+                        <Save size={16} />
+                        {webSearchSettingsSaving ? '保存中' : '保存'}
+                      </Button>
+                    </div>
+                  </FormField>
                 </Surface>
 
                 <div className="space-y-4">

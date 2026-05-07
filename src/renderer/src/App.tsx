@@ -9,6 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent
 } from 'react'
+import { PanelLeft } from 'lucide-react'
 import { SettingsPage } from './features/settings'
 import { ChatPanel, ChatEmptyState } from './features/chat'
 import { AddHostModal, HostsView } from './features/hosts'
@@ -148,14 +149,14 @@ export default function App(): JSX.Element {
   } = useTerminalManager()
 
   const { requireConfirmation } = usePermissions()
-  const [sidebarWidth, setSidebarWidth] = useState(() =>
-    sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_DEFAULT_WIDTH
-  )
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
   const appShellRef = useRef<HTMLDivElement>(null)
   const sidebarWidthRef = useRef(sidebarWidth)
+  const lastExpandedSidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH)
   const stopSidebarResizeRef = useRef<(() => void) | null>(null)
-  const compactSidebar = sidebarWidth <= SIDEBAR_COMPACT_THRESHOLD
+  const compactSidebar = sidebarCollapsed
+  const showComposerAuth = activeView === 'chat' && !!selectedTopic
 
   const setSidebarCssWidth = useCallback((width: number): void => {
     appShellRef.current?.style.setProperty('--sidebar-width', `${Math.round(width)}px`)
@@ -163,16 +164,15 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     sidebarWidthRef.current = sidebarWidth
+    if (sidebarWidth > SIDEBAR_COMPACT_THRESHOLD) {
+      lastExpandedSidebarWidthRef.current = sidebarWidth
+    }
     setSidebarCssWidth(sidebarWidth)
   }, [setSidebarCssWidth, sidebarWidth])
 
   useEffect(() => {
     setSidebarWidth((currentWidth) => {
-      if (sidebarCollapsed && currentWidth > SIDEBAR_COMPACT_THRESHOLD) {
-        sidebarWidthRef.current = SIDEBAR_COLLAPSED_WIDTH
-        return SIDEBAR_COLLAPSED_WIDTH
-      }
-      if (!sidebarCollapsed && currentWidth <= SIDEBAR_COMPACT_THRESHOLD) {
+      if (currentWidth <= SIDEBAR_COMPACT_THRESHOLD) {
         sidebarWidthRef.current = SIDEBAR_DEFAULT_WIDTH
         return SIDEBAR_DEFAULT_WIDTH
       }
@@ -191,9 +191,12 @@ export default function App(): JSX.Element {
       const clampedWidth = clampSidebarWidth(width)
       const shouldCollapse = clampedWidth < SIDEBAR_COLLAPSE_THRESHOLD
       const settledWidth = shouldCollapse
-        ? SIDEBAR_COLLAPSED_WIDTH
+        ? Math.max(lastExpandedSidebarWidthRef.current, SIDEBAR_MIN_EXPANDED_WIDTH)
         : Math.max(clampedWidth, SIDEBAR_MIN_EXPANDED_WIDTH)
 
+      if (!shouldCollapse) {
+        lastExpandedSidebarWidthRef.current = settledWidth
+      }
       sidebarWidthRef.current = settledWidth
       setSidebarCssWidth(settledWidth)
       setSidebarWidth(settledWidth)
@@ -297,6 +300,34 @@ export default function App(): JSX.Element {
     },
     [compactSidebar, settleSidebarWidth]
   )
+
+  const handleToggleSidebar = useCallback((): void => {
+    settleSidebarWidth(
+      sidebarCollapsed ? lastExpandedSidebarWidthRef.current : SIDEBAR_COLLAPSED_WIDTH
+    )
+  }, [settleSidebarWidth, sidebarCollapsed])
+
+  useEffect(() => {
+    const handleChromePointerDown = (event: PointerEvent): void => {
+      if (event.button !== 0) return
+      if (event.target instanceof Element && event.target.closest('.sidebar-reveal-button')) {
+        return
+      }
+
+      const inSidebarToggleHitbox =
+        event.clientX >= 84 && event.clientX <= 138 && event.clientY >= 0 && event.clientY <= 48
+
+      if (!inSidebarToggleHitbox) return
+      event.preventDefault()
+      event.stopPropagation()
+      handleToggleSidebar()
+    }
+
+    window.addEventListener('pointerdown', handleChromePointerDown, { capture: true })
+    return () => {
+      window.removeEventListener('pointerdown', handleChromePointerDown, { capture: true })
+    }
+  }, [handleToggleSidebar])
 
   useEffect(() => {
     loadHosts()
@@ -432,17 +463,41 @@ export default function App(): JSX.Element {
       <div
         ref={appShellRef}
         className="app-shell relative flex h-screen w-screen overflow-hidden text-foreground select-none"
+        data-sidebar-collapsed={compactSidebar ? 'true' : 'false'}
         style={
           {
             '--sidebar-width': `${Math.round(sidebarWidth)}px`,
-            '--workspace-intrusion': compactSidebar ? '0px' : '28px'
+            '--workspace-overlap': compactSidebar ? `${Math.round(sidebarWidth)}px` : '14px'
           } as CSSProperties
         }
       >
-        <div aria-hidden className="app-sidebar-backdrop" />
+        <button
+          type="button"
+          aria-label={compactSidebar ? '显示侧边栏' : '隐藏侧边栏'}
+          title={compactSidebar ? '显示侧边栏' : '隐藏侧边栏'}
+          onPointerDownCapture={(event) => {
+            if (event.button !== 0) return
+            event.preventDefault()
+            event.stopPropagation()
+            handleToggleSidebar()
+          }}
+          onMouseDownCapture={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          className="sidebar-reveal-button"
+        >
+          <span className="sidebar-reveal-button-surface">
+            <PanelLeft size={16} />
+          </span>
+        </button>
 
         <AppSidebar
-          compactSidebar={compactSidebar}
+          compactSidebar={false}
           isResizingSidebar={isResizingSidebar}
           activeView={activeView}
           setActiveView={setActiveView}
@@ -575,6 +630,8 @@ export default function App(): JSX.Element {
               onRenameTerminal={handleRenameTerminal}
               onToggleTerminalPin={handleToggleTerminalPin}
               onUpdateModel={handleUpdateTopicModel}
+              pendingAuth={pendingAuth}
+              onResolveAuth={handleResolveAuth}
             />
           )}
 
@@ -607,15 +664,19 @@ export default function App(): JSX.Element {
         {showAddHost && (
           <AddHostModal onClose={() => setShowAddHost(false)} onSave={handleCreateHost} />
         )}
-        {pendingAuth && (
-          <AuthModal
-            requestId={pendingAuth.requestId}
-            command={pendingAuth.command}
-            riskLevel={pendingAuth.riskLevel}
-            reason={pendingAuth.reason}
-            metadata={pendingAuth.metadata}
-            onResolve={handleResolveAuth}
-          />
+        {pendingAuth && !showComposerAuth && (
+          <div className="pointer-events-none fixed inset-x-0 bottom-5 z-[220] px-6">
+            <div className="pointer-events-auto mx-auto w-full max-w-[860px]">
+              <AuthModal
+                requestId={pendingAuth.requestId}
+                command={pendingAuth.command}
+                riskLevel={pendingAuth.riskLevel}
+                reason={pendingAuth.reason}
+                metadata={pendingAuth.metadata}
+                onResolve={handleResolveAuth}
+              />
+            </div>
+          </div>
         )}
         {showManageHosts && selectedTopic && (
           <ManageHostsModal

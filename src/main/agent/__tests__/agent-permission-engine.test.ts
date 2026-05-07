@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
         ...input
       })),
       updatePart: vi.fn(),
+      getRun: vi.fn(() => ({ id: 'run-1', status: 'running' })),
       updateRun: vi.fn()
     },
     approvalDB: {
@@ -149,6 +150,50 @@ describe('AgentPermissionEngine ruleset', () => {
           approved: false,
           feedback: '只读模式：请改用 read_file 或只读命令，不要修改系统。'
         })
+      })
+    )
+  })
+
+  it('remembers user always-allow approvals for later matching permission checks', async () => {
+    const context = makeContext()
+    vi.mocked(context.requestAuthorization).mockResolvedValue({
+      approved: true,
+      alwaysAllow: true
+    })
+    const config = makeConfig([{ tool: 'websearch', action: 'ask' }])
+    const engine = new AgentPermissionEngine(config, context)
+
+    const firstResponse = await engine.ask({
+      permission: 'websearch',
+      pattern: '今日新闻 2025年1月20日 重要事件',
+      riskLevel: 'medium',
+      reason: 'confirm web search'
+    })
+
+    const secondResponse = await engine.ask({
+      permission: 'websearch',
+      pattern: '明日新闻 2025年1月21日 重要事件',
+      riskLevel: 'medium',
+      reason: 'confirm web search'
+    })
+
+    expect(firstResponse).toEqual({ approved: true, alwaysAllow: true })
+    expect(secondResponse).toEqual({ approved: true, alwaysAllow: true })
+    expect(context.requestAuthorization).toHaveBeenCalledTimes(1)
+    expect(config.permissions[0]).toEqual(
+      expect.objectContaining({
+        tool: 'websearch',
+        action: 'allow',
+        allowed: true,
+        scope: 'always',
+        maxAutoApproveRisk: 'medium'
+      })
+    )
+    expect(mocks.agentRunStore.updatePart).toHaveBeenLastCalledWith(
+      'permission-part-2',
+      expect.objectContaining({
+        status: 'completed',
+        metadata: expect.objectContaining({ ruleAction: 'allow', scope: 'always' })
       })
     )
   })

@@ -77,11 +77,17 @@ export class AgentPermissionEngine {
         request.pattern,
         riskLevel,
         request.reason ?? `Permission required: ${request.permission}`,
-        request.metadata
+        {
+          ...(request.metadata ?? {}),
+          permission: request.permission
+        }
       )
 
       this.recordApproval(request, riskLevel, response.approved)
       approvalRecorded = true
+      if (response.approved && response.alwaysAllow) {
+        this.rememberAlwaysAllow(request.permission, riskLevel)
+      }
 
       agentRunStore.updatePart(part.id, {
         status: response.approved ? 'completed' : 'error',
@@ -152,6 +158,29 @@ export class AgentPermissionEngine {
       AgentPermissionEngine.RISK_LEVELS[riskLevel] <=
       AgentPermissionEngine.RISK_LEVELS[rule.maxAutoApproveRisk]
     )
+  }
+
+  private rememberAlwaysAllow(permission: string, riskLevel: ApprovalRiskLevel): void {
+    const existing = this.config.permissions.find((rule) => rule.tool === permission)
+    const allowRule: PermissionRule = existing ?? { tool: permission }
+    allowRule.action = 'allow'
+    allowRule.allowed = true
+    allowRule.scope = 'always'
+    allowRule.maxAutoApproveRisk = this.widerRisk(allowRule.maxAutoApproveRisk, riskLevel)
+
+    if (!existing) {
+      this.config.permissions.unshift(allowRule)
+    }
+  }
+
+  private widerRisk(
+    current: PermissionRule['maxAutoApproveRisk'],
+    next: ApprovalRiskLevel
+  ): ApprovalRiskLevel {
+    if (!current) return next
+    return AgentPermissionEngine.RISK_LEVELS[current] >= AgentPermissionEngine.RISK_LEVELS[next]
+      ? current
+      : next
   }
 
   private rejectFeedback(

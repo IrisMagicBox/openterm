@@ -280,6 +280,12 @@ const migrations: Migration[] = [
         kimiK26.createdAt || Date.now()
       )
     }
+  },
+  {
+    id: '017_model_settings_exa_api_key',
+    run: (db) => {
+      addColumnIfMissing(db, 'model_settings', 'exaApiKey', "TEXT DEFAULT ''")
+    }
   }
 ]
 

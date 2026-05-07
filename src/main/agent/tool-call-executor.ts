@@ -12,6 +12,7 @@ import { executeGrouped } from './session-scheduler'
 import { DoomLoopDetector, DOOM_LOOP_THRESHOLD } from './doom-loop'
 import { fromCommandResult, formatObservation } from '../tools/observation'
 import { ToolContextFactory } from '../tools/tool-context-factory'
+import { getSearchTimeContext, normalizeCurrentNewsQuery } from '../tools/websearch'
 import { agentRunStore } from './agent-run-store'
 import { eventBus } from './event-bus'
 import { LegacyAgentEventAdapter } from './legacy-agent-event-adapter'
@@ -90,6 +91,7 @@ export class ToolCallExecutor {
 
     for (const call of toolCalls) {
       this.repairToolCallName(call)
+      this.normalizeVisibleToolArguments(call)
       const part = this.ensureToolPart(call)
       const parsed = this.parseToolArguments(call, part)
       if (!parsed.ok) {
@@ -165,6 +167,7 @@ export class ToolCallExecutor {
 
   private async executeTool(call: ChatCompletionMessageFunctionToolCall): Promise<ToolResult> {
     this.repairToolCallName(call)
+    this.normalizeVisibleToolArguments(call)
     const part = this.ensureToolPart(call)
     const parsed = this.parseToolArguments(call, part)
     if (!parsed.ok) return { toolCallId: call.id, content: parsed.error }
@@ -270,6 +273,25 @@ export class ToolCallExecutor {
       .some((tool) => tool.function.name === lower)
     if (available && this.options.permissionEngine.isToolAllowed(lower)) {
       call.function.name = lower
+    }
+  }
+
+  private normalizeVisibleToolArguments(call: ChatCompletionMessageFunctionToolCall): void {
+    if (call.function.name !== 'websearch') return
+
+    try {
+      const args = JSON.parse(call.function.arguments || '{}') as Record<string, unknown>
+      if (typeof args.query !== 'string') return
+
+      const normalized = normalizeCurrentNewsQuery(args.query, getSearchTimeContext())
+      if (normalized.removedDates.length === 0) return
+
+      call.function.arguments = JSON.stringify({
+        ...args,
+        query: normalized.displayQuery
+      })
+    } catch {
+      // Leave malformed arguments to the normal parser/validator path.
     }
   }
 

@@ -11,6 +11,15 @@ export interface AgentActivityLine {
   status: AgentPart['status']
 }
 
+function toolDisplayName(part: AgentPart): string {
+  if (part.type === 'permission') return '权限'
+  if (part.toolName === 'websearch') return '网页搜索'
+  if (part.toolName === 'execute_command') return '命令'
+  if (part.toolName === 'read_file') return '文件'
+  if (part.toolName === 'write_file' || part.toolName === 'edit') return '文件'
+  return part.toolName || part.type
+}
+
 function normalizedToolName(part: AgentPart): string {
   return `${part.toolName || ''} ${parseAgentPartCommand(part)}`.toLowerCase()
 }
@@ -80,12 +89,14 @@ export function agentActivityLines(parts: AgentPart[], limit = 12): AgentActivit
     .filter((part) => part.type !== 'usage')
     .slice(0, limit)
     .map((part) => {
-      const preview = agentPartPreview(part, 160)
+      const kind = agentActivityKind(part)
+      const command = parseAgentPartCommand(part)
+      const preview = part.type === 'permission' ? '' : agentPartPreview(part, 120)
       return {
         id: part.id,
-        kind: agentActivityKind(part),
-        label: `${agentActivityVerb(part)} ${part.toolName || part.type}`,
-        detail: preview,
+        kind,
+        label: `${agentActivityVerb(part)} ${toolDisplayName(part)}`,
+        detail: command || preview,
         status: part.status
       }
     })

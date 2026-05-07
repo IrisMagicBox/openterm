@@ -27,10 +27,52 @@ interface McpDataMessage {
   } | string
 }
 
+export class McpExaError extends Error {
+  constructor(
+    message: string,
+    readonly code: 'rate_limit' | 'auth' | 'http' | 'mcp' | 'timeout' | 'aborted',
+    readonly status?: number
+  ) {
+    super(message)
+    this.name = 'McpExaError'
+  }
+}
+
 export function getExaMcpUrl(apiKey = process.env.EXA_API_KEY): string {
   const key = apiKey?.trim()
   if (!key) return EXA_MCP_BASE_URL
   return `${EXA_MCP_BASE_URL}?exaApiKey=${encodeURIComponent(key)}`
+}
+
+function parseMcpErrorMessage(body: string): string | undefined {
+  try {
+    const data = JSON.parse(body) as McpDataMessage
+    const message = typeof data.error === 'string' ? data.error : data.error?.message
+    return typeof message === 'string' && message.trim() ? message.trim() : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function classifyHttpError(status: number, body: string): McpExaError {
+  const message = parseMcpErrorMessage(body)
+  if (status === 429) {
+    return new McpExaError(
+      message ||
+        'Exa hosted MCP anonymous rate limit reached. Configure an Exa API key to continue.',
+      'rate_limit',
+      status
+    )
+  }
+  if (status === 401 || status === 403) {
+    return new McpExaError(
+      message || 'Exa hosted MCP rejected the API key. Check the configured Exa API key.',
+      'auth',
+      status
+    )
+  }
+  const detail = body ? `: ${body.slice(0, 500)}` : ''
+  return new McpExaError(`MCP request failed with HTTP ${status}${detail}`, 'http', status)
 }
 
 export function parseMcpSseText(body: string): string | undefined {
@@ -49,7 +91,10 @@ export function parseMcpSseText(body: string): string | undefined {
 
     if (data.error) {
       const message = typeof data.error === 'string' ? data.error : data.error.message
-      throw new Error(`MCP error: ${typeof message === 'string' ? message : 'unknown error'}`)
+      throw new McpExaError(
+        `MCP error: ${typeof message === 'string' ? message : 'unknown error'}`,
+        'mcp'
+      )
     }
 
     const text = data.result?.content?.[0]?.text
@@ -102,17 +147,16 @@ export async function callMcpExaTool(
 
     if (!response.ok) {
       const text = await response.text().catch(() => '')
-      const detail = text ? `: ${text.slice(0, 500)}` : ''
-      throw new Error(`MCP request failed with HTTP ${response.status}${detail}`)
+      throw classifyHttpError(response.status, text)
     }
 
     return parseMcpSseText(await response.text())
   } catch (error) {
     if (timedOut) {
-      throw new Error(`${toolName} request timed out after ${timeoutMs}ms`)
+      throw new McpExaError(`${toolName} request timed out after ${timeoutMs}ms`, 'timeout')
     }
     if (options.signal?.aborted) {
-      throw new Error(`${toolName} request aborted`)
+      throw new McpExaError(`${toolName} request aborted`, 'aborted')
     }
     throw error
   } finally {

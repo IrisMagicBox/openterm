@@ -39,6 +39,7 @@ export const BASE_SCHEMA_SQL = `
     apiKey TEXT NOT NULL,
     baseURL TEXT NOT NULL,
     model TEXT NOT NULL,
+    exaApiKey TEXT DEFAULT '',
     terminalCompletionMode TEXT NOT NULL DEFAULT 'prompt',
     updatedAt INTEGER NOT NULL
   );

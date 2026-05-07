@@ -27,6 +27,7 @@ import { registerAllIPC } from './ipc'
 
 const APP_ID = 'com.eddic.openterm'
 const APP_NAME = 'OpenTerm'
+const MAC_WINDOW_VIBRANCY = 'sidebar' as const
 
 app.setName(APP_NAME)
 
@@ -46,15 +47,34 @@ function setMacDockIcon(): void {
 setMacDockIcon()
 
 function createWindow(): void {
+  const macWindowMaterial =
+    process.platform === 'darwin'
+      ? {
+          transparent: true,
+          backgroundColor: '#00000000',
+          vibrancy: MAC_WINDOW_VIBRANCY,
+          visualEffectState: 'active' as const,
+          titleBarStyle: 'hidden' as const,
+          trafficLightPosition: { x: 18, y: 18 }
+        }
+      : {
+          titleBarStyle: 'hiddenInset' as const
+        }
+
   const mainWindow = new BrowserWindow({
     width: WINDOW_DEFAULT_WIDTH,
     height: WINDOW_DEFAULT_HEIGHT,
     show: false,
     autoHideMenuBar: true,
-    titleBarStyle: 'hiddenInset',
+    ...macWindowMaterial,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: false }
   })
+
+  if (process.platform === 'darwin') {
+    mainWindow.setBackgroundColor('#00000000')
+    mainWindow.setVibrancy(MAC_WINDOW_VIBRANCY, { animationDuration: 0 })
+  }
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()

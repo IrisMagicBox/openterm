@@ -232,4 +232,31 @@ describe('ToolCallExecutor schema validation', () => {
     expect(executor.hasPendingVerification()).toBe(false)
     expect(String(clearObservation[0].content)).toContain('已确认并清除验证项')
   })
+
+  it('normalizes stale explicit dates in visible websearch arguments before recording parts', async () => {
+    const registry = new ToolRegistry()
+    registry.register(
+      define('websearch', {
+        description: 'Mock websearch',
+        parameters: z.object({ query: z.string(), numResults: z.number().optional() }),
+        execute: async (args) => ({ output: args.query })
+      })
+    )
+    await registry.initializeTools('build')
+
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-06T12:00:00'))
+    try {
+      const executor = new ToolCallExecutor(makeOptions(registry))
+      await executor.executeToolCalls([
+        toolCall({ query: '今日新闻 时事 2025年7月15日', numResults: 10 }, 'websearch')
+      ])
+
+      const createdPart = mocks.agentRunStore.createPart.mock.calls[0][0] as Partial<AgentPart>
+      expect(createdPart.input).toContain('今日新闻 时事 2026年5月6日')
+      expect(createdPart.input).not.toContain('2025年7月15日')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
