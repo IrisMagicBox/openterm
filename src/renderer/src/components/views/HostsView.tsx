@@ -99,7 +99,7 @@ export function HostsView({
       />
 
       <div className="px-6 py-5">
-        <Surface className="mb-5 transition-all hover:border-success/30 hover:bg-white/80">
+        <Surface className="mb-5 hover:border-success/30 hover:bg-white/80">
           <div className="flex items-center gap-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-success-soft text-success shadow-sm shadow-success/10">
               <Monitor size={22} strokeWidth={2.2} />

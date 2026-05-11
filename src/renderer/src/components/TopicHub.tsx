@@ -735,30 +735,62 @@ function TunnelsPane({
   tunnels: Tunnel[]
   onOpenPortForward?: (host: Host) => void
 }): React.ReactElement {
+  const tunnelHosts = hosts.filter((host) => host.id !== 'local')
+  const firstTunnelHost = tunnelHosts[0]
+
   return (
     <div className="space-y-3">
       {onOpenPortForward && (
-        <div className="grid grid-cols-1 gap-1.5">
-          {hosts
-            .filter((host) => host.id !== 'local')
-            .map((host) => (
-              <Button
-                key={host.id}
-                onClick={() => onOpenPortForward(host)}
-                variant="subtle"
-                size="sm"
-                className="justify-start border-black/[0.06] bg-white"
+        <div className="rounded-lg border border-black/[0.06] bg-white p-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold text-muted-foreground">新建转发</span>
+            {firstTunnelHost && (
+              <IconButton
+                aria-label="新建端口转发"
+                onClick={() => onOpenPortForward(firstTunnelHost)}
+                className="h-6 w-6 text-muted-foreground"
               >
-                <Globe size={12} />
-                {host.alias}
-              </Button>
-            ))}
+                <Plus size={12} />
+              </IconButton>
+            )}
+          </div>
+          {tunnelHosts.length === 0 ? (
+            <p className="rounded-md border border-dashed border-black/[0.08] bg-black/[0.015] px-3 py-3 text-center text-xs font-semibold text-muted-foreground">
+              添加远程主机后即可创建 tunnel。
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-1.5">
+              {tunnelHosts.map((host) => (
+                <Button
+                  key={host.id}
+                  onClick={() => onOpenPortForward(host)}
+                  variant="subtle"
+                  size="sm"
+                  className="justify-start border-black/[0.06] bg-white"
+                >
+                  <Plus size={12} />
+                  {host.alias}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {tunnels.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs font-semibold text-muted-foreground">
-          暂无活跃 tunnel。
+        <div className="rounded-lg border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center">
+          <div className="text-xs font-semibold text-muted-foreground">暂无活跃 tunnel。</div>
+          {onOpenPortForward && firstTunnelHost && (
+            <Button
+              onClick={() => onOpenPortForward(firstTunnelHost)}
+              variant="subtle"
+              size="sm"
+              className="mt-3 border-black/[0.06] bg-white"
+            >
+              <Plus size={12} />
+              添加转发
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-1.5">

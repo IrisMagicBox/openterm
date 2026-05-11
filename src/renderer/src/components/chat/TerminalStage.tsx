@@ -254,7 +254,7 @@ function StageTerminalPane({
     <div
       className={cn(
         'flex min-h-0 flex-1 flex-col overflow-hidden bg-white',
-        highlighted && 'shadow-[inset_2px_0_0_rgba(41,120,245,0.75)]'
+        highlighted && 'shadow-[inset_2px_0_0_rgba(83,154,248,0.75)]'
       )}
     >
       <div className="group flex h-8 items-center justify-between gap-2 border-b border-black/[0.06] bg-white px-2">
@@ -364,7 +364,7 @@ function GridMode({
             className={cn(
               'flex min-h-[270px] cursor-pointer flex-col overflow-hidden border bg-white transition-colors',
               focused
-                ? 'border-accent/45 shadow-[inset_2px_0_0_rgba(41,120,245,0.75)]'
+                ? 'border-accent/45 shadow-[inset_2px_0_0_rgba(83,154,248,0.75)]'
                 : 'border-transparent hover:border-accent/30'
             )}
           >
@@ -504,7 +504,7 @@ export function TerminalStage({
     <>
       <div
         className={cn(
-          'workspace-resize-handle terminal-resize-handle transition-all active:bg-accent/[0.2]',
+          'workspace-resize-handle terminal-resize-handle transition-[background-color,opacity,transform] duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-interactive)] active:bg-accent/[0.2]',
           isResizing && 'bg-accent/[0.2]'
         )}
         role="separator"
@@ -524,7 +524,7 @@ export function TerminalStage({
         <div
           className={cn(
             'workspace-layer-header flex h-[var(--workspace-header-height)] items-center justify-between gap-2 border-b border-black/[0.06] bg-white px-3 py-0',
-            highlightedSessionId && 'shadow-[inset_0_-1px_0_rgba(37,99,235,0.18)]'
+            highlightedSessionId && 'shadow-[inset_0_-1px_0_rgba(83,154,248,0.18)]'
           )}
         >
           <div className="flex min-w-0 items-center gap-2">
@@ -532,7 +532,7 @@ export function TerminalStage({
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <h3 className="truncate text-sm font-bold text-foreground">终端</h3>
-                <span className="shrink-0 border border-accent/15 bg-accent-soft px-1.5 py-0.5 text-[11px] font-bold text-accent">
+                <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md border border-accent/15 bg-accent-soft/70 px-1.5 text-[11px] font-bold leading-none text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
                   {visibleSessions.length}
                 </span>
               </div>

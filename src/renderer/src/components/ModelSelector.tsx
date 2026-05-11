@@ -102,7 +102,7 @@ export function ModelSelector({
           </span>
           <ChevronDown
             size={14}
-            className={`text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+            className={`text-muted-foreground transition-transform duration-[var(--motion-duration-medium)] ease-[var(--motion-ease-emphasized)] ${isOpen ? 'rotate-180' : ''}`}
           />
         </Button>
       </DropdownMenuTrigger>
@@ -125,7 +125,7 @@ export function ModelSelector({
                 key={`${provider.id}-${model?.id ?? 'default'}`}
                 onClick={() => handleSelect(provider.id, model?.id ?? 'default')}
                 className={cn(
-                  'flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all',
+                  'flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-[background-color,color,transform] duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-interactive)]',
                   isSelected
                     ? 'bg-black/[0.05] text-foreground'
                     : 'text-foreground/88 hover:bg-black/[0.035]'

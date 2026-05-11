@@ -18,7 +18,7 @@ export function FileTransferToast({
       {transfers.map((transfer) => (
         <div
           key={transfer.id}
-          className={`glass-menu flex items-center gap-3 rounded-2xl p-3 transition-all ${
+          className={`glass-menu flex items-center gap-3 rounded-2xl p-3 transition-[border-color,box-shadow,transform,opacity] duration-[var(--motion-duration-medium)] ease-[var(--motion-ease-out)] ${
             transfer.phase === 'error'
               ? 'border-danger/35'
               : transfer.phase === 'complete'
@@ -45,7 +45,7 @@ export function FileTransferToast({
             {transfer.phase !== 'complete' && transfer.phase !== 'error' && (
               <div className="mt-1 h-1 overflow-hidden rounded-full bg-black/10">
                 <div
-                  className="h-full rounded-full bg-accent transition-all duration-300"
+                  className="h-full rounded-full bg-accent transition-[width] duration-[var(--motion-duration-slow)] ease-[var(--motion-ease-out)]"
                   style={{ width: `${transfer.progress}%` }}
                 />
               </div>

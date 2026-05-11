@@ -298,7 +298,7 @@ export function TerminalLayout({
             'relative flex h-full flex-col overflow-hidden bg-white transition-colors',
             leafCount > 1 && 'border border-workspace-border',
             paneManager.focusedLeafId === leaf.id &&
-              'shadow-[inset_2px_0_0_rgba(41,120,245,0.75)]'
+              'shadow-[inset_2px_0_0_rgba(83,154,248,0.75)]'
           )}
           onMouseDown={() => paneManager.setFocusedLeafId(leaf.id)}
           onDragOver={(e) => handlePaneDragOver(e, leaf.id)}
@@ -306,17 +306,17 @@ export function TerminalLayout({
           onDrop={(e) => handlePaneDrop(e, leaf.id)}
         >
           {showPaneTitle && (
-            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-white no-scrollbar">
+            <div className="flex items-center gap-1 overflow-x-auto border-b border-workspace-border bg-white px-2 py-1 no-scrollbar">
               {tabs.map((tab) => (
                 <div
                   key={tab.sessionId}
                   draggable
                   onDragStart={(e) => handleTabDragStart(e, tab.sessionId)}
                   onClick={() => focusTerminalTab(tab.sessionId)}
-                  className={`flex h-8 cursor-grab items-center gap-1.5 border-r border-workspace-border px-3 text-xs font-bold transition-colors whitespace-nowrap ${
+                  className={`group flex h-8 cursor-grab items-center gap-1.5 rounded-xl border px-3 text-xs font-bold transition-[background-color,border-color,color,box-shadow,transform] duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-interactive)] whitespace-nowrap ${
                     leaf.activeTabId === tab.sessionId
-                      ? 'text-workspace-foreground shadow-[inset_0_-2px_0_rgb(41_120_245)] bg-workspace'
-                      : 'text-workspace-muted-foreground hover:text-workspace-foreground hover:bg-workspace-muted'
+                      ? 'border-black/[0.055] bg-white text-workspace-foreground shadow-[inset_0_-2px_0_rgb(83_154_248),0_1px_2px_rgb(15_23_42_/_0.04)]'
+                      : 'border-transparent bg-black/[0.018] text-workspace-muted-foreground hover:border-black/[0.045] hover:bg-black/[0.035] hover:text-workspace-foreground'
                   }`}
                 >
                   <TerminalIcon size={10} />
@@ -325,7 +325,7 @@ export function TerminalLayout({
                     aria-label="关闭终端标签页"
                     onConfirm={() => handleCloseTab(tab.sessionId)}
                     stopPropagation
-                    className="ml-1 rounded p-0.5 text-workspace-muted-foreground transition hover:bg-workspace-border hover:text-workspace-foreground"
+                    className="ml-1 rounded-md p-0.5 text-workspace-muted-foreground opacity-60 transition-[background-color,color,opacity] duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-interactive)] hover:bg-workspace-border hover:text-workspace-foreground group-hover:opacity-100"
                     confirmClassName="hover:bg-danger-strong"
                     confirmingTitle="关闭"
                   >

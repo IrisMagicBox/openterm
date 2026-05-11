@@ -78,11 +78,11 @@ export function ConfirmActionButton({
       aria-label={confirming && ariaLabel ? `确认${ariaLabel}` : ariaLabel}
       aria-pressed={confirming || undefined}
       className={cn(
-        'transition-[background-color,border-color,color,box-shadow,transform] duration-200 ease-out',
+        'transition-[background-color,border-color,color,box-shadow,transform,opacity] duration-[var(--motion-duration-medium)] ease-[var(--motion-ease-interactive)]',
         className,
         confirming &&
           cn(
-            'scale-[1.03] border-danger/35 bg-danger text-white shadow-[0_8px_20px_rgba(220,38,38,0.18)] ring-2 ring-danger/15 hover:border-danger/40 hover:bg-danger-strong hover:text-white',
+            'scale-[1.015] border-danger/35 bg-danger text-white shadow-[0_8px_20px_rgba(220,38,38,0.18)] ring-2 ring-danger/15 hover:border-danger/40 hover:bg-danger-strong hover:text-white',
             confirmClassName
           )
       )}

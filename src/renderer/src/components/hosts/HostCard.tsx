@@ -20,7 +20,7 @@ export function HostCard({
   onPortForward
 }: HostCardProps): React.ReactElement {
   return (
-    <Surface className="group flex min-h-[160px] flex-col gap-4 overflow-hidden transition-all hover:-translate-y-0.5 hover:border-accent/30 hover:bg-white/80">
+    <Surface className="group flex min-h-[160px] flex-col gap-4 overflow-hidden hover:-translate-y-0.5 hover:border-accent/30 hover:bg-white/80">
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/70 bg-white/65 text-muted-foreground shadow-sm transition-colors group-hover:border-accent/20 group-hover:bg-accent-soft/70 group-hover:text-accent">
           <Server size={20} />

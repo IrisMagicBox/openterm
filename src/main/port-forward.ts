@@ -1,6 +1,7 @@
 import { Client } from 'ssh2'
 import { ipcMain } from 'electron'
 import * as net from 'net'
+import type { Duplex } from 'stream'
 import { hostDB } from './db'
 import { logger } from './logger'
 import { v4 as uuidv4 } from 'uuid'
@@ -74,34 +75,56 @@ export async function createForwardTunnel(
       .on('ready', () => {
         const server = net.createServer((socket) => {
           tunnel.sockets.add(socket)
+          let stream: Duplex | undefined
+          let cleanedUp = false
 
-          client.forwardOut(
-            socket.remoteAddress || '127.0.0.1',
-            socket.remotePort || 0,
-            remoteHost,
-            remotePort,
-            (err, stream) => {
-              if (err) {
-                logger.error('PortForward', `forwardOut error: ${err.message}`)
-                socket.destroy(err)
-                return
+          const cleanup = (): void => {
+            if (cleanedUp) return
+            cleanedUp = true
+            tunnel.sockets.delete(socket)
+            socket.destroy()
+            stream?.destroy()
+          }
+
+          socket.on('close', cleanup).on('error', (socketErr: Error) => {
+            logger.error('PortForward', `Local socket error: ${socketErr.message}`)
+            cleanup()
+          })
+
+          const handleForwardError = (err: Error): void => {
+            logger.error('PortForward', `forwardOut error: ${err.message}`)
+            cleanup()
+          }
+
+          try {
+            client.forwardOut(
+              socket.remoteAddress || '127.0.0.1',
+              socket.remotePort || 0,
+              remoteHost,
+              remotePort,
+              (err, forwardedStream) => {
+                if (cleanedUp) {
+                  forwardedStream?.destroy()
+                  return
+                }
+
+                if (err) {
+                  handleForwardError(err)
+                  return
+                }
+
+                stream = forwardedStream as Duplex
+                socket.pipe(stream).pipe(socket)
+
+                stream.on('close', cleanup).on('error', (streamErr: Error) => {
+                  logger.error('PortForward', `Stream error: ${streamErr.message}`)
+                  cleanup()
+                })
               }
-
-              socket.pipe(stream).pipe(socket)
-
-              const cleanup = (): void => {
-                tunnel.sockets.delete(socket)
-                socket.destroy()
-                stream.destroy()
-              }
-
-              socket.on('close', cleanup).on('error', cleanup)
-              stream.on('close', cleanup).on('error', (streamErr: Error) => {
-                logger.error('PortForward', `Stream error: ${streamErr.message}`)
-                cleanup()
-              })
-            }
-          )
+            )
+          } catch (err) {
+            handleForwardError(err instanceof Error ? err : new Error(String(err)))
+          }
         })
 
         tunnel.server = server

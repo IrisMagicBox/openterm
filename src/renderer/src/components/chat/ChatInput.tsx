@@ -124,7 +124,7 @@ export function ChatInput({
           </Surface>
         )}
 
-        <div className="composer-shell relative rounded-[22px] px-3.5 py-2.5 transition-all focus-within:border-black/[0.14]">
+        <div className="composer-shell relative rounded-[22px] px-3.5 py-2.5 transition-[border-color,box-shadow,background-color] duration-[var(--motion-duration-medium)] ease-[var(--motion-ease-interactive)] focus-within:border-black/[0.14]">
           <Textarea
             ref={textareaRef}
             value={inputValue}

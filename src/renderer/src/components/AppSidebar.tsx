@@ -125,7 +125,7 @@ export function AppSidebar({
                     }
                   }}
                   className={cn(
-                    'group flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-left text-[13px] font-medium transition-all',
+                    'group flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-left text-[13px] font-medium transition-[background-color,border-color,color,box-shadow,transform] duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-interactive)]',
                     active
                       ? 'border-black/[0.045] bg-black/[0.055] text-foreground shadow-none backdrop-blur-0'
                       : 'border-transparent text-muted-foreground hover:border-black/[0.04] hover:bg-black/[0.035] hover:text-foreground'
@@ -206,7 +206,9 @@ export function AppSidebar({
     <aside
       className={cn(
         'app-sidebar-content relative z-10 flex shrink-0 flex-col overflow-hidden border-y-0 border-l-0 no-drag',
-        isResizingSidebar ? 'transition-none' : 'transition-[width] duration-300 ease-ui-emphasized'
+        isResizingSidebar
+          ? 'transition-none'
+          : 'transition-[width] duration-[var(--motion-duration-slow)] ease-[var(--motion-ease-emphasized)]'
       )}
     >
       <div aria-hidden className="sidebar-frosted-veil" />
@@ -339,7 +341,7 @@ export function AppSidebar({
                     }
                   }}
                   className={cn(
-                    'group flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-[13px] font-medium transition-all',
+                    'group flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-[13px] font-medium transition-[background-color,border-color,color,box-shadow,transform] duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-interactive)]',
                     active
                       ? 'border-black/[0.045] bg-black/[0.055] text-foreground shadow-none backdrop-blur-0'
                       : 'border-transparent text-muted-foreground hover:border-black/[0.04] hover:bg-black/[0.035] hover:text-foreground',

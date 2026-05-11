@@ -58,7 +58,7 @@ export function TaskStepTimeline({ taskId }: TaskStepTimelineProps): React.React
         {steps.map((step, idx) => (
           <div
             key={step.id}
-            className={`group relative flex items-start gap-3 rounded-xl border px-3 py-2 pl-4 transition-all ${
+            className={`group relative flex items-start gap-3 rounded-xl border px-3 py-2 pl-4 transition-[background-color,border-color,box-shadow,transform,opacity] duration-[var(--motion-duration-medium)] ease-[var(--motion-ease-interactive)] ${
               step.status === 'running'
                 ? 'border-accent/25 bg-accent-soft/55'
                 : step.status === 'completed'

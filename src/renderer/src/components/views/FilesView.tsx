@@ -301,7 +301,7 @@ export function FilesView({
             leafCount > 1 ? 'border border-workspace-border/60' : ''
           } ${
             paneManager.focusedLeafId === leaf.id
-              ? 'shadow-[inset_0_0_0_1px_rgba(41,120,245,0.24)]'
+              ? 'shadow-[inset_0_0_0_1px_rgba(83,154,248,0.24)]'
               : ''
           }`}
           onMouseDown={() => paneManager.setFocusedLeafId(leaf.id)}

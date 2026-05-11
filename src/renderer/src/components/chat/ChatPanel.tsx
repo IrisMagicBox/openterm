@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { Clock, Monitor, PanelRightClose, PanelRightOpen, Plus } from 'lucide-react'
+import { Clock, PanelRight, Plus } from 'lucide-react'
 import { TopicHub } from '../TopicHub'
 import { Host, Topic, TerminalSession } from '../../../../shared/types'
 import { AgentRunDetailDrawer } from '../AgentRunDetailDrawer'
@@ -20,14 +20,16 @@ import { useTerminalPreviews } from '../../hooks/useTerminalPreviews'
 import { useTerminalStageState } from '../../hooks/useTerminalStageState'
 import { deriveTerminalActivities } from '../../lib/terminal-stage'
 import { getErrorMessage } from '../../../../shared/errors'
-import { Badge, Dialog, DialogContent, IconButton, PageHeader, Tooltip } from '../ui'
+import { Dialog, DialogContent, IconButton, PageHeader, Tooltip } from '../ui'
 
 import { LOCAL_HOST } from '../../constants'
 
 const CHAT_ZOOM_STORAGE_KEY = 'openterm.chat.zoom'
+const CHAT_ZOOM_STORAGE_VERSION_KEY = 'openterm.chat.zoom.version'
+const CHAT_ZOOM_STORAGE_VERSION = '2'
 const TOPIC_WORKSPACE_WIDTH_STORAGE_KEY = 'openterm.topicWorkspace.width'
-const DEFAULT_CHAT_ZOOM = 1
-const CHAT_BASE_FONT_SIZE = 14
+const DEFAULT_CHAT_ZOOM = 0.94
+const CHAT_BASE_FONT_SIZE = 13
 const CHAT_ZOOM_STEP = 0.06
 const MIN_CHAT_ZOOM = 0.25
 const MAX_CHAT_ZOOM = 1.18
@@ -36,7 +38,7 @@ const MIN_CHAT_COLUMN_WIDTH = 420
 const DEFAULT_TOPIC_WORKSPACE_WIDTH = 264
 const MIN_TOPIC_WORKSPACE_WIDTH = 224
 const MAX_TOPIC_WORKSPACE_WIDTH = 360
-const TOPIC_WORKSPACE_EXIT_MS = 320
+const TOPIC_WORKSPACE_EXIT_MS = 440
 
 function clampChatZoom(value: number): number {
   return Math.max(MIN_CHAT_ZOOM, Math.min(MAX_CHAT_ZOOM, value))
@@ -132,7 +134,12 @@ export function ChatPanel({
   const [commandPaletteBusy, setCommandPaletteBusy] = useState(false)
   const [commandPaletteError, setCommandPaletteError] = useState<string | null>(null)
   const [chatZoom, setChatZoom] = useState(() => {
-    const stored = Number(window.localStorage.getItem(CHAT_ZOOM_STORAGE_KEY))
+    const storedRaw = window.localStorage.getItem(CHAT_ZOOM_STORAGE_KEY)
+    const storageVersion = window.localStorage.getItem(CHAT_ZOOM_STORAGE_VERSION_KEY)
+    const stored = Number(storedRaw)
+    if (storageVersion !== CHAT_ZOOM_STORAGE_VERSION && Math.abs(stored - 1) < 0.001) {
+      return DEFAULT_CHAT_ZOOM
+    }
     return Number.isFinite(stored) && stored > 0 ? clampChatZoom(stored) : DEFAULT_CHAT_ZOOM
   })
   const [workspaceOpen, setWorkspaceOpen] = useState(
@@ -269,6 +276,7 @@ export function ChatPanel({
   )
   useEffect(() => {
     window.localStorage.setItem(CHAT_ZOOM_STORAGE_KEY, chatZoom.toFixed(2))
+    window.localStorage.setItem(CHAT_ZOOM_STORAGE_VERSION_KEY, CHAT_ZOOM_STORAGE_VERSION)
   }, [chatZoom])
   useEffect(() => {
     window.localStorage.setItem(
@@ -493,30 +501,6 @@ export function ChatPanel({
           }
           actions={
             <>
-              {visibleSessions.length > 0 && (
-                <Badge variant="neutral" className="hidden lg:flex">
-                  <Monitor size={13} />
-                  <span>共驾终端 {visibleSessions.length}</span>
-                  {terminalStage.focusedSession && (
-                    <span className="text-accent">
-                      当前: {terminalStage.focusedSession.hostAlias}
-                    </span>
-                  )}
-                </Badge>
-              )}
-              {topicHosts.length > 0 && (
-                <div className="flex -space-x-2">
-                  {topicHosts.slice(0, 4).map((h) => (
-                    <div
-                      key={h.id}
-                      title={h.alias}
-                      className="flex h-6 w-6 items-center justify-center rounded-full border border-white/80 bg-white/70 text-[10px] font-semibold text-accent shadow-sm ring-1 ring-accent/12 backdrop-blur-xl"
-                    >
-                      {h.alias.slice(0, 2).toUpperCase()}
-                    </div>
-                  ))}
-                </div>
-              )}
               <Tooltip side="bottom" content="添加主机到当前对话">
                 <IconButton
                   aria-label="添加主机到当前对话"
@@ -533,7 +517,7 @@ export function ChatPanel({
                   onClick={() => setWorkspaceOpen((open) => !open)}
                   className="workspace-top-icon-button topic-workspace-toggle-button text-muted-foreground"
                 >
-                  {workspaceOpen ? <PanelRightClose /> : <PanelRightOpen />}
+                  <PanelRight />
                 </IconButton>
               </Tooltip>
             </>
@@ -673,18 +657,21 @@ export function ChatPanel({
           onFocusSession={handleFocusSession}
         />
       )}
-      {workspacePresent && workspaceMotionOpen && (
+      {workspacePresent && (
         <div
           role="separator"
           aria-orientation="vertical"
           aria-label="调整作战中心宽度"
+          aria-hidden={!workspaceMotionOpen}
           aria-valuemin={MIN_TOPIC_WORKSPACE_WIDTH}
           aria-valuemax={MAX_TOPIC_WORKSPACE_WIDTH}
           aria-valuenow={Math.round(workspaceWidth)}
-          tabIndex={0}
+          tabIndex={workspaceMotionOpen ? 0 : -1}
+          data-state={workspaceMotionOpen ? 'open' : 'closed'}
           data-resizing={isResizingWorkspace ? 'true' : 'false'}
           className="workspace-resize-handle no-drag hidden lg:block"
           onMouseDown={(event) => {
+            if (!workspaceMotionOpen) return
             event.preventDefault()
             const workspacePanel = event.currentTarget.nextElementSibling as HTMLElement | null
             setWorkspaceResizeRightEdge(
@@ -702,24 +689,29 @@ export function ChatPanel({
           className="topic-workspace-presence workspace-side-panel h-full shrink-0 overflow-hidden"
           data-state={workspaceMotionOpen ? 'open' : 'closed'}
           aria-hidden={!workspaceMotionOpen}
-          style={{ width: workspaceWidth }}
+          style={{ width: workspaceWidth, maxWidth: workspaceWidth, flexBasis: workspaceWidth }}
         >
-          <TopicHub
-            topicId={topic.id}
-            hosts={topicHosts}
-            sessions={visibleSessions}
-            onAddHost={onManageHosts}
-            onRemoveHost={onRemoveHostFromTopic}
-            onCreateTerminal={onCreateTerminal}
-            onCloseTerminal={onCloseTerminal}
-            onRenameTerminal={onRenameTerminal}
-            onTogglePin={onToggleTerminalPin}
-            focusedSessionId={terminalStage.focusedSessionId}
-            onFocusSession={handleFocusSession}
-            onOpenFileBrowser={onOpenFileBrowser}
-            onOpenPortForward={(host) => setPortForwardHost({ id: host.id, alias: host.alias })}
-            onOpenRunDetail={setRunDetailId}
-          />
+          <div
+            className="topic-workspace-inner h-full"
+            style={{ width: workspaceWidth, minWidth: workspaceWidth }}
+          >
+            <TopicHub
+              topicId={topic.id}
+              hosts={topicHosts}
+              sessions={visibleSessions}
+              onAddHost={onManageHosts}
+              onRemoveHost={onRemoveHostFromTopic}
+              onCreateTerminal={onCreateTerminal}
+              onCloseTerminal={onCloseTerminal}
+              onRenameTerminal={onRenameTerminal}
+              onTogglePin={onToggleTerminalPin}
+              focusedSessionId={terminalStage.focusedSessionId}
+              onFocusSession={handleFocusSession}
+              onOpenFileBrowser={onOpenFileBrowser}
+              onOpenPortForward={(host) => setPortForwardHost({ id: host.id, alias: host.alias })}
+              onOpenRunDetail={setRunDetailId}
+            />
+          </div>
         </div>
       )}
       {portForwardHost && (

@@ -3,26 +3,29 @@ import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '../../lib/utils'
 
-export const surfaceVariants = cva('rounded-lg border transition-colors', {
-  variants: {
-    variant: {
-      plain: 'border-transparent bg-transparent',
-      subtle: 'border-white/70 bg-white/55 backdrop-blur-xl',
-      raised: 'glass-panel',
-      workspace: 'workspace-shell text-workspace-foreground'
+export const surfaceVariants = cva(
+  'rounded-lg border transition-[background-color,border-color,box-shadow,transform,opacity] duration-[var(--motion-duration-medium)] ease-[var(--motion-ease-interactive)]',
+  {
+    variants: {
+      variant: {
+        plain: 'border-transparent bg-transparent',
+        subtle: 'border-white/70 bg-white/55 backdrop-blur-xl',
+        raised: 'glass-panel',
+        workspace: 'workspace-shell text-workspace-foreground'
+      },
+      padding: {
+        none: 'p-0',
+        sm: 'p-3',
+        md: 'p-4',
+        lg: 'p-5'
+      }
     },
-    padding: {
-      none: 'p-0',
-      sm: 'p-3',
-      md: 'p-4',
-      lg: 'p-5'
+    defaultVariants: {
+      variant: 'raised',
+      padding: 'md'
     }
-  },
-  defaultVariants: {
-    variant: 'raised',
-    padding: 'md'
   }
-})
+)
 
 export interface SurfaceProps
   extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof surfaceVariants> {}

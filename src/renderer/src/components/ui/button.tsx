@@ -5,12 +5,12 @@ import { Slot } from 'radix-ui'
 import { cn } from '../../lib/utils'
 
 export const buttonVariants = cva(
-  'blue-ring inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-all duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:scale-100 disabled:opacity-50 no-drag',
+  'blue-ring inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-[background-color,border-color,color,box-shadow,transform,opacity] duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-interactive)] active:translate-y-px active:scale-[0.985] disabled:pointer-events-none disabled:translate-y-0 disabled:scale-100 disabled:opacity-50 no-drag',
   {
     variants: {
       variant: {
         primary:
-          'border border-accent/10 bg-accent text-white shadow-[0_8px_20px_rgba(38,119,255,0.18)] hover:bg-accent-strong hover:shadow-[0_10px_26px_rgba(38,119,255,0.24)]',
+          'border border-accent/10 bg-accent text-white shadow-[0_8px_20px_rgba(83,154,248,0.18)] hover:bg-accent-strong hover:shadow-[0_10px_26px_rgba(83,154,248,0.24)]',
         secondary:
           'glass-control text-foreground hover:border-accent/25 hover:bg-white/80 hover:text-accent',
         ghost:
