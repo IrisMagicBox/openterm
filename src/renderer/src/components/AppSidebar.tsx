@@ -7,13 +7,12 @@ import {
   MessageSquare,
   Settings,
   Pencil,
-  Trash2,
-  ShieldAlert
+  Trash2
 } from 'lucide-react'
 import { NavItem } from './NavItem'
 import { View, WorkspaceWindowItem } from '../types'
-import { PermissionMode, Topic } from '../../../shared/types'
-import { Badge, ConfirmActionButton, IconButton, Surface, Tooltip } from './ui'
+import { Topic } from '../../../shared/types'
+import { ConfirmActionButton, IconButton, Tooltip } from './ui'
 import { cn } from '../lib/utils'
 
 interface AppSidebarProps {
@@ -29,7 +28,6 @@ interface AppSidebarProps {
   setEditingTopicId: (id: string | null) => void
   editingTopicTitle: string
   setEditingTopicTitle: (title: string) => void
-  permissionMode: PermissionMode
   onCreateTopic: () => void
   onStartRenameTopic: (topic: Topic) => void
   onCommitRenameTopic: () => void
@@ -60,7 +58,6 @@ export function AppSidebar({
   setEditingTopicId,
   editingTopicTitle,
   setEditingTopicTitle,
-  permissionMode,
   onCreateTopic,
   onStartRenameTopic,
   onCommitRenameTopic,
@@ -79,31 +76,6 @@ export function AppSidebar({
 }: AppSidebarProps): ReactElement {
   const [editingWindowKey, setEditingWindowKey] = useState<string | null>(null)
   const [editingWindowTitle, setEditingWindowTitle] = useState('')
-  const permissionStatus = {
-    default: {
-      text: '默认权限',
-      description: '高风险操作会询问',
-      variant: 'success' as const,
-      iconClassName: 'bg-success-soft text-success',
-      badge: '默认'
-    },
-    auto_review: {
-      text: '自动审核',
-      description: '低中风险自动通过',
-      variant: 'accent' as const,
-      iconClassName: 'bg-accent-soft text-accent',
-      badge: '自动'
-    },
-    full_access: {
-      text: '完全访问',
-      description: 'Agent 将直接执行',
-      variant: 'warning' as const,
-      iconClassName: 'bg-warning-soft text-warning',
-      badge: '高风险'
-    }
-  }[permissionMode]
-  const statusText = permissionStatus.text
-  const statusDescription = permissionStatus.description
 
   const renderWindowList = (
     title: string,
@@ -260,6 +232,17 @@ export function AppSidebar({
           tooltip="主机列表"
         />
         <NavItem
+          active={activeView === 'chat'}
+          onClick={() => {
+            setActiveView('chat')
+            if (!selectedTopic && topics.length > 0) setSelectedTopic(topics[0])
+          }}
+          icon={<MessageSquare size={15} />}
+          label={compactSidebar ? '' : 'Agent助手'}
+          count={compactSidebar ? undefined : topics.length}
+          tooltip="Agent助手"
+        />
+        <NavItem
           active={activeView === 'terminal'}
           onClick={() => setActiveView('terminal')}
           icon={<Terminal size={15} />}
@@ -274,17 +257,6 @@ export function AppSidebar({
           label={compactSidebar ? '' : '文件'}
           count={fileWindows.length > 0 ? fileWindows.length : undefined}
           tooltip="文件窗口"
-        />
-        <NavItem
-          active={activeView === 'chat'}
-          onClick={() => {
-            setActiveView('chat')
-            if (!selectedTopic && topics.length > 0) setSelectedTopic(topics[0])
-          }}
-          icon={<MessageSquare size={15} />}
-          label={compactSidebar ? '' : 'Agent助手'}
-          count={compactSidebar ? undefined : topics.length}
-          tooltip="Agent助手"
         />
         <NavItem
           active={activeView === 'settings'}
@@ -445,50 +417,7 @@ export function AppSidebar({
         </div>
       )}
 
-      <div className={cn('mt-auto p-3', compactSidebar && 'px-2')}>
-        {compactSidebar ? (
-          <Tooltip content={`${statusText}：${statusDescription}`} side="right">
-            <div className="glass-control flex h-9 items-center justify-center rounded-lg">
-              <ShieldAlert
-                size={16}
-                className={
-                  permissionMode === 'full_access'
-                    ? 'text-warning'
-                    : permissionMode === 'auto_review'
-                      ? 'text-accent'
-                      : 'text-success'
-                }
-              />
-            </div>
-          </Tooltip>
-        ) : (
-          <Surface
-            variant="subtle"
-            padding="sm"
-            className="rounded-lg border-white/20 bg-white/[0.08] shadow-none backdrop-blur-xl"
-          >
-            <div className="flex items-center gap-2.5">
-              <div
-                className={cn(
-                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
-                  permissionStatus.iconClassName
-                )}
-              >
-                <ShieldAlert size={14} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-semibold text-foreground">
-                  {statusText}
-                </div>
-                <div className="truncate text-xs text-muted-foreground">{statusDescription}</div>
-              </div>
-              <Badge variant={permissionStatus.variant} className="min-h-4 px-1.5 text-[10px]">
-                {permissionStatus.badge}
-              </Badge>
-            </div>
-          </Surface>
-        )}
-      </div>
+      <div className="mt-auto" />
     </aside>
   )
 }
