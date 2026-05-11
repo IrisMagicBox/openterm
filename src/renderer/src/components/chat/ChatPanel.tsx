@@ -604,6 +604,7 @@ export function ChatPanel({
                     riskLevel={pendingAuth.riskLevel}
                     reason={pendingAuth.reason}
                     metadata={pendingAuth.metadata}
+                    variant="attached"
                     onResolve={onResolveAuth}
                   />
                 ) : null

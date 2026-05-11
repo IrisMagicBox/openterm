@@ -66,8 +66,6 @@ export function ChatInput({
   return (
     <div className="relative px-6 pb-4 pt-2.5">
       <div className="relative mx-auto w-full max-w-[860px]">
-        {authPrompt && <div className="mb-2.5">{authPrompt}</div>}
-
         {showMentions && filteredHosts.length > 0 && (
           <div className="absolute bottom-full left-0 z-20 mb-3 w-72 overflow-hidden rounded-[22px] border border-black/10 bg-white/98 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
             <div className="flex items-center gap-1.5 border-b border-black/[0.06] px-3 py-2.5 text-xs font-semibold text-muted-foreground">
@@ -124,7 +122,14 @@ export function ChatInput({
           </Surface>
         )}
 
-        <div className="composer-shell relative rounded-[22px] px-3.5 py-2.5 transition-[border-color,box-shadow,background-color] duration-[var(--motion-duration-medium)] ease-[var(--motion-ease-interactive)] focus-within:border-black/[0.14]">
+        {authPrompt && <div className="auth-attached-drawer relative z-10">{authPrompt}</div>}
+
+        <div
+          className={cn(
+            'composer-shell relative px-3.5 py-2.5 transition-[border-color,box-shadow,background-color,border-radius] duration-[var(--motion-duration-medium)] ease-[var(--motion-ease-interactive)] focus-within:border-black/[0.14]',
+            authPrompt ? 'rounded-b-[22px] rounded-t-none border-t-transparent' : 'rounded-[22px]'
+          )}
+        >
           <Textarea
             ref={textareaRef}
             value={inputValue}

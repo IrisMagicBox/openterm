@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Check, ChevronDown, Cpu } from 'lucide-react'
 import type { Provider, Model } from '../../../shared/types'
 import { isAgentRuntimeProvider, isAgentUsableModel } from '../config/providers'
@@ -55,16 +55,12 @@ export function ModelSelector({
     return models.filter((m) => m.providerId === providerId && isAgentUsableModel(m))
   }
 
-  const entries = useMemo(
-    () =>
-      enabledProviders.flatMap((provider) => {
-        const providerModels = getProviderModels(provider.id)
-        return providerModels.length > 0
-          ? providerModels.map((model) => ({ provider, model }))
-          : [{ provider, model: null as Model | null }]
-      }),
-    [enabledProviders, models]
-  )
+  const entries = enabledProviders.flatMap((provider) => {
+    const providerModels = getProviderModels(provider.id)
+    return providerModels.length > 0
+      ? providerModels.map((model) => ({ provider, model }))
+      : [{ provider, model: null as Model | null }]
+  })
 
   const showProviderTag = enabledProviders.length > 1
 
@@ -109,13 +105,13 @@ export function ModelSelector({
 
       <DropdownMenuContent
         align={menuAlign}
-        sideOffset={10}
-        className="z-[500] w-[320px] overflow-hidden rounded-[24px] border border-black/[0.08] bg-white/98 p-2 shadow-[0_18px_50px_rgba(15,23,42,0.1)]"
+        sideOffset={6}
+        className="z-[500] w-[252px] overflow-hidden rounded-2xl border border-black/[0.08] bg-white/98 p-1.5 shadow-[0_14px_38px_rgba(15,23,42,0.09)]"
       >
-        <div className="px-3 pb-2 pt-1 text-xs font-semibold tracking-wide text-muted-foreground">
+        <div className="px-2.5 pb-1.5 pt-1 text-[11px] font-semibold tracking-wide text-muted-foreground">
           模型
         </div>
-        <div className="max-h-96 overflow-y-auto px-1 pb-1">
+        <div className="max-h-[260px] overflow-y-auto px-0.5 pb-0.5">
           {entries.map(({ provider, model }) => {
             const isSelected =
               selectedProviderId === provider.id &&
@@ -125,21 +121,23 @@ export function ModelSelector({
                 key={`${provider.id}-${model?.id ?? 'default'}`}
                 onClick={() => handleSelect(provider.id, model?.id ?? 'default')}
                 className={cn(
-                  'flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-[background-color,color,transform] duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-interactive)]',
+                  'flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-[background-color,color,transform] duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-interactive)]',
                   isSelected
                     ? 'bg-black/[0.05] text-foreground'
                     : 'text-foreground/88 hover:bg-black/[0.035]'
                 )}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[15px] font-medium leading-6">
+                  <div className="truncate text-[13px] font-medium leading-5">
                     {model?.name ?? `${provider.name} 默认`}
                   </div>
                   {showProviderTag && (
-                    <div className="mt-0.5 text-xs text-muted-foreground">{provider.name}</div>
+                    <div className="text-[11px] leading-4 text-muted-foreground">
+                      {provider.name}
+                    </div>
                   )}
                 </div>
-                {isSelected ? <Check size={18} className="shrink-0 text-foreground" /> : null}
+                {isSelected ? <Check size={15} className="shrink-0 text-foreground" /> : null}
               </button>
             )
           })}
