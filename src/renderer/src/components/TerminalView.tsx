@@ -719,19 +719,19 @@ export function TerminalView({
           delete document.documentElement.dataset.zoomTarget
         }
       }}
-      className="relative h-full w-full overflow-hidden rounded-xl bg-white"
+      className="relative h-full w-full overflow-hidden bg-white"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       <div
         ref={terminalRef}
-        className="relative z-0 h-full w-full overflow-hidden rounded-xl p-2"
+        className="relative z-0 h-full w-full overflow-hidden px-1.5 py-1"
         onMouseDown={() => xtermRef.current?.focus()}
       />
       {isDragOver && (
-        <div className="absolute inset-0 z-10 flex pointer-events-none items-center justify-center rounded-xl border-2 border-accent/45 bg-accent/10">
-          <span className="rounded-full border border-white/75 bg-white/85 px-3 py-1.5 text-xs font-bold text-accent shadow-sm backdrop-blur-xl">
+        <div className="absolute inset-0 z-10 flex pointer-events-none items-center justify-center border-2 border-accent/45 bg-accent/10">
+          <span className="border border-white/75 bg-white/90 px-3 py-1.5 text-xs font-bold text-accent shadow-sm">
             释放以下载文件
           </span>
         </div>
@@ -739,13 +739,13 @@ export function TerminalView({
       {(isAgentExecuting || (commandStatus === 'running' && commandSource === 'agent')) &&
         !isAutoTakeover &&
         !isManualTakeover && (
-          <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-white shadow-sm shadow-accent/20">
-            <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+          <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1.5 border border-accent/25 bg-accent px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm shadow-accent/15">
+            <div className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
             Agent 执行中...
           </div>
         )}
       {isAutoTakeover && (
-        <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 rounded-full bg-warning px-2.5 py-1 text-xs font-semibold text-white shadow-sm shadow-warning/20">
+        <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1.5 border border-warning/25 bg-warning px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm shadow-warning/15">
           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
             <path
               fillRule="evenodd"
@@ -757,7 +757,7 @@ export function TerminalView({
         </div>
       )}
       {isManualTakeover && (
-        <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 rounded-full bg-warning px-2.5 py-1 text-xs font-semibold text-white shadow-sm shadow-warning/20">
+        <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1.5 border border-warning/25 bg-warning px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm shadow-warning/15">
           <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
             <path
               fillRule="evenodd"
@@ -770,7 +770,7 @@ export function TerminalView({
       )}
       {(completion || completionPending) && !commandAssist?.open && (
         <div
-          className="pointer-events-none absolute z-20 flex max-w-[min(420px,calc(100%-24px))] items-center gap-2 rounded-lg border border-black/[0.08] bg-white/95 px-2.5 py-1.5 text-xs shadow-[0_12px_34px_rgba(15,23,42,0.12)] backdrop-blur-xl"
+          className="pointer-events-none absolute z-20 flex max-w-[min(420px,calc(100%-24px))] items-center gap-2 border border-black/[0.08] bg-white/95 px-2.5 py-1.5 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.1)]"
           style={{ left: completionAnchor.left, top: completionAnchor.top }}
         >
           {completion ? (
@@ -805,7 +805,7 @@ export function TerminalView({
       )}
       {commandAssist?.open && (
         <div
-          className="absolute bottom-3 left-1/2 z-[80] isolate flex max-h-[calc(100%-24px)] w-[min(520px,calc(100%-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-black/[0.08] bg-white text-foreground shadow-[0_18px_48px_rgba(15,23,42,0.18)] ring-1 ring-black/[0.04]"
+          className="absolute bottom-2 left-1/2 z-[80] isolate flex max-h-[calc(100%-16px)] w-[min(520px,calc(100%-16px))] -translate-x-1/2 flex-col overflow-hidden border border-black/[0.08] bg-white text-foreground shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
           onPointerDown={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}

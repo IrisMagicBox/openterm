@@ -1,6 +1,6 @@
 import type { AgentPart, TerminalSession } from '../../../shared/types'
 
-export type TerminalStageMode = 'stage' | 'grid' | 'timeline'
+export type TerminalStageMode = 'stage' | 'grid'
 
 export type TerminalActivityStatus = 'idle' | 'running' | 'completed' | 'failed' | 'paused'
 

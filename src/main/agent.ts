@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron'
-import type { AgentRun, Host, Message, TerminalSessionRole } from '../shared/types'
+import type { AgentRun, Host, Message, TerminalSessionRole, Topic } from '../shared/types'
 import type { TopicUpdatedPayload } from '../shared/ipc/channels'
 import type { IAgentService } from './AgentRunner'
 import { AgentApplicationService } from './agent/agent-application-service'
@@ -53,14 +53,16 @@ export class AgentService implements IAgentService {
     return this.sessions.getTopicHosts(topicId)
   }
 
-  async addHostToTopic(topicId: string, hostId: string): Promise<boolean> {
-    await this.sessions.addHostToTopic(topicId, hostId)
-    return true
+  async addHostToTopic(topicId: string, hostId: string): Promise<Topic | undefined> {
+    const topic = await this.sessions.addHostToTopic(topicId, hostId)
+    if (topic) this.notifyTopicUpdated({ topicId: topic.id, topic })
+    return topic
   }
 
-  async removeHostFromTopic(topicId: string, hostId: string): Promise<boolean> {
-    await this.sessions.removeHostFromTopic(topicId, hostId)
-    return true
+  async removeHostFromTopic(topicId: string, hostId: string): Promise<Topic | undefined> {
+    const topic = await this.sessions.removeHostFromTopic(topicId, hostId)
+    if (topic) this.notifyTopicUpdated({ topicId: topic.id, topic })
+    return topic
   }
 
   createTerminal(

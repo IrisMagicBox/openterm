@@ -29,6 +29,27 @@ interface UseTopicsResult {
   handleUpdateTopicModel: (topicId: string, providerId: string, modelId: string) => Promise<void>
 }
 
+function withAddedHost(topic: Topic, hostId: string): Topic {
+  if (topic.hostIds.includes(hostId)) return topic
+  return { ...topic, hostIds: [...topic.hostIds, hostId] }
+}
+
+function withRemovedHost(topic: Topic, hostId: string): Topic {
+  if (!topic.hostIds.includes(hostId)) return topic
+  return { ...topic, hostIds: topic.hostIds.filter((id) => id !== hostId) }
+}
+
+function applyTopicUpdate(
+  topicId: string,
+  updatedTopic: Topic | undefined,
+  fallback: (topic: Topic) => Topic
+): (topic: Topic) => Topic {
+  return (topic) => {
+    if (topic.id !== topicId) return topic
+    return updatedTopic ?? fallback(topic)
+  }
+}
+
 export function useTopics(config: UseTopicsConfig): UseTopicsResult {
   const { loadHosts } = config
 
@@ -97,11 +118,13 @@ export function useTopics(config: UseTopicsConfig): UseTopicsResult {
   const handleAddHostToTopic = useCallback(
     async (hostId: string) => {
       if (!selectedTopic) return
-      await window.api.addHostToTopic(selectedTopic.id, hostId)
-      setTopics((prev) =>
-        prev.map((t) => (t.id === selectedTopic.id ? { ...t, hostIds: [...t.hostIds, hostId] } : t))
+      const topicId = selectedTopic.id
+      const updatedTopic = await window.api.addHostToTopic(topicId, hostId)
+      const applyUpdate = applyTopicUpdate(topicId, updatedTopic, (topic) =>
+        withAddedHost(topic, hostId)
       )
-      setSelectedTopic((prev) => (prev ? { ...prev, hostIds: [...prev.hostIds, hostId] } : null))
+      setTopics((prev) => prev.map(applyUpdate))
+      setSelectedTopic((prev) => (prev ? applyUpdate(prev) : null))
       await loadHosts()
     },
     [selectedTopic, loadHosts]
@@ -110,15 +133,13 @@ export function useTopics(config: UseTopicsConfig): UseTopicsResult {
   const handleRemoveHostFromTopic = useCallback(
     async (hostId: string) => {
       if (!selectedTopic) return
-      await window.api.removeHostFromTopic(selectedTopic.id, hostId)
-      setTopics((prev) =>
-        prev.map((t) =>
-          t.id === selectedTopic.id ? { ...t, hostIds: t.hostIds.filter((id) => id !== hostId) } : t
-        )
+      const topicId = selectedTopic.id
+      const updatedTopic = await window.api.removeHostFromTopic(topicId, hostId)
+      const applyUpdate = applyTopicUpdate(topicId, updatedTopic, (topic) =>
+        withRemovedHost(topic, hostId)
       )
-      setSelectedTopic((prev) =>
-        prev ? { ...prev, hostIds: prev.hostIds.filter((id) => id !== hostId) } : null
-      )
+      setTopics((prev) => prev.map(applyUpdate))
+      setSelectedTopic((prev) => (prev ? applyUpdate(prev) : null))
       await loadHosts()
     },
     [selectedTopic, loadHosts]
@@ -155,21 +176,19 @@ export function useTopics(config: UseTopicsConfig): UseTopicsResult {
           if (exists) return prev.map((t) => (t.id === topic.id ? topic : t))
           return [topic, ...prev]
         })
-        if (selectedTopic?.id === topic.id) setSelectedTopic(topic)
+        setSelectedTopic((prev) => (prev?.id === topic.id ? topic : prev))
         return
       }
 
       if (!title) return
       setTopics((prev) => prev.map((t) => (t.id === topicId ? { ...t, title } : t)))
-      if (selectedTopic?.id === topicId) {
-        setSelectedTopic((prev) => (prev ? { ...prev, title } : null))
-      }
+      setSelectedTopic((prev) => (prev?.id === topicId ? { ...prev, title } : prev))
     })
 
     return () => {
       unlistenTopic()
     }
-  }, [selectedTopic])
+  }, [])
 
   return {
     topics,

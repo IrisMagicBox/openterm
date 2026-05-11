@@ -16,7 +16,8 @@ export interface TerminalFocusOptions {
 
 function initialMode(): TerminalStageMode {
   const stored = window.localStorage.getItem(MODE_STORAGE_KEY)
-  if (stored === 'stage' || stored === 'grid' || stored === 'timeline') return stored
+  if (stored === 'stage' || stored === 'grid') return stored
+  if (stored === 'timeline') window.localStorage.setItem(MODE_STORAGE_KEY, 'stage')
   return 'stage'
 }
 

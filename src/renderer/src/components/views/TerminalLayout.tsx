@@ -295,10 +295,10 @@ export function TerminalLayout({
       return (
         <div
           className={cn(
-            'relative flex h-full flex-col overflow-hidden bg-white/65 transition-colors',
-            leafCount > 1 && 'border border-workspace-border/60',
+            'relative flex h-full flex-col overflow-hidden bg-white transition-colors',
+            leafCount > 1 && 'border border-workspace-border',
             paneManager.focusedLeafId === leaf.id &&
-              'shadow-[inset_0_0_0_1px_rgba(41,120,245,0.24)]'
+              'shadow-[inset_2px_0_0_rgba(41,120,245,0.75)]'
           )}
           onMouseDown={() => paneManager.setFocusedLeafId(leaf.id)}
           onDragOver={(e) => handlePaneDragOver(e, leaf.id)}
@@ -306,17 +306,17 @@ export function TerminalLayout({
           onDrop={(e) => handlePaneDrop(e, leaf.id)}
         >
           {showPaneTitle && (
-            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-workspace-muted/70 px-1.5 pt-1 no-scrollbar">
+            <div className="flex items-center overflow-x-auto border-b border-workspace-border bg-white no-scrollbar">
               {tabs.map((tab) => (
                 <div
                   key={tab.sessionId}
                   draggable
                   onDragStart={(e) => handleTabDragStart(e, tab.sessionId)}
                   onClick={() => focusTerminalTab(tab.sessionId)}
-                  className={`flex items-center gap-1.5 rounded-t-lg px-3 py-1.5 text-xs font-bold cursor-grab transition-colors border-b-2 whitespace-nowrap ${
+                  className={`flex h-8 cursor-grab items-center gap-1.5 border-r border-workspace-border px-3 text-xs font-bold transition-colors whitespace-nowrap ${
                     leaf.activeTabId === tab.sessionId
-                      ? 'text-workspace-foreground border-accent bg-workspace'
-                      : 'text-workspace-muted-foreground border-transparent hover:text-workspace-foreground hover:bg-workspace/70'
+                      ? 'text-workspace-foreground shadow-[inset_0_-2px_0_rgb(41_120_245)] bg-workspace'
+                      : 'text-workspace-muted-foreground hover:text-workspace-foreground hover:bg-workspace-muted'
                   }`}
                 >
                   <TerminalIcon size={10} />
@@ -408,7 +408,7 @@ export function TerminalLayout({
       className="workspace-canvas relative flex flex-1 gap-0 overflow-hidden bg-transparent"
     >
       <div className="workspace-primary-content flex min-w-0 flex-1 flex-col">
-        <div className="workspace-layer-header flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/70 backdrop-blur-2xl">
+        <div className="workspace-layer-header flex flex-col flex-shrink-0 border-b border-workspace-border bg-white">
           <div className="h-[var(--workspace-header-height)] px-5 flex items-center justify-between flex-shrink-0 drag text-workspace-foreground">
             <div className="flex items-center gap-3 no-drag">
               <TerminalIcon size={13} className="text-accent" />
@@ -500,7 +500,7 @@ export function TerminalLayout({
           </div>
         </div>
 
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-white/45">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
           {paneManager.isEmpty ? (
             <div className="flex flex-1 items-center justify-center">
               <div className="text-center">
@@ -519,11 +519,11 @@ export function TerminalLayout({
 
         {showTerminalList && allTabs.length > 0 && (
           <div
-            className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/10 backdrop-blur-lg"
+            className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/10"
             onClick={() => setShowTerminalList(false)}
           >
             <div
-              className="glass-menu mx-4 w-full max-w-2xl rounded-2xl p-5"
+              className="glass-menu mx-4 w-full max-w-2xl border border-workspace-border bg-white p-4 shadow-[0_18px_42px_rgba(15,23,42,0.14)]"
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="text-workspace-foreground font-bold text-sm mb-4 flex items-center gap-2">
@@ -537,7 +537,7 @@ export function TerminalLayout({
                       focusTerminalTab(tab.sessionId)
                       setShowTerminalList(false)
                     }}
-                    className="flex cursor-pointer items-center gap-3 rounded-xl border border-white/70 bg-white/60 p-3 transition hover:border-accent/25 hover:bg-accent-soft/45"
+                    className="flex cursor-pointer items-center gap-3 border border-workspace-border bg-white p-3 transition hover:border-accent/25 hover:bg-accent-soft/45"
                   >
                     <TerminalIcon size={16} className="text-accent" />
                     <div className="flex-1 min-w-0">

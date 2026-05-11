@@ -8,7 +8,7 @@ import type {
   CloseTerminalSessionFn,
   CreateAgentSessionFn
 } from './agent-service-types'
-import type { TerminalSessionDeletedBy, TerminalSessionRole } from '../../shared/types'
+import type { TerminalSessionDeletedBy, TerminalSessionRole, Topic } from '../../shared/types'
 
 export class AgentSessionManager {
   private webContents?: WebContents
@@ -34,29 +34,28 @@ export class AgentSessionManager {
     return Promise.all(topic.hostIds.map((id) => hostDB.getHostById(id)))
   }
 
-  async addHostToTopic(topicId: string, hostId: string): Promise<void> {
+  async addHostToTopic(topicId: string, hostId: string): Promise<Topic | undefined> {
     const topic = topicDB.getTopicById(topicId)
-    if (!topic) return
-    if (!topic.hostIds.includes(hostId)) {
-      topicDB.updateTopicHosts(topicId, [...topic.hostIds, hostId])
-    }
+    if (!topic) return undefined
+    const hostIds = topic.hostIds.includes(hostId) ? topic.hostIds : [...topic.hostIds, hostId]
+    topicDB.updateTopicHosts(topicId, hostIds)
+    return topicDB.getTopicById(topicId)
   }
 
-  async removeHostFromTopic(topicId: string, hostId: string): Promise<void> {
+  async removeHostFromTopic(topicId: string, hostId: string): Promise<Topic | undefined> {
     const topic = topicDB.getTopicById(topicId)
-    if (!topic) return
-    topicDB.updateTopicHosts(
-      topicId,
-      topic.hostIds.filter((id) => id !== hostId)
-    )
+    if (!topic) return undefined
+    topicDB.updateTopicHosts(topicId, topic.hostIds.filter((id) => id !== hostId))
 
     const hostMap = this.topicSessions.get(topicId)
     const sessions = [...(hostMap?.get(hostId) ?? [])]
-    if (sessions.length === 0) return
-    for (const session of sessions) {
-      await this.closeTerminal(session.id, { deletedBy: 'system' })
+    if (sessions.length > 0) {
+      for (const session of sessions) {
+        await this.closeTerminal(session.id, { deletedBy: 'system' })
+      }
+      hostMap?.delete(hostId)
     }
-    hostMap?.delete(hostId)
+    return topicDB.getTopicById(topicId)
   }
 
   async createTerminal(

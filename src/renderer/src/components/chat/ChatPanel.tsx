@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { Clock, Monitor, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Clock, Monitor, PanelRightClose, PanelRightOpen, Plus } from 'lucide-react'
 import { TopicHub } from '../TopicHub'
 import { Host, Topic, TerminalSession } from '../../../../shared/types'
 import { AgentRunDetailDrawer } from '../AgentRunDetailDrawer'
@@ -517,6 +517,15 @@ export function ChatPanel({
                   ))}
                 </div>
               )}
+              <Tooltip side="bottom" content="添加主机到当前对话">
+                <IconButton
+                  aria-label="添加主机到当前对话"
+                  onClick={onManageHosts}
+                  className="workspace-top-icon-button text-muted-foreground"
+                >
+                  <Plus />
+                </IconButton>
+              </Tooltip>
               <Tooltip side="bottom" content="切换作战中心">
                 <IconButton
                   aria-label={workspaceOpen ? '隐藏作战中心' : '显示作战中心'}
@@ -625,12 +634,9 @@ export function ChatPanel({
           visibleSessions={visibleSessions}
           focusedSession={terminalStage.focusedSession}
           focusedSessionId={terminalStage.focusedSessionId}
-          activeParts={activeParts}
           activities={terminalActivities}
-          previews={terminalPreviews}
           mode={terminalStage.mode}
           followAgent={terminalStage.followAgent}
-          focusedPartId={terminalStage.focusedPartId}
           terminalFontSize={terminalFontSize}
           terminalWidth={terminalWidth}
           isResizing={isResizing}
@@ -665,10 +671,6 @@ export function ChatPanel({
           onSetMode={terminalStage.setMode}
           onSetFollowAgent={terminalStage.setFollowAgent}
           onFocusSession={handleFocusSession}
-          onRevealTerminal={terminalStage.revealTerminal}
-          onOpenPortForward={(session) =>
-            setPortForwardHost({ id: session.hostId, alias: session.hostAlias })
-          }
         />
       )}
       {workspacePresent && workspaceMotionOpen && (

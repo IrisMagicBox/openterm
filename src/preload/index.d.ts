@@ -285,8 +285,8 @@ declare global {
 
       // Host Pool Management
       getTopicHosts: (topicId: string) => Promise<Host[]>
-      addHostToTopic: (topicId: string, hostId: string) => Promise<boolean>
-      removeHostFromTopic: (topicId: string, hostId: string) => Promise<boolean>
+      addHostToTopic: (topicId: string, hostId: string) => Promise<Topic | undefined>
+      removeHostFromTopic: (topicId: string, hostId: string) => Promise<Topic | undefined>
 
       connectSSH: (hostId: string, topicId?: string) => Promise<string>
       sendSSHInput: (id: string, data: string, topicId?: string) => void

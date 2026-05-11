@@ -324,7 +324,7 @@ function HostsPane({
 }): React.ReactElement {
   if (hosts.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center">
+      <div className="rounded-lg border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center">
         <p className="text-xs font-medium leading-relaxed text-muted-foreground">暂无主机。</p>
         <Button
           onClick={onAddHost}
@@ -340,7 +340,19 @@ function HostsPane({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2 px-1">
+        <span className="text-[11px] font-bold text-muted-foreground">当前对话主机</span>
+        <Tooltip content="添加主机到当前对话" side="left">
+          <IconButton
+            aria-label="添加主机到当前对话"
+            onClick={onAddHost}
+            className="h-6 w-6 text-muted-foreground"
+          >
+            <Plus size={12} />
+          </IconButton>
+        </Tooltip>
+      </div>
       {hosts.map((host) => {
         const hostSessions = sessions.filter((session) => session.hostId === host.id)
 
