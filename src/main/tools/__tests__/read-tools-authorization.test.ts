@@ -76,7 +76,7 @@ function allowReadPolicy(commandPattern?: string): Record<string, unknown> {
 describe('read shell tools authorization', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.getPermissions.mockReturnValue({ requireConfirmation: true })
+    mocks.getPermissions.mockReturnValue({ permissionMode: 'default', updatedAt: 1 })
     mocks.evaluateWithTrust.mockReturnValue(allowReadPolicy())
     mocks.requestAuthorization.mockResolvedValue({ approved: true, alwaysAllow: false })
     mocks.execute.mockResolvedValue({ content: 'ok\n', exitCode: 0 })

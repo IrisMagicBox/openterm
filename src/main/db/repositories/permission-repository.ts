@@ -1,12 +1,26 @@
 import Database from 'better-sqlite3'
-import { PermissionSettings } from '../../../shared/types'
+import { PermissionMode, PermissionSettings } from '../../../shared/types'
 import { PermissionRow } from '../row-types'
 import { BaseRepository } from '../base-repository'
 
 const DEFAULT_PERMISSIONS: PermissionSettings = {
-  requireConfirmation: true,
-  autoExecuteSafeOperations: true,
+  permissionMode: 'default',
   updatedAt: Date.now()
+}
+
+function normalizePermissionMode(value: unknown): PermissionMode | null {
+  if (value === 'default' || value === 'auto_review' || value === 'full_access') return value
+  return null
+}
+
+function derivePermissionMode(
+  row: Pick<PermissionRow, 'permissionMode' | 'requireConfirmation' | 'autoExecuteSafeOperations'>
+): PermissionMode {
+  const explicitMode = normalizePermissionMode(row.permissionMode)
+  if (explicitMode) return explicitMode
+  if (row.requireConfirmation === 0) return 'full_access'
+  if (row.autoExecuteSafeOperations === 1) return 'auto_review'
+  return 'default'
 }
 
 export class PermissionRepository extends BaseRepository<PermissionRow> {
@@ -23,61 +37,36 @@ export class PermissionRepository extends BaseRepository<PermissionRow> {
       return DEFAULT_PERMISSIONS
     }
     return {
-      requireConfirmation: row.requireConfirmation === 1,
-      autoExecuteSafeOperations: row.autoExecuteSafeOperations === 1,
+      permissionMode: derivePermissionMode(row),
       updatedAt: row.updatedAt
     }
   }
 
-  savePermissions(permissions: Partial<PermissionSettings>): void {
+  savePermissions(permissions: Pick<PermissionSettings, 'permissionMode'>): void {
     const existing = this.stmt('SELECT * FROM permissions WHERE id = ?').get('default') as
       | PermissionRow
       | undefined
     const now = Date.now()
+    const nextMode =
+      normalizePermissionMode(permissions.permissionMode) ??
+      (existing ? derivePermissionMode(existing) : DEFAULT_PERMISSIONS.permissionMode)
 
     if (existing) {
       this.stmt(
         `
         UPDATE permissions
-        SET requireConfirmation = COALESCE(?, requireConfirmation),
-            autoExecuteSafeOperations = COALESCE(?, autoExecuteSafeOperations),
+        SET permissionMode = ?,
             updatedAt = ?
         WHERE id = ?
       `
-      ).run(
-        permissions.requireConfirmation !== undefined
-          ? permissions.requireConfirmation
-            ? 1
-            : 0
-          : null,
-        permissions.autoExecuteSafeOperations !== undefined
-          ? permissions.autoExecuteSafeOperations
-            ? 1
-            : 0
-          : null,
-        now,
-        'default'
-      )
+      ).run(nextMode, now, 'default')
     } else {
       this.stmt(
         `
-        INSERT INTO permissions (id, requireConfirmation, autoExecuteSafeOperations, updatedAt)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO permissions (id, permissionMode, updatedAt)
+        VALUES (?, ?, ?)
       `
-      ).run(
-        'default',
-        permissions.requireConfirmation !== undefined
-          ? permissions.requireConfirmation
-            ? 1
-            : 0
-          : 1,
-        permissions.autoExecuteSafeOperations !== undefined
-          ? permissions.autoExecuteSafeOperations
-            ? 1
-            : 0
-          : 1,
-        now
-      )
+      ).run('default', nextMode, now)
     }
   }
 }

@@ -61,7 +61,7 @@ npm run cli -- files local ls .
 npm run cli -- files sftp connect <host-id>
 npm run cli -- pf create --host <host-id> --local-port 15432 --remote-host 127.0.0.1 --remote-port 5432
 npm run cli -- settings providers list --json
-npm run cli -- settings permissions set --require-confirmation true
+npm run cli -- settings permissions set --mode auto_review
 npm run cli -- memory list --topic latest
 npm run cli -- memory global fact create --content "Prefer concise CLI diagnostics"
 npm run cli -- history search "npm test"

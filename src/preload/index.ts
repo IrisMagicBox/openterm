@@ -407,7 +407,7 @@ const api: Record<string, unknown> = {
 
   // Permission Settings APIs
   getPermissions: () => ipcRenderer.invoke('get-permissions'),
-  savePermissions: (permissions: Partial<PermissionSettings>) =>
+  savePermissions: (permissions: Pick<PermissionSettings, 'permissionMode'>) =>
     ipcRenderer.invoke('save-permissions', permissions),
   onDebugLog: (callback: (entry: DebugLogEntry) => void) => {
     const listener = (_event: IpcRendererEvent, entry: DebugLogEntry) => callback(entry)
@@ -568,7 +568,7 @@ flatApi.settings = {
   saveModel: (model: Model) => typedIpc.invoke('save-model', model),
   deleteModel: (id: string) => typedIpc.invoke('delete-model', id),
   getPermissions: () => typedIpc.invoke('get-permissions'),
-  savePermissions: (permissions: Partial<PermissionSettings>) =>
+  savePermissions: (permissions: Pick<PermissionSettings, 'permissionMode'>) =>
     typedIpc.invoke('save-permissions', permissions)
 }
 

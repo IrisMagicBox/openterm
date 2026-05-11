@@ -1,9 +1,10 @@
 import { z } from 'zod'
 import { define, Tool } from './tool-factory'
-import { modelSettingsDB } from '../db'
+import { modelSettingsDB, permissionDB } from '../db'
 import { callDuckDuckGoSearch } from './duckduckgo-search'
 import { callMcpExaSearch, McpExaError } from './mcp-exa'
 import { getErrorMessage } from '../../shared/errors'
+import { shouldAskToolPermission } from '../permissions'
 
 const parameters = z.object({
   query: z
@@ -16,7 +17,8 @@ const parameters = z.object({
 })
 
 const STRICT_FRESHNESS_WINDOW_DAYS = 7
-const RELATIVE_DATE_QUERY_PATTERN = /(今天|今日|现在|当前|最新|最近|此刻|today|now|latest|recent|current)/i
+const RELATIVE_DATE_QUERY_PATTERN =
+  /(今天|今日|现在|当前|最新|最近|此刻|today|now|latest|recent|current)/i
 const CURRENT_NEWS_QUERY_PATTERN = /(新闻|要闻|快讯|热点|时事|资讯|news|headlines|current events)/i
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -249,19 +251,30 @@ export default define('websearch', {
     const normalizedQuery = normalizeCurrentNewsQuery(args.query, timeContext)
     const effectiveQuery = buildFreshnessSearchQuery(args.query, timeContext)
 
-    await ctx.ask({
-      permission: 'websearch',
-      pattern: normalizedQuery.displayQuery,
-      metadata: {
-        query: normalizedQuery.displayQuery,
-        originalQuery: args.query,
-        normalizedQuery: normalizedQuery.query,
-        removedDates: normalizedQuery.removedDates,
-        numResults: args.numResults,
-        searchDate: timeContext.isoDate,
-        searchTimeZone: timeContext.timeZone
-      }
-    })
+    const permissionMetadata = {
+      query: normalizedQuery.displayQuery,
+      originalQuery: args.query,
+      normalizedQuery: normalizedQuery.query,
+      removedDates: normalizedQuery.removedDates,
+      numResults: args.numResults,
+      searchDate: timeContext.isoDate,
+      searchTimeZone: timeContext.timeZone,
+      riskCategory: 'network'
+    }
+
+    if (
+      shouldAskToolPermission(permissionDB.getPermissions(), {
+        permission: 'websearch',
+        riskLevel: 'medium',
+        riskCategory: 'network'
+      })
+    ) {
+      await ctx.ask({
+        permission: 'websearch',
+        pattern: normalizedQuery.displayQuery,
+        metadata: permissionMetadata
+      })
+    }
 
     try {
       const output = await callMcpExaSearch(
@@ -288,7 +301,7 @@ export default define('websearch', {
           searchTimeZone: timeContext.timeZone,
           latestResultDate: searchOutput.latestResultDate,
           staleCurrentNewsResults: searchOutput.stale,
-          numResults: args.numResults,
+          numResults: args.numResults
         }
       }
     } catch (error) {

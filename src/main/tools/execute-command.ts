@@ -9,6 +9,7 @@ import { COMMAND_TIMEOUT_MS, TRUST_APPROVAL_THRESHOLD } from '../constants'
 import { truncateOutput } from './truncation'
 import { shellQuote } from './shell-quote'
 import { ShellAnalyzer } from '../utils/shell-analyzer'
+import { shouldRequestApproval } from '../permissions'
 
 const LIVE_TOOL_OUTPUT_LIMIT = 12000
 const LIVE_TOOL_OUTPUT_UPDATE_INTERVAL_MS = 150
@@ -121,7 +122,7 @@ export default define('execute_command', {
       requiresVerification: policyResult.requiresVerification
     }
 
-    if (policyResult.action === 'confirm' && permissions.requireConfirmation) {
+    if (policyResult.action === 'confirm' && shouldRequestApproval(permissions, policyResult)) {
       const authResult = await ctx.requestAuthorization(
         command,
         policyResult.riskLevel,

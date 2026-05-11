@@ -12,6 +12,15 @@ vi.mock('../../utils/host-resolver', () => ({
   resolveHostId: vi.fn(() => undefined)
 }))
 
+vi.mock('../../db', () => ({
+  permissionDB: {
+    getPermissions: vi.fn(() => ({
+      permissionMode: 'default',
+      updatedAt: 1
+    }))
+  }
+}))
+
 describe('manage_port_forward tool', () => {
   it('lists tunnels without requiring host arguments', async () => {
     const tool = await managePortForwardTool.init()

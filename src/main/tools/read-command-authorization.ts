@@ -1,6 +1,7 @@
 import { PolicyEngine } from '../PolicyEngine'
 import { permissionDB } from '../db'
 import { Tool } from './tool-factory'
+import { shouldRequestApproval } from '../permissions'
 
 interface ReadCommandAuthorizationInput {
   toolName: string
@@ -38,7 +39,7 @@ export async function authorizeReadCommand(
     }
   }
 
-  if (policy.action === 'confirm' && permissionDB.getPermissions().requireConfirmation) {
+  if (policy.action === 'confirm' && shouldRequestApproval(permissionDB.getPermissions(), policy)) {
     const approval = await ctx.requestAuthorization(
       input.command,
       policy.riskLevel,

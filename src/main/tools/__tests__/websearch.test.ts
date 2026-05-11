@@ -5,12 +5,19 @@ vi.mock('electron', () => ({
 }))
 
 const mocks = vi.hoisted(() => ({
-  getModelSettings: vi.fn(() => ({ exaApiKey: '' }))
+  getModelSettings: vi.fn(() => ({ exaApiKey: '' })),
+  getPermissions: vi.fn(() => ({
+    permissionMode: 'default',
+    updatedAt: 1
+  }))
 }))
 
 vi.mock('../../db', () => ({
   modelSettingsDB: {
     getSettings: mocks.getModelSettings
+  },
+  permissionDB: {
+    getPermissions: mocks.getPermissions
   }
 }))
 
@@ -45,6 +52,10 @@ describe('websearch tool', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     mocks.getModelSettings.mockReturnValue({ exaApiKey: '' })
+    mocks.getPermissions.mockReturnValue({
+      permissionMode: 'default',
+      updatedAt: 1
+    })
   })
 
   it('adds explicit freshness context to relative-date searches', () => {
@@ -116,9 +127,7 @@ describe('websearch tool', () => {
     )
 
     expect(queryNeedsStrictFreshness('今天的新闻')).toBe(true)
-    expect(extractLatestResultDate('来源：央视新闻 | 2026年04月29日 10:16:33')).toBe(
-      '2026-04-29'
-    )
+    expect(extractLatestResultDate('来源：央视新闻 | 2026年04月29日 10:16:33')).toBe('2026-04-29')
     expect(result.stale).toBe(true)
     expect(result.latestResultDate).toBe('2025-06-25')
     expect(result.output).toContain('Freshness guard:')
@@ -152,7 +161,8 @@ describe('websearch tool', () => {
         removedDates: [],
         numResults: 8,
         searchDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        searchTimeZone: expect.any(String)
+        searchTimeZone: expect.any(String),
+        riskCategory: 'network'
       })
     })
     expect(result.output).toContain('Search reference time:')

@@ -329,9 +329,10 @@ export interface ModelSettings {
   updatedAt: number
 }
 
+export type PermissionMode = 'default' | 'auto_review' | 'full_access'
+
 export interface PermissionSettings {
-  requireConfirmation: boolean
-  autoExecuteSafeOperations: boolean
+  permissionMode: PermissionMode
   updatedAt: number
 }
 

@@ -1,13 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { PermissionSettings } from '../../../shared/types'
+import type { PermissionMode, PermissionSettings } from '../../../shared/types'
 
 const DEFAULT_PERMISSIONS: PermissionSettings = {
-  requireConfirmation: true,
-  autoExecuteSafeOperations: true,
+  permissionMode: 'default',
   updatedAt: Date.now()
 }
 
-export function usePermissions() {
+interface UsePermissionsResult {
+  permissions: PermissionSettings
+  loading: boolean
+  setPermissionMode: (permissionMode: PermissionMode) => Promise<boolean>
+  permissionMode: PermissionMode
+  refresh: () => Promise<void>
+}
+
+export function usePermissions(): UsePermissionsResult {
   const [permissions, setPermissions] = useState<PermissionSettings>(DEFAULT_PERMISSIONS)
   const [loading, setLoading] = useState(true)
 
@@ -15,11 +22,11 @@ export function usePermissions() {
     loadPermissions()
   }, [])
 
-  const loadPermissions = async () => {
+  const loadPermissions = async (): Promise<void> => {
     try {
       setLoading(true)
       const savedPermissions = await window.api.getPermissions()
-      setPermissions(savedPermissions as any)
+      setPermissions(savedPermissions)
     } catch (error) {
       console.error('Failed to load permissions:', error)
       setPermissions(DEFAULT_PERMISSIONS)
@@ -28,34 +35,33 @@ export function usePermissions() {
     }
   }
 
-  const updatePermissions = useCallback(async (updates: Partial<PermissionSettings>) => {
-    try {
-      const newPermissions = { ...permissions, ...updates, updatedAt: Date.now() }
-      await window.api.savePermissions(updates)
-      setPermissions(newPermissions)
-      return true
-    } catch (error) {
-      console.error('Failed to save permissions:', error)
-      return false
-    }
-  }, [permissions])
+  const savePermissionMode = useCallback(
+    async (permissionMode: PermissionMode) => {
+      try {
+        const newPermissions = { ...permissions, permissionMode, updatedAt: Date.now() }
+        await window.api.savePermissions({ permissionMode })
+        setPermissions(newPermissions)
+        return true
+      } catch (error) {
+        console.error('Failed to save permissions:', error)
+        return false
+      }
+    },
+    [permissions]
+  )
 
-  const toggleRequireConfirmation = useCallback(async () => {
-    return updatePermissions({ requireConfirmation: !permissions.requireConfirmation })
-  }, [permissions.requireConfirmation, updatePermissions])
-
-  const toggleAutoExecuteSafeOperations = useCallback(async () => {
-    return updatePermissions({ autoExecuteSafeOperations: !permissions.autoExecuteSafeOperations })
-  }, [permissions.autoExecuteSafeOperations, updatePermissions])
+  const setPermissionMode = useCallback(
+    async (permissionMode: PermissionMode) => {
+      return savePermissionMode(permissionMode)
+    },
+    [savePermissionMode]
+  )
 
   return {
     permissions,
     loading,
-    updatePermissions,
-    toggleRequireConfirmation,
-    toggleAutoExecuteSafeOperations,
-    requireConfirmation: permissions.requireConfirmation,
-    autoExecuteSafeOperations: permissions.autoExecuteSafeOperations,
+    setPermissionMode,
+    permissionMode: permissions.permissionMode,
     refresh: loadPermissions
   }
 }

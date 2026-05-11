@@ -26,6 +26,12 @@ const mocks = vi.hoisted(() => {
     },
     approvalDB: {
       createApproval: vi.fn()
+    },
+    permissionDB: {
+      getPermissions: vi.fn(() => ({
+        permissionMode: 'default',
+        updatedAt: 1
+      }))
     }
   }
 })
@@ -35,7 +41,8 @@ vi.mock('../agent-run-store', () => ({
 }))
 
 vi.mock('../../db', () => ({
-  approvalDB: mocks.approvalDB
+  approvalDB: mocks.approvalDB,
+  permissionDB: mocks.permissionDB
 }))
 
 import { AgentPermissionEngine } from '../agent-permission-engine'

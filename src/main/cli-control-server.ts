@@ -43,7 +43,7 @@ import {
   type CliControlRequest,
   type CliControlResponse
 } from './cli-control-protocol'
-import type { Topic } from '../shared/types'
+import type { PermissionMode, Topic } from '../shared/types'
 
 let server: net.Server | null = null
 
@@ -420,9 +420,9 @@ async function handleRequest(
     case 'settings.permissions.get':
       return permissionDB.getPermissions()
     case 'settings.permissions.set':
-      permissionDB.savePermissions(
-        readObject(args, 'permissions') as Partial<ReturnType<typeof permissionDB.getPermissions>>
-      )
+      permissionDB.savePermissions({
+        permissionMode: readPermissionMode(readObject(args, 'permissions'), 'permissionMode')
+      })
       return permissionDB.getPermissions()
     case 'settings.model.settings.get':
       return modelSettingsDB.getSettings()
@@ -775,6 +775,12 @@ function readObject(args: Record<string, unknown>, key: string): Record<string, 
     throw new Error(`Missing ${key}`)
   }
   return value as Record<string, unknown>
+}
+
+function readPermissionMode(args: Record<string, unknown>, key: string): PermissionMode {
+  const value = args[key]
+  if (value === 'default' || value === 'auto_review' || value === 'full_access') return value
+  throw new Error(`Invalid ${key}`)
 }
 
 function getErrorMessage(error: unknown): string {

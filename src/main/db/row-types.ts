@@ -282,7 +282,8 @@ export interface ModelRow {
 // permissions table
 export interface PermissionRow {
   id: string
-  requireConfirmation: number // 0 or 1, DEFAULT 1
-  autoExecuteSafeOperations: number // 0 or 1, DEFAULT 1
+  permissionMode: string | null
+  requireConfirmation?: number | null // legacy 0 or 1
+  autoExecuteSafeOperations?: number | null // legacy 0 or 1
   updatedAt: number
 }

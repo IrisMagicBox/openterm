@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { closeTunnel, createForwardTunnel, listTunnels, type ForwardTunnel } from '../port-forward'
 import { resolveHostId } from '../utils/host-resolver'
 import { define, Tool } from './tool-factory'
+import { permissionDB } from '../db'
+import { shouldAskToolPermission } from '../permissions'
 
 const portSchema = z.number().int().min(1).max(65535)
 
@@ -72,14 +74,22 @@ export default define('manage_port_forward', {
       requiresVerification: false
     }
 
-    const approval = await ctx.requestAuthorization(
-      pattern,
-      'medium',
-      args.reason || `创建 ${host.alias} 的端口转发`,
-      metadata
-    )
-    if (!approval.approved) {
-      return { output: 'Error: User rejected port-forward authorization', metadata }
+    if (
+      shouldAskToolPermission(permissionDB.getPermissions(), {
+        permission: 'manage_port_forward',
+        riskLevel: 'medium',
+        riskCategory: metadata.riskCategory
+      })
+    ) {
+      const approval = await ctx.requestAuthorization(
+        pattern,
+        'medium',
+        args.reason || `创建 ${host.alias} 的端口转发`,
+        metadata
+      )
+      if (!approval.approved) {
+        return { output: 'Error: User rejected port-forward authorization', metadata }
+      }
     }
 
     const tunnel = await createForwardTunnel(host.id, localPort, remoteHost, args.remotePort)

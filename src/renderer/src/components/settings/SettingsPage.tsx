@@ -9,19 +9,25 @@ import {
   Search,
   Server,
   Shield,
-  ShieldAlert
+  ShieldAlert,
+  Check
 } from 'lucide-react'
 import { ProviderList } from './ProviderList'
 import { ProviderSettings } from './ProviderSettings'
 import { useProvider } from '../../hooks/useProvider'
 import { usePermissions } from '../../hooks/usePermissions'
 import { isSystemProviderId } from '../../config/providers'
-import type { Provider, TerminalCompletionBackendMode } from '../../../../shared/types'
+import type {
+  PermissionMode,
+  Provider,
+  TerminalCompletionBackendMode
+} from '../../../../shared/types'
 import {
   DEFAULT_TERMINAL_COMPLETION_MODE,
   normalizeTerminalCompletionMode
 } from '../../lib/terminal-command-assist'
-import { Badge, Button, FormField, IconButton, Input, PageHeader, Surface, Switch } from '../ui'
+import { Badge, Button, FormField, IconButton, Input, PageHeader, Surface } from '../ui'
+import { cn } from '../../lib/utils'
 
 interface SettingsPageProps {
   onBack?: () => void
@@ -41,6 +47,40 @@ const TERMINAL_COMPLETION_MODE_OPTIONS: Array<{
     value: 'function',
     label: '函数',
     description: '使用模型原生 tool call'
+  }
+]
+
+const PERMISSION_MODE_OPTIONS: Array<{
+  value: PermissionMode
+  title: string
+  badge: string
+  description: string
+  detail: string
+  variant: 'success' | 'accent' | 'warning'
+}> = [
+  {
+    value: 'default',
+    title: '默认权限',
+    badge: '推荐',
+    description: 'Agent 可以读取当前话题、主机和终端上下文，并执行低风险只读检查。',
+    detail: '写文件、端口转发、网页搜索、系统配置、删除、安装和高风险命令会请求授权。',
+    variant: 'success'
+  },
+  {
+    value: 'auto_review',
+    title: '自动审核',
+    badge: '更少打断',
+    description: 'OpenTerm 会根据风险等级和操作类型自动审核权限请求。',
+    detail: '低中风险读取和联网查询可自动通过；写入、权限变更、端口转发和关键风险仍会询问。',
+    variant: 'accent'
+  },
+  {
+    value: 'full_access',
+    title: '完全访问权限',
+    badge: '高风险',
+    description: 'Agent 可在当前 OpenTerm 范围内自动执行远程命令、文件写入和联网操作。',
+    detail: '极度危险命令仍会被策略硬拦截。建议只在你完全信任当前任务时临时使用。',
+    variant: 'warning'
   }
 ]
 
@@ -68,15 +108,12 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
     getModelsByProvider
   } = useProvider()
 
-  const {
-    loading: permissionsLoading,
-    toggleRequireConfirmation,
-    toggleAutoExecuteSafeOperations,
-    requireConfirmation,
-    autoExecuteSafeOperations
-  } = usePermissions()
+  const { loading: permissionsLoading, setPermissionMode, permissionMode } = usePermissions()
 
   const selectedProvider = providers.find((p) => p.id === selectedProviderId) || null
+  const activePermissionMode =
+    PERMISSION_MODE_OPTIONS.find((option) => option.value === permissionMode) ??
+    PERMISSION_MODE_OPTIONS[0]
 
   useEffect(() => {
     let cancelled = false
@@ -178,6 +215,7 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
       <PageHeader
         title="设置"
         description="配置 OpenTerm AI 模型、提供商和权限"
+        dense
         leading={
           onBack ? (
             <IconButton aria-label="返回" onClick={onBack}>
@@ -188,66 +226,58 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
       />
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="settings-sidebar-surface w-64">
-          <nav className="p-4 space-y-1">
+        <div className="settings-sidebar-surface w-56">
+          <nav className="space-y-1 p-3">
             <button
               onClick={() => setActiveTab('providers')}
-              className={`w-full flex items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-sm font-semibold transition ${
+              className={`flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-1.5 text-xs font-semibold transition ${
                 activeTab === 'providers'
                   ? 'border border-white/55 bg-black/5 text-foreground shadow-sm'
                   : 'text-muted-foreground hover:bg-white/65 hover:text-foreground'
               }`}
             >
-              <Server size={16} />
+              <Server size={14} />
               AI 提供商
             </button>
             <button
               onClick={() => setActiveTab('general')}
-              className={`w-full flex items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-sm font-semibold transition ${
+              className={`flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-1.5 text-xs font-semibold transition ${
                 activeTab === 'general'
                   ? 'border border-white/55 bg-black/5 text-foreground shadow-sm'
                   : 'text-muted-foreground hover:bg-white/65 hover:text-foreground'
               }`}
             >
-              <Bot size={16} />
+              <Bot size={14} />
               通用设置
             </button>
             <button
               onClick={() => setActiveTab('permissions')}
-              className={`w-full flex items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-sm font-semibold transition ${
+              className={`flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-1.5 text-xs font-semibold transition ${
                 activeTab === 'permissions'
                   ? 'border border-white/55 bg-black/5 text-foreground shadow-sm'
                   : 'text-muted-foreground hover:bg-white/65 hover:text-foreground'
               }`}
             >
-              <Shield size={16} />
+              <Shield size={14} />
               权限设置
             </button>
           </nav>
 
-          <div className="border-t border-white/55 px-4 py-4">
+          <div className="border-t border-white/55 px-3 py-3">
             <Surface padding="sm">
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                    requireConfirmation
-                      ? 'bg-success-soft text-success'
-                      : 'bg-warning-soft text-warning'
-                  }`}
-                >
-                  <ShieldAlert size={15} />
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent-soft text-accent">
+                  <ShieldAlert size={13} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-foreground">
-                    {requireConfirmation ? '操作需确认' : '自动执行模式'}
+                  <div className="truncate text-xs font-semibold text-foreground">
+                    {activePermissionMode.title}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">
-                    {requireConfirmation ? '高危操作会询问您' : 'Agent 将直接执行'}
+                    {activePermissionMode.badge}
                   </div>
                 </div>
-                <Badge variant={requireConfirmation ? 'success' : 'warning'}>
-                  {requireConfirmation ? '安全' : '自动'}
-                </Badge>
+                <Badge variant={activePermissionMode.variant}>{activePermissionMode.badge}</Badge>
               </div>
             </Surface>
           </div>
@@ -279,21 +309,21 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
           )}
 
           {activeTab === 'general' && (
-            <div className="flex-1 p-8">
-              <div className="max-w-2xl space-y-6">
-                <Surface>
-                  <h3 className="font-bold text-foreground mb-2">关于 AI Providers</h3>
-                  <p className="text-sm text-muted-foreground">
+            <div className="flex-1 p-6">
+              <div className="max-w-2xl space-y-4">
+                <Surface padding="sm">
+                  <h3 className="mb-1.5 text-sm font-bold text-foreground">关于 AI Providers</h3>
+                  <p className="text-xs leading-5 text-muted-foreground">
                     OpenTerm 现在支持多个 AI 提供商。您可以在 Providers 标签页中配置和管理不同的 AI
                     服务， 包括 OpenAI、Anthropic、Gemini、DeepSeek、Silicon Flow 等 20+
                     个内置提供商。
                   </p>
                 </Surface>
 
-                <Surface className="flex items-start justify-between gap-5">
+                <Surface padding="sm" className="flex items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-bold text-foreground">大模型补全</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
+                    <h3 className="text-sm font-bold text-foreground">大模型补全</h3>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
                       默认使用提示词解析；函数模式适合支持 tool call 的模型。
                     </p>
                   </div>
@@ -309,13 +339,13 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
                           onClick={() => {
                             void handleTerminalCompletionModeChange(option.value)
                           }}
-                          className={`min-w-20 rounded-md px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                          className={`min-w-16 rounded px-2.5 py-1.5 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
                             selected
                               ? 'bg-accent text-white shadow-sm'
                               : 'text-muted-foreground hover:bg-white hover:text-foreground'
                           }`}
                         >
-                          <span className="block text-sm font-semibold leading-tight">
+                          <span className="block text-xs font-semibold leading-tight">
                             {option.label}
                           </span>
                           <span
@@ -331,14 +361,14 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
                   </div>
                 </Surface>
 
-                <Surface>
-                  <div className="mb-4 flex items-start gap-3">
-                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
-                      <Search size={17} />
+                <Surface padding="sm">
+                  <div className="mb-3 flex items-start gap-2.5">
+                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
+                      <Search size={15} />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-bold text-foreground">网页搜索</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">
+                      <h3 className="text-sm font-bold text-foreground">网页搜索</h3>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
                         匿名 Exa hosted MCP 可直接使用；配置 Exa API Key 后可避免免费额度限流。
                       </p>
                     </div>
@@ -360,7 +390,7 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
                           value={exaApiKey}
                           onChange={(event) => setExaApiKey(event.target.value)}
                           placeholder="可选，输入 Exa API Key"
-                          className="pr-10"
+                          className="h-7 pr-10 text-xs"
                           disabled={completionSettingsLoading}
                         />
                         <IconButton
@@ -369,11 +399,12 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
                           onClick={() => setShowExaApiKey(!showExaApiKey)}
                           className="absolute right-1 top-1/2 -translate-y-1/2"
                         >
-                          {showExaApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                          {showExaApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
                         </IconButton>
                       </div>
                       <Button
                         type="button"
+                        size="sm"
                         variant={exaApiKey !== savedExaApiKey ? 'primary' : 'subtle'}
                         disabled={
                           completionSettingsLoading ||
@@ -384,25 +415,29 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
                           void handleExaApiKeySave()
                         }}
                       >
-                        <Save size={16} />
+                        <Save size={14} />
                         {webSearchSettingsSaving ? '保存中' : '保存'}
                       </Button>
                     </div>
                   </FormField>
                 </Surface>
 
-                <div className="space-y-4">
-                  <h3 className="font-bold text-foreground">已配置的提供商</h3>
+                <div className="space-y-3">
+                  <h3 className="text-sm font-bold text-foreground">已配置的提供商</h3>
                   <div className="grid grid-cols-2 gap-3">
                     {providers
                       .filter((p) => p.enabled)
                       .map((provider) => (
-                        <Surface key={provider.id} padding="sm" className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-accent-soft text-accent rounded-md flex items-center justify-center">
-                            <Server size={14} />
+                        <Surface
+                          key={provider.id}
+                          padding="sm"
+                          className="flex items-center gap-2.5"
+                        >
+                          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent-soft text-accent">
+                            <Server size={13} />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm text-foreground truncate">
+                            <div className="truncate text-xs font-medium text-foreground">
                               {provider.name}
                             </div>
                             <div className="text-xs text-muted-foreground">{provider.type}</div>
@@ -411,7 +446,7 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
                       ))}
                   </div>
                   {providers.filter((p) => p.enabled).length === 0 && (
-                    <p className="text-sm text-muted-foreground italic">
+                    <p className="text-xs text-muted-foreground italic">
                       暂无启用的提供商。请前往 Providers 标签页启用至少一个提供商。
                     </p>
                   )}
@@ -421,45 +456,67 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
           )}
 
           {activeTab === 'permissions' && (
-            <div className="flex-1 p-8 overflow-y-auto">
-              <div className="max-w-2xl space-y-6">
-                <Surface>
-                  <h3 className="font-bold text-foreground mb-2">权限控制</h3>
-                  <p className="text-sm text-muted-foreground">
-                    配置 Agent 执行高权限操作时的行为。您可以选择让 Agent
-                    直接执行操作，或在执行前征求您的确认。
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="max-w-3xl space-y-4">
+                <Surface padding="sm">
+                  <h3 className="mb-1.5 text-sm font-bold text-foreground">权限控制</h3>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    配置 Agent 在 OpenTerm
+                    中读取上下文、执行远程命令、写文件、联网搜索和创建端口转发时的审批方式。
                   </p>
                 </Surface>
 
-                <div className="space-y-4">
-                  <Surface className="flex items-center justify-between gap-4">
-                    <div>
-                      <h4 className="font-semibold text-foreground">高危操作需确认</h4>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Agent 执行删除文件、修改系统配置等高危操作前会询问您
-                      </p>
-                    </div>
-                    <Switch
-                      checked={requireConfirmation}
-                      onCheckedChange={toggleRequireConfirmation}
-                      disabled={permissionsLoading}
-                    />
-                  </Surface>
-
-                  <Surface className="flex items-center justify-between gap-4">
-                    <div>
-                      <h4 className="font-semibold text-foreground">自动执行安全操作</h4>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        允许 Agent 自动执行只读、查询类等安全操作，无需确认
-                      </p>
-                    </div>
-                    <Switch
-                      checked={autoExecuteSafeOperations}
-                      onCheckedChange={toggleAutoExecuteSafeOperations}
-                      disabled={permissionsLoading}
-                    />
-                  </Surface>
+                <div className="overflow-hidden rounded-lg border border-black/[0.08] bg-white">
+                  {PERMISSION_MODE_OPTIONS.map((option, index) => {
+                    const selected = permissionMode === option.value
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => void setPermissionMode(option.value)}
+                        disabled={permissionsLoading}
+                        className={cn(
+                          'flex w-full items-center gap-3 px-4 py-3 text-left transition-[background-color,color,opacity] duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-interactive)] disabled:cursor-wait disabled:opacity-60',
+                          index > 0 && 'border-t border-black/[0.06]',
+                          selected ? 'bg-black/[0.025]' : 'hover:bg-black/[0.015]'
+                        )}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                            <h4 className="text-sm font-semibold leading-5 text-foreground">
+                              {option.title}
+                            </h4>
+                            <Badge variant={option.variant}>{option.badge}</Badge>
+                          </div>
+                          <p className="text-xs leading-5 text-muted-foreground">
+                            {option.description}
+                          </p>
+                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                            {option.detail}
+                          </p>
+                        </div>
+                        <div
+                          className={cn(
+                            'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition',
+                            selected
+                              ? 'border-accent bg-accent text-white'
+                              : 'border-black/[0.12] bg-white text-transparent'
+                          )}
+                        >
+                          <Check size={12} strokeWidth={2.4} />
+                        </div>
+                      </button>
+                    )
+                  })}
                 </div>
+
+                <Surface padding="sm">
+                  <h4 className="text-sm font-semibold text-foreground">硬性保护</h4>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    无论选择哪种模式，极度危险的系统级命令仍会被策略拦截；Agent
+                    的具体工具可见性仍受内置 Agent 角色限制。
+                  </p>
+                </Surface>
               </div>
             </div>
           )}

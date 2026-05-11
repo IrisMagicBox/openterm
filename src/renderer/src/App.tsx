@@ -41,7 +41,7 @@ import {
   clampSidebarWidth
 } from './lib/sidebar-layout'
 import { View, WorkspaceWindowItem } from './types'
-import type { Topic } from '../../shared/types'
+import type { PermissionMode, Topic } from '../../shared/types'
 import { WORKSPACE_TERMINALS_TOPIC_ID } from '../../shared/constants'
 
 function isEditableKeyboardTarget(target: EventTarget | null): boolean {
@@ -148,7 +148,7 @@ export default function App(): JSX.Element {
     setFileBrowserHostAlias
   } = useTerminalManager()
 
-  const { requireConfirmation } = usePermissions()
+  const { permissionMode } = usePermissions()
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
   const appShellRef = useRef<HTMLDivElement>(null)
@@ -509,7 +509,7 @@ export default function App(): JSX.Element {
           setEditingTopicId={setEditingTopicId}
           editingTopicTitle={editingTopicTitle}
           setEditingTopicTitle={setEditingTopicTitle}
-          requireConfirmation={requireConfirmation}
+          permissionMode={permissionMode as PermissionMode}
           onCreateTopic={() => handleCreateTopic()}
           onStartRenameTopic={handleStartRenameTopic}
           onCommitRenameTopic={handleCommitRenameTopic}

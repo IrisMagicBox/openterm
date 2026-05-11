@@ -141,7 +141,7 @@ declare global {
         saveModel: (model: Model) => Promise<void>
         deleteModel: (id: string) => Promise<void>
         getPermissions: () => Promise<PermissionSettings>
-        savePermissions: (permissions: Partial<PermissionSettings>) => Promise<void>
+        savePermissions: (permissions: Pick<PermissionSettings, 'permissionMode'>) => Promise<void>
       }
       files: {
         sftpConnect: (hostId: string) => Promise<{ sessionId: string; hostId: string }>
@@ -410,7 +410,7 @@ declare global {
 
       // Permission Settings APIs
       getPermissions: () => Promise<PermissionSettings>
-      savePermissions: (permissions: Partial<PermissionSettings>) => Promise<void>
+      savePermissions: (permissions: Pick<PermissionSettings, 'permissionMode'>) => Promise<void>
       onDebugLog: (callback: (entry: DebugLogEntry) => void) => () => void
 
       // Local Terminal APIs

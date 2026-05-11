@@ -2,9 +2,10 @@ import { v4 as uuidv4 } from 'uuid'
 import type { AgentConfig, PermissionRule } from './agent-config'
 import type { AgentContext, AuthResponse } from '../AgentRunner'
 import { agentRunStore } from './agent-run-store'
-import { approvalDB } from '../db'
+import { approvalDB, permissionDB } from '../db'
 import type { AgentPart, ApprovalRiskLevel, PolicyRiskCategory } from '../../shared/types'
 import { getErrorMessage } from '../../shared/errors'
+import { shouldAskToolPermission } from '../permissions'
 
 export interface AgentPermissionRequest {
   permission: string
@@ -40,6 +41,34 @@ export class AgentPermissionEngine {
     const rule = this.findRule(request.permission)
     const action = this.resolveAskAction(rule)
     const part = this.createPermissionPart(request, riskLevel)
+    const riskCategory =
+      typeof request.metadata?.riskCategory === 'string'
+        ? (request.metadata.riskCategory as PolicyRiskCategory)
+        : undefined
+
+    if (
+      action === 'ask' &&
+      !shouldAskToolPermission(permissionDB.getPermissions(), {
+        permission: request.permission,
+        riskLevel,
+        riskCategory
+      })
+    ) {
+      const response = { approved: true, alwaysAllow: false }
+      this.recordApproval(request, riskLevel, true)
+      agentRunStore.updatePart(part.id, {
+        status: 'completed',
+        output: 'Permission auto-approved by global permission mode',
+        endedAt: Date.now(),
+        metadata: {
+          approved: true,
+          alwaysAllow: false,
+          ruleAction: action,
+          globalModeApproved: true
+        }
+      })
+      return response
+    }
 
     if (action === 'allow' && this.isWithinMaxRisk(rule, riskLevel)) {
       const response = { approved: true, alwaysAllow: rule?.scope === 'always' }

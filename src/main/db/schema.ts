@@ -73,8 +73,7 @@ export const BASE_SCHEMA_SQL = `
 
   CREATE TABLE IF NOT EXISTS permissions (
     id TEXT PRIMARY KEY,
-    requireConfirmation INTEGER DEFAULT 1,
-    autoExecuteSafeOperations INTEGER DEFAULT 1,
+    permissionMode TEXT DEFAULT 'default',
     updatedAt INTEGER NOT NULL
   );
 

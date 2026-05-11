@@ -46,6 +46,8 @@ import type {
   Host,
   MemoryEntry,
   Model,
+  PermissionMode,
+  PermissionSettings,
   Provider,
   Task,
   TaskStep,
@@ -768,20 +770,23 @@ function parsePermissionSettings(action: string, rest: string[]): FullCliCommand
   if (action === 'get') return { name: 'settings-permissions-get', ...parseCommon(rest) }
   if (action === 'set') {
     const parsed = parseFlags(rest, {
-      optional: ['require-confirmation', 'auto-execute-safe-operations']
+      optional: ['mode']
     })
+    if (!parsed.flags.mode) throw usage('settings permissions set requires --mode')
     return {
       name: 'settings-permissions-set',
       ...parsed.common,
       permissions: {
-        requireConfirmation: parseOptionalBoolean(parsed.flags['require-confirmation']),
-        autoExecuteSafeOperations: parseOptionalBoolean(
-          parsed.flags['auto-execute-safe-operations']
-        )
+        permissionMode: normalizeCliPermissionMode(parsed.flags.mode)
       }
     }
   }
   throw usage(`Unknown settings permissions subcommand: ${action}`)
+}
+
+function normalizeCliPermissionMode(value: string): PermissionMode {
+  if (value === 'default' || value === 'auto_review' || value === 'full_access') return value
+  throw usage('settings permissions set --mode must be default, auto_review, or full_access')
 }
 
 function parseLegacyModelSettings(action: string, rest: string[]): FullCliCommand {
@@ -1246,18 +1251,56 @@ async function executeModelsShow(command: FullCliCommand, io: CliIO): Promise<nu
 async function executePermissionsGet(command: FullCliCommand, io: CliIO): Promise<number> {
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const row = db.prepare("SELECT * FROM permissions WHERE id = 'default'").get() as
-      | { requireConfirmation: number; autoExecuteSafeOperations: number; updatedAt: number }
-      | undefined
-    return row
-      ? {
-          requireConfirmation: row.requireConfirmation === 1,
-          autoExecuteSafeOperations: row.autoExecuteSafeOperations === 1,
-          updatedAt: row.updatedAt
+      | {
+          permissionMode?: string | null
+          requireConfirmation?: number | null
+          autoExecuteSafeOperations?: number | null
+          updatedAt: number
         }
-      : { requireConfirmation: true, autoExecuteSafeOperations: true, updatedAt: 0 }
+      | undefined
+    return row ? mapPermissionSettings(row) : defaultPermissionSettings()
   })
   writeOutput(io, command, result, () => formatJsonLine(result))
   return 0
+}
+
+function mapPermissionSettings(row: {
+  permissionMode?: string | null
+  requireConfirmation?: number | null
+  autoExecuteSafeOperations?: number | null
+  updatedAt: number
+}): PermissionSettings {
+  const permissionMode = normalizeStoredPermissionMode(
+    row.permissionMode,
+    typeof row.requireConfirmation === 'number' && typeof row.autoExecuteSafeOperations === 'number'
+      ? {
+          requireConfirmation: row.requireConfirmation === 1,
+          autoExecuteSafeOperations: row.autoExecuteSafeOperations === 1
+        }
+      : undefined
+  )
+  return {
+    permissionMode,
+    updatedAt: row.updatedAt
+  }
+}
+
+function defaultPermissionSettings(): PermissionSettings {
+  return {
+    permissionMode: 'default',
+    updatedAt: 0
+  }
+}
+
+function normalizeStoredPermissionMode(
+  value: string | null | undefined,
+  fallback?: { requireConfirmation: boolean; autoExecuteSafeOperations: boolean }
+): PermissionMode {
+  if (value === 'default' || value === 'auto_review' || value === 'full_access') return value
+  if (!fallback) return 'default'
+  if (!fallback.requireConfirmation) return 'full_access'
+  if (fallback.autoExecuteSafeOperations) return 'auto_review'
+  return 'default'
 }
 
 async function executeModelSettingsGet(command: FullCliCommand, io: CliIO): Promise<number> {

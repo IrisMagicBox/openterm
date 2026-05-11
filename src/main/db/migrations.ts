@@ -60,6 +60,7 @@ const migrations: Migration[] = [
       addColumnIfMissing(db, 'approvals', 'riskCategory', 'TEXT')
       addColumnIfMissing(db, 'approvals', 'commandPattern', 'TEXT')
       addColumnIfMissing(db, 'approvals', 'requiresVerification', 'INTEGER DEFAULT 0')
+      addColumnIfMissing(db, 'permissions', 'permissionMode', "TEXT DEFAULT 'default'")
 
       addColumnIfMissing(db, 'memories', 'scope', "TEXT DEFAULT 'global'")
       addColumnIfMissing(db, 'memories', 'sourceTaskId', 'TEXT')
@@ -285,6 +286,37 @@ const migrations: Migration[] = [
     id: '017_model_settings_exa_api_key',
     run: (db) => {
       addColumnIfMissing(db, 'model_settings', 'exaApiKey', "TEXT DEFAULT ''")
+    }
+  },
+  {
+    id: '018_permission_mode',
+    run: (db) => {
+      addColumnIfMissing(db, 'permissions', 'permissionMode', "TEXT DEFAULT 'default'")
+      const columns = tableColumns(db, 'permissions')
+      if (
+        columns.includes('requireConfirmation') &&
+        columns.includes('autoExecuteSafeOperations')
+      ) {
+        db.prepare(
+          `
+          UPDATE permissions
+          SET permissionMode = CASE
+            WHEN requireConfirmation = 0 THEN 'full_access'
+            WHEN autoExecuteSafeOperations = 1 THEN 'auto_review'
+            ELSE 'default'
+          END
+          WHERE permissionMode IS NULL OR permissionMode = ''
+        `
+        ).run()
+      } else {
+        db.prepare(
+          `
+          UPDATE permissions
+          SET permissionMode = 'default'
+          WHERE permissionMode IS NULL OR permissionMode = ''
+        `
+        ).run()
+      }
     }
   }
 ]

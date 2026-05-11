@@ -77,8 +77,8 @@ export function ProviderSettings({
   if (!provider) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-        <Server size={48} className="mb-4 opacity-30" />
-        <p>选择提供商以配置其设置</p>
+        <Server size={40} className="mb-3 opacity-30" />
+        <p className="text-sm">选择提供商以配置其设置</p>
       </div>
     )
   }
@@ -123,17 +123,17 @@ export function ProviderSettings({
   const modelFetchRequiresApiKey = !['ollama', 'lmstudio'].includes(provider.id)
 
   return (
-    <div className="max-w-2xl p-6">
-      <div className="mb-6">
+    <div className="max-w-2xl p-5">
+      <div className="mb-5">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-foreground">{provider.name}</h2>
-            <p className="text-sm text-muted-foreground mt-1">类型：{provider.type}</p>
+            <h2 className="text-lg font-bold text-foreground">{provider.name}</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">类型：{provider.type}</p>
           </div>
           <div className="flex items-center gap-2">
             {testResult !== null && (
               <Badge variant={testResult ? 'success' : 'danger'} title={testMessage}>
-                {testResult ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                {testResult ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
                 {testResult ? '连接成功' : '连接失败'}
               </Badge>
             )}
@@ -142,15 +142,16 @@ export function ProviderSettings({
                 onClick={() => handleTestConnection()}
                 disabled={isTesting || !!testingModelId}
                 variant="secondary"
+                size="sm"
               >
                 {isTesting ? (
                   <>
-                    <RotateCw size={16} className="animate-spin" />
+                    <RotateCw size={14} className="animate-spin" />
                     测试中...
                   </>
                 ) : (
                   <>
-                    <Play size={16} />
+                    <Play size={14} />
                     测试连接
                   </>
                 )}
@@ -160,7 +161,7 @@ export function ProviderSettings({
         </div>
 
         {providerUrls?.websites && (
-          <div className="mt-3 flex gap-4 text-sm">
+          <div className="mt-2.5 flex gap-3 text-xs">
             <a
               href={providerUrls.websites.official}
               target="_blank"
@@ -193,12 +194,13 @@ export function ProviderSettings({
         )}
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3.5">
         <FormField label="显示名称">
           <Input
             type="text"
             value={formData.name || ''}
             onChange={(e) => handleChange('name', e.target.value)}
+            className="h-7 text-xs"
           />
         </FormField>
 
@@ -217,7 +219,7 @@ export function ProviderSettings({
               value={formData.apiKey || ''}
               onChange={(e) => handleChange('apiKey', e.target.value)}
               placeholder="输入您的 API 密钥"
-              className="pr-10"
+              className="h-7 pr-10 text-xs"
             />
             <IconButton
               aria-label={showApiKey ? '隐藏 API 密钥' : '显示 API 密钥'}
@@ -225,7 +227,7 @@ export function ProviderSettings({
               onClick={() => setShowApiKey(!showApiKey)}
               className="absolute right-1 top-1/2 -translate-y-1/2"
             >
-              {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+              {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
             </IconButton>
           </div>
         </FormField>
@@ -243,6 +245,7 @@ export function ProviderSettings({
             value={formData.apiHost || ''}
             onChange={(e) => handleChange('apiHost', e.target.value)}
             placeholder="https://api.example.com"
+            className="h-7 text-xs"
           />
         </FormField>
 
@@ -253,22 +256,23 @@ export function ProviderSettings({
               value={formData.apiVersion || ''}
               onChange={(e) => handleChange('apiVersion', e.target.value)}
               placeholder="2024-02-01"
+              className="h-7 text-xs"
             />
           </FormField>
         )}
 
-        <div className="flex items-center gap-3 pt-2">
+        <div className="flex items-center gap-2.5 pt-1">
           <Switch
             checked={!!formData.enabled}
             onCheckedChange={(checked) => handleChange('enabled', checked)}
           />
-          <label htmlFor="enabled" className="text-sm font-semibold text-foreground">
+          <label htmlFor="enabled" className="text-xs font-semibold text-foreground">
             启用此提供商
           </label>
         </div>
 
-        <div className="border-t border-border pt-6 mt-6">
-          <div className="flex items-center justify-between mb-4">
+        <div className="mt-5 border-t border-border pt-5">
+          <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-bold text-foreground">模型管理</h3>
             {!['azure-openai', 'aws-bedrock', 'vertexai', 'custom'].includes(provider.type) && (
               <button
@@ -297,27 +301,27 @@ export function ProviderSettings({
                   }
                 }}
                 disabled={isFetchingModels || (modelFetchRequiresApiKey && !formData.apiKey)}
-                className="text-xs text-accent hover:text-accent-strong font-semibold flex items-center gap-1 disabled:opacity-50"
+                className="flex items-center gap-1 text-xs font-semibold text-accent hover:text-accent-strong disabled:opacity-50"
               >
                 {isFetchingModels ? '正在获取...' : '自动获取模型'}
               </button>
             )}
           </div>
 
-          <div className="flex gap-2 mb-4">
+          <div className="mb-3 flex gap-2">
             <Input
               type="text"
               placeholder="模型名称 (如: GPT-4o)"
               value={newModelName}
               onChange={(e) => setNewModelName(e.target.value)}
-              className="flex-1"
+              className="h-7 flex-1 text-xs"
             />
             <Input
               type="text"
               placeholder="模型 ID (如: gpt-4o)"
               value={newModelId}
               onChange={(e) => setNewModelId(e.target.value)}
-              className="flex-1"
+              className="h-7 flex-1 text-xs"
             />
             <Button
               onClick={async () => {
@@ -343,22 +347,23 @@ export function ProviderSettings({
               }}
               disabled={!newModelName.trim() || !newModelId.trim()}
               variant="primary"
+              size="sm"
             >
-              <Plus size={16} />
+              <Plus size={14} />
               添加
             </Button>
           </div>
 
           {modelError && (
-            <div className="mb-4 rounded-md border border-danger/20 bg-danger-soft px-3 py-2 text-xs text-danger font-medium">
+            <div className="mb-3 rounded-md border border-danger/20 bg-danger-soft px-3 py-2 text-xs font-medium text-danger">
               {modelError}
             </div>
           )}
 
-          <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+          <div className="custom-scrollbar max-h-60 space-y-1.5 overflow-y-auto pr-2">
             {models.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/70 bg-white/55 py-8 text-center">
-                <p className="text-sm text-muted-foreground">暂无模型，请添加模型</p>
+              <div className="rounded-lg border border-dashed border-white/70 bg-white/55 py-6 text-center">
+                <p className="text-xs text-muted-foreground">暂无模型，请添加模型</p>
               </div>
             ) : (
               models.map((model) => {
@@ -370,7 +375,7 @@ export function ProviderSettings({
                     className="group flex items-center justify-between hover:border-accent/30"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm text-foreground truncate">
+                      <div className="truncate text-xs font-semibold text-foreground">
                         {model.name}
                       </div>
                       <div className="text-xs text-muted-foreground font-mono truncate">
@@ -389,9 +394,9 @@ export function ProviderSettings({
                         title="测试该模型"
                       >
                         {testingModelId === apiModelId ? (
-                          <RotateCw size={14} className="animate-spin" />
+                          <RotateCw size={13} className="animate-spin" />
                         ) : (
-                          <Play size={14} />
+                          <Play size={13} />
                         )}
                       </button>
                       {onRemoveModel && (
@@ -400,12 +405,12 @@ export function ProviderSettings({
                           onConfirm={() => {
                             onRemoveModel(model.providerId, model.id)
                           }}
-                          className="p-1.5 text-muted-foreground hover:text-danger hover:bg-danger-soft rounded-md transition-colors"
+                          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-danger-soft hover:text-danger"
                           confirmClassName="hover:bg-danger-strong"
                           confirmingTitle={`删除 ${apiModelId}`}
                           title="删除模型"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={13} />
                         </ConfirmActionButton>
                       )}
                     </div>
@@ -417,16 +422,21 @@ export function ProviderSettings({
         </div>
       </div>
 
-      <div className="mt-8 flex justify-end">
-        <Button onClick={handleSave} disabled={!isDirty} variant={isDirty ? 'primary' : 'subtle'}>
-          <Save size={18} />
+      <div className="mt-6 flex justify-end">
+        <Button
+          onClick={handleSave}
+          disabled={!isDirty}
+          variant={isDirty ? 'primary' : 'subtle'}
+          size="sm"
+        >
+          <Save size={14} />
           保存更改
         </Button>
       </div>
 
       {provider.isSystem && (
-        <Surface className="mt-6" variant="subtle">
-          <p className="text-sm text-muted-foreground">
+        <Surface className="mt-5" padding="sm" variant="subtle">
+          <p className="text-xs leading-5 text-muted-foreground">
             这是系统提供商。您可以修改其配置，但无法删除。
             点击提供商列表中的&quot;恢复默认设置&quot;可还原原始设置。
           </p>

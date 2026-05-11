@@ -15,31 +15,31 @@ interface ProviderListProps {
 }
 
 const providerIcons: Record<string, React.ReactNode> = {
-  openai: <Cloud size={18} />,
-  anthropic: <Cloud size={18} />,
-  gemini: <Cloud size={18} />,
-  'azure-openai': <Cloud size={18} />,
-  ollama: <Server size={18} />,
-  lmstudio: <Server size={18} />,
-  deepseek: <Cpu size={18} />,
-  silicon: <Cpu size={18} />,
-  minimax: <Cpu size={18} />,
-  groq: <Cpu size={18} />,
-  mistral: <Cloud size={18} />,
-  together: <Cloud size={18} />,
-  fireworks: <Cloud size={18} />,
-  nvidia: <Cpu size={18} />,
-  grok: <Cloud size={18} />,
-  'aws-bedrock': <Cloud size={18} />,
-  vertexai: <Cloud size={18} />,
-  github: <Cloud size={18} />,
-  copilot: <Cloud size={18} />,
-  openrouter: <Cloud size={18} />,
-  coreshub: <Cpu size={18} />
+  openai: <Cloud size={15} />,
+  anthropic: <Cloud size={15} />,
+  gemini: <Cloud size={15} />,
+  'azure-openai': <Cloud size={15} />,
+  ollama: <Server size={15} />,
+  lmstudio: <Server size={15} />,
+  deepseek: <Cpu size={15} />,
+  silicon: <Cpu size={15} />,
+  minimax: <Cpu size={15} />,
+  groq: <Cpu size={15} />,
+  mistral: <Cloud size={15} />,
+  together: <Cloud size={15} />,
+  fireworks: <Cloud size={15} />,
+  nvidia: <Cpu size={15} />,
+  grok: <Cloud size={15} />,
+  'aws-bedrock': <Cloud size={15} />,
+  vertexai: <Cloud size={15} />,
+  github: <Cloud size={15} />,
+  copilot: <Cloud size={15} />,
+  openrouter: <Cloud size={15} />,
+  coreshub: <Cpu size={15} />
 }
 
 function getProviderIcon(provider: Provider): React.ReactNode {
-  return providerIcons[provider.id] || <Cloud size={18} />
+  return providerIcons[provider.id] || <Cloud size={15} />
 }
 
 export function ProviderList({
@@ -60,10 +60,10 @@ export function ProviderList({
   const enabledCount = providers.filter((p) => p.enabled).length
 
   return (
-    <div className="settings-sidebar-surface flex h-full w-72 flex-col">
-      <div className="border-b border-white/55 bg-white/35 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-foreground">AI 提供商</h2>
+    <div className="settings-sidebar-surface flex h-full w-64 flex-col">
+      <div className="border-b border-white/55 bg-white/35 p-3">
+        <div className="mb-2.5 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-foreground">AI 提供商</h2>
           <Badge variant="neutral">
             {enabledCount}/{providers.length} 已启用
           </Badge>
@@ -74,23 +74,23 @@ export function ProviderList({
             placeholder="筛选提供商..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="flex-1"
+            className="h-7 flex-1 text-xs"
           />
           <IconButton aria-label="添加自定义提供商" onClick={onAddProvider} variant="primary">
-            <Plus size={18} />
+            <Plus size={15} />
           </IconButton>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {filteredProviders.length === 0 ? (
-          <div className="p-4 text-center text-muted-foreground text-sm">未找到提供商</div>
+          <div className="p-3 text-center text-xs text-muted-foreground">未找到提供商</div>
         ) : (
           <div className="space-y-1 p-2">
             {filteredProviders.map((provider) => (
               <div
                 key={provider.id}
-                className={`group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${
+                className={`group flex cursor-pointer items-center gap-2.5 rounded-lg border p-2.5 transition-colors ${
                   selectedProviderId === provider.id
                     ? 'border-white/65 bg-black/5 shadow-sm'
                     : 'border-transparent hover:border-white/75 hover:bg-white/60'
@@ -99,7 +99,7 @@ export function ProviderList({
               >
                 <div
                   className={cn(
-                    'flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center',
+                    'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md',
                     provider.enabled
                       ? 'bg-accent-soft text-accent'
                       : 'bg-surface-muted text-muted-foreground'
@@ -108,8 +108,8 @@ export function ProviderList({
                   {getProviderIcon(provider)}
                 </div>
 
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-foreground truncate">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-medium text-foreground">
                     {provider.name}
                   </div>
                   <div className="text-xs text-muted-foreground truncate">{provider.type}</div>
@@ -122,10 +122,10 @@ export function ProviderList({
                         e.stopPropagation()
                         onResetProvider(provider.id)
                       }}
-                      className="p-1.5 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
                       title="恢复默认设置"
                     >
-                      <RefreshCw size={14} />
+                      <RefreshCw size={13} />
                     </button>
                   )}
 
@@ -136,12 +136,12 @@ export function ProviderList({
                         onDeleteProvider(provider.id)
                       }}
                       stopPropagation
-                      className="p-1.5 text-muted-foreground hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="p-1 text-muted-foreground opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
                       confirmClassName="opacity-100 hover:bg-danger-strong"
                       confirmingTitle={`删除 ${provider.name}`}
                       title="删除提供商"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={13} />
                     </ConfirmActionButton>
                   )}
 
@@ -155,7 +155,7 @@ export function ProviderList({
                     }`}
                     title={provider.enabled ? '禁用提供商' : '启用提供商'}
                   >
-                    {provider.enabled ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                    {provider.enabled ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
                   </button>
                 </div>
               </div>
@@ -164,7 +164,7 @@ export function ProviderList({
         )}
       </div>
 
-      <div className="border-t border-white/55 bg-white/35 p-3 text-xs text-muted-foreground">
+      <div className="border-t border-white/55 bg-white/35 p-2.5 text-xs text-muted-foreground">
         点击提供商以配置其设置
       </div>
     </div>

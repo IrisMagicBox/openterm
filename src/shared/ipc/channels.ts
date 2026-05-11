@@ -330,7 +330,10 @@ export interface IpcInvokeChannels {
   'delete-model': { payload: [id: string]; result: void }
 
   'get-permissions': { payload: void; result: PermissionSettings }
-  'save-permissions': { payload: [permissions: Partial<PermissionSettings>]; result: void }
+  'save-permissions': {
+    payload: [permissions: Pick<PermissionSettings, 'permissionMode'>]
+    result: void
+  }
 
   'sftp:connect': { payload: [hostId: string]; result: SFTPConnectResult }
   'sftp:list': { payload: [sessionId: string, path: string]; result: SFTPFileEntry[] }

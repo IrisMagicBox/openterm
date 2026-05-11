@@ -3,6 +3,8 @@ import { define, Tool } from './tool-factory'
 import { normalizeHostId } from '../utils/host-resolver'
 import { commandExecutor } from '../terminal'
 import { shellQuote } from './shell-quote'
+import { permissionDB } from '../db'
+import { shouldAskToolPermission } from '../permissions'
 
 const parameters = z.object({
   hostId: z.string().describe('主机ID'),
@@ -27,14 +29,22 @@ export default define('write_file', {
       path
     }
 
-    const approval = await ctx.requestAuthorization(
-      commandPattern,
-      'high',
-      `写入或覆盖远端文件 ${path}`,
-      policyMetadata
-    )
-    if (!approval.approved) {
-      return { output: 'Error: User rejected file write authorization', metadata: policyMetadata }
+    if (
+      shouldAskToolPermission(permissionDB.getPermissions(), {
+        permission: 'write_file',
+        riskLevel: 'high',
+        riskCategory: policyMetadata.riskCategory
+      })
+    ) {
+      const approval = await ctx.requestAuthorization(
+        commandPattern,
+        'high',
+        `写入或覆盖远端文件 ${path}`,
+        policyMetadata
+      )
+      if (!approval.approved) {
+        return { output: 'Error: User rejected file write authorization', metadata: policyMetadata }
+      }
     }
 
     const sessionId = await ctx.ensureSession(normalizedHostId, normalizedHostId, undefined, {

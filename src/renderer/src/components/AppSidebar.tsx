@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { NavItem } from './NavItem'
 import { View, WorkspaceWindowItem } from '../types'
-import { Topic } from '../../../shared/types'
+import { PermissionMode, Topic } from '../../../shared/types'
 import { Badge, ConfirmActionButton, IconButton, Surface, Tooltip } from './ui'
 import { cn } from '../lib/utils'
 
@@ -29,7 +29,7 @@ interface AppSidebarProps {
   setEditingTopicId: (id: string | null) => void
   editingTopicTitle: string
   setEditingTopicTitle: (title: string) => void
-  requireConfirmation: boolean
+  permissionMode: PermissionMode
   onCreateTopic: () => void
   onStartRenameTopic: (topic: Topic) => void
   onCommitRenameTopic: () => void
@@ -60,7 +60,7 @@ export function AppSidebar({
   setEditingTopicId,
   editingTopicTitle,
   setEditingTopicTitle,
-  requireConfirmation,
+  permissionMode,
   onCreateTopic,
   onStartRenameTopic,
   onCommitRenameTopic,
@@ -79,8 +79,31 @@ export function AppSidebar({
 }: AppSidebarProps): ReactElement {
   const [editingWindowKey, setEditingWindowKey] = useState<string | null>(null)
   const [editingWindowTitle, setEditingWindowTitle] = useState('')
-  const statusText = requireConfirmation ? '操作需确认' : '自动执行模式'
-  const statusDescription = requireConfirmation ? '高危操作会询问您' : 'Agent 将直接执行'
+  const permissionStatus = {
+    default: {
+      text: '默认权限',
+      description: '高风险操作会询问',
+      variant: 'success' as const,
+      iconClassName: 'bg-success-soft text-success',
+      badge: '默认'
+    },
+    auto_review: {
+      text: '自动审核',
+      description: '低中风险自动通过',
+      variant: 'accent' as const,
+      iconClassName: 'bg-accent-soft text-accent',
+      badge: '自动'
+    },
+    full_access: {
+      text: '完全访问',
+      description: 'Agent 将直接执行',
+      variant: 'warning' as const,
+      iconClassName: 'bg-warning-soft text-warning',
+      badge: '高风险'
+    }
+  }[permissionMode]
+  const statusText = permissionStatus.text
+  const statusDescription = permissionStatus.description
 
   const renderWindowList = (
     title: string,
@@ -428,7 +451,13 @@ export function AppSidebar({
             <div className="glass-control flex h-9 items-center justify-center rounded-lg">
               <ShieldAlert
                 size={16}
-                className={requireConfirmation ? 'text-success' : 'text-warning'}
+                className={
+                  permissionMode === 'full_access'
+                    ? 'text-warning'
+                    : permissionMode === 'auto_review'
+                      ? 'text-accent'
+                      : 'text-success'
+                }
               />
             </div>
           </Tooltip>
@@ -442,9 +471,7 @@ export function AppSidebar({
               <div
                 className={cn(
                   'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
-                  requireConfirmation
-                    ? 'bg-success-soft text-success'
-                    : 'bg-warning-soft text-warning'
+                  permissionStatus.iconClassName
                 )}
               >
                 <ShieldAlert size={14} />
@@ -455,11 +482,8 @@ export function AppSidebar({
                 </div>
                 <div className="truncate text-xs text-muted-foreground">{statusDescription}</div>
               </div>
-              <Badge
-                variant={requireConfirmation ? 'success' : 'warning'}
-                className="min-h-4 px-1.5 text-[10px]"
-              >
-                {requireConfirmation ? '安全' : '自动'}
+              <Badge variant={permissionStatus.variant} className="min-h-4 px-1.5 text-[10px]">
+                {permissionStatus.badge}
               </Badge>
             </div>
           </Surface>

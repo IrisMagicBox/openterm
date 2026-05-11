@@ -40,7 +40,7 @@ vi.mock('../../db', () => ({
     createApproval: vi.fn()
   },
   permissionDB: {
-    getPermissions: vi.fn(() => ({ requireConfirmation: false }))
+    getPermissions: vi.fn(() => ({ permissionMode: 'full_access', updatedAt: 1 }))
   },
   commandPatternDB: {
     getPatternByHostAndPattern: vi.fn(),
