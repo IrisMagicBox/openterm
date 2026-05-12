@@ -214,36 +214,9 @@ declare global {
       getMessages: (topicId: string) => Promise<Message[]>
       getTasks: (topicId?: string) => Promise<Task[]>
       getLatestTask: (topicId: string) => Promise<Task | undefined>
-      createTask: (
-        task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> &
-          Partial<Pick<Task, 'id' | 'createdAt' | 'updatedAt'>>
-      ) => Promise<Task>
-      updateTask: (
-        id: string,
-        updates: Partial<Omit<Task, 'id' | 'topicId' | 'createdAt'>>
-      ) => Promise<Task | undefined>
       getTaskSteps: (taskId: string) => Promise<TaskStep[]>
-      createTaskStep: (
-        step: Omit<TaskStep, 'id' | 'createdAt' | 'updatedAt'> &
-          Partial<Pick<TaskStep, 'id' | 'createdAt' | 'updatedAt'>>
-      ) => Promise<TaskStep>
-      updateTaskStep: (
-        id: string,
-        updates: Partial<Omit<TaskStep, 'id' | 'taskId' | 'createdAt'>>
-      ) => Promise<TaskStep | undefined>
       getApprovals: (taskId: string) => Promise<Approval[]>
-      createApproval: (
-        approval: Omit<Approval, 'id' | 'createdAt'> & Partial<Pick<Approval, 'id' | 'createdAt'>>
-      ) => Promise<Approval>
-      updateApprovalStatus: (
-        id: string,
-        status: Approval['status']
-      ) => Promise<Approval | undefined>
       getArtifacts: (taskId: string) => Promise<Artifact[]>
-      createArtifact: (
-        artifact: Omit<Artifact, 'id' | 'createdAt' | 'updatedAt'> &
-          Partial<Pick<Artifact, 'id' | 'createdAt' | 'updatedAt'>>
-      ) => Promise<Artifact>
       getMemories: (filters?: {
         hostId?: string
         topicId?: string
@@ -339,8 +312,6 @@ declare global {
         callback: (data: { topicId: string; thinking: boolean }) => void
       ) => () => void
 
-      onAgentTerminalShow: (callback: (data: TerminalSession) => void) => () => void
-      onAgentTerminalHide: (callback: (data: { id: string }) => void) => () => void
       onAgentSessionCreated: (callback: (data: TerminalSession) => void) => () => void
       onAgentSessionClosed: (callback: (data: { id: string }) => void) => () => void
 

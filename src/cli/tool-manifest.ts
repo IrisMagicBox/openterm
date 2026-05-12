@@ -30,28 +30,31 @@ export const CLI_TOOL_MANIFEST: CliToolManifestItem[] = [
     category: 'topic',
     mode: 'write',
     requiresAppRuntime: true,
-    summary: 'Create, rename, delete, model-select, and bind hosts for topics.'
+    summary:
+      'Live-required topic mutations plus DB-safe topic list/show inspection through opentermctl topics.'
   },
   {
     id: 'opentermctl_hosts',
     category: 'host',
     mode: 'write',
     requiresAppRuntime: true,
-    summary: 'List, inspect, create, and delete local or SSH host records.'
+    summary: 'Live-first host listing/inspection and live-required local or SSH host mutations.'
   },
   {
     id: 'opentermctl_chat',
     category: 'agent',
     mode: 'orchestration',
     requiresAppRuntime: false,
-    summary: 'Send messages, read chat history, and watch run events from the CLI.'
+    summary:
+      'Send messages through the live Agent runtime when available; inspect history and watch run parts from the DB.'
   },
   {
     id: 'opentermctl_runs',
     category: 'agent',
     mode: 'orchestration',
     requiresAppRuntime: false,
-    summary: 'List, inspect, cancel, resume, and watch agent runs.'
+    summary:
+      'DB-safe run list/show/parts/watch plus live-required cancel and resume controls.'
   },
   {
     id: 'opentermctl_approvals',
@@ -65,21 +68,24 @@ export const CLI_TOOL_MANIFEST: CliToolManifestItem[] = [
     category: 'agent',
     mode: 'read',
     requiresAppRuntime: false,
-    summary: 'Inspect tasks and task steps from the OpenTerm database.'
+    summary:
+      'Inspect legacy tasks and TaskStep compatibility data from the database; prefer runs parts for new runtime timelines.'
   },
   {
     id: 'opentermctl_artifacts',
     category: 'agent',
     mode: 'read',
     requiresAppRuntime: false,
-    summary: 'List, show, and export agent artifacts.'
+    summary:
+      'List, show, and export agent-created artifacts from the database or exported files.'
   },
   {
     id: 'opentermctl_terminal',
     category: 'terminal',
     mode: 'interactive',
     requiresAppRuntime: true,
-    summary: 'Open, input, resize, close, rename, pin, pause, execute, and observe terminals.'
+    summary:
+      'Live-first terminal reads with DB fallback, plus live-required open/input/resize/close/execute controls.'
   },
   {
     id: 'opentermctl_files',
@@ -107,7 +113,8 @@ export const CLI_TOOL_MANIFEST: CliToolManifestItem[] = [
     category: 'diagnostics',
     mode: 'read',
     requiresAppRuntime: false,
-    summary: 'Search command history, list recoverable sessions, and stream live debug logs.'
+    summary:
+      'Search DB command history, inspect live-first recoverable sessions, and stream live-required debug logs.'
   },
   {
     id: 'execute_command',

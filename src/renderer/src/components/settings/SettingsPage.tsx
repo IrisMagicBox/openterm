@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  Brain,
   Bot,
   ChevronLeft,
   Eye,
@@ -13,6 +14,7 @@ import {
 } from 'lucide-react'
 import { ProviderList } from './ProviderList'
 import { ProviderSettings } from './ProviderSettings'
+import { MemorySettings } from './MemorySettings'
 import { useProvider } from '../../hooks/useProvider'
 import { usePermissions } from '../../hooks/usePermissions'
 import { isSystemProviderId } from '../../config/providers'
@@ -75,14 +77,17 @@ const PERMISSION_MODE_OPTIONS: Array<{
     value: 'full_access',
     title: '完全访问权限',
     badge: '高风险',
-    description: '自动执行远程命令、文件写入和联网操作；极度危险命令仍会被策略硬拦截。',
+    description:
+      '远程命令、文件写入、联网操作和端口转发会尽量自动执行；极度危险命令仍会被策略硬拦截。',
     variant: 'warning'
   }
 ]
 
 export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement {
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'providers' | 'general' | 'permissions'>('providers')
+  const [activeTab, setActiveTab] = useState<'providers' | 'general' | 'permissions' | 'memory'>(
+    'providers'
+  )
   const [terminalCompletionMode, setTerminalCompletionMode] =
     useState<TerminalCompletionBackendMode>(DEFAULT_TERMINAL_COMPLETION_MODE)
   const [exaApiKey, setExaApiKey] = useState('')
@@ -162,10 +167,10 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
   const handleAddProvider = (): void => {
     const newProvider: Provider = {
       id: `custom-${Date.now()}`,
-      name: 'Custom Provider',
+      name: 'OpenAI-compatible Provider',
       type: 'openai',
       apiKey: '',
-      apiHost: 'https://api.example.com',
+      apiHost: 'https://api.openai.com/v1',
       enabled: true,
       isSystem: false,
       createdAt: Date.now(),
@@ -207,7 +212,7 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
     <div className="flex-1 flex flex-col h-full bg-app">
       <PageHeader
         title="设置"
-        description="配置 OpenTerm AI 模型、提供商和权限"
+        description="配置模型提供商、终端补全、权限和长期记忆"
         dense
         leading={
           onBack ? (
@@ -254,6 +259,17 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
               <Shield size={14} />
               权限设置
             </button>
+            <button
+              onClick={() => setActiveTab('memory')}
+              className={`flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-1.5 text-xs font-semibold transition ${
+                activeTab === 'memory'
+                  ? 'border border-white/55 bg-black/5 text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:bg-white/65 hover:text-foreground'
+              }`}
+            >
+              <Brain size={14} />
+              记忆管理
+            </button>
           </nav>
         </div>
 
@@ -286,11 +302,11 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
             <div className="flex-1 overflow-y-auto p-4">
               <div className="max-w-xl space-y-3">
                 <Surface padding="sm" className="rounded-md px-3 py-2.5">
-                  <h3 className="mb-1 text-[13px] font-bold text-foreground">关于 AI Providers</h3>
+                  <h3 className="mb-1 text-[13px] font-bold text-foreground">关于模型提供商</h3>
                   <p className="text-xs leading-4 text-muted-foreground">
-                    OpenTerm 现在支持多个 AI 提供商。您可以在 Providers 标签页中配置和管理不同的 AI
-                    服务， 包括 OpenAI、Anthropic、Gemini、DeepSeek、Silicon Flow 等 20+
-                    个内置提供商。
+                    OpenTerm 支持多个模型提供商。您可以在“AI
+                    提供商”中管理 OpenAI-compatible、Anthropic、Gemini、Ollama、Azure
+                    OpenAI 以及其他内置服务。
                   </p>
                 </Surface>
 
@@ -425,7 +441,7 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
                   </div>
                   {providers.filter((p) => p.enabled).length === 0 && (
                     <p className="text-xs text-muted-foreground italic">
-                      暂无启用的提供商。请前往 Providers 标签页启用至少一个提供商。
+                      暂无启用的提供商。请前往“AI 提供商”启用至少一个提供商。
                     </p>
                   )}
                 </div>
@@ -494,9 +510,23 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
                     的具体工具可见性仍受内置 Agent 角色限制。
                   </p>
                 </Surface>
+                {permissionMode === 'full_access' && (
+                  <Surface
+                    padding="sm"
+                    className="rounded-md border-warning/25 bg-warning-soft px-3 py-2.5"
+                  >
+                    <h4 className="text-[13px] font-semibold text-warning">完全访问权限已启用</h4>
+                    <p className="mt-0.5 text-xs leading-4 text-warning">
+                      Agent 会更少请求确认，可能直接写文件、访问网络、创建端口转发或执行远程变更。
+                      请只在可信任务和可信主机上使用。
+                    </p>
+                  </Surface>
+                )}
               </div>
             </div>
           )}
+
+          {activeTab === 'memory' && <MemorySettings />}
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clipboard,
+  Download,
   ExternalLink,
   Loader2,
   RotateCcw,
@@ -55,6 +56,36 @@ function toneFor(status: AgentRun['status'] | AgentPart['status']): React.Compon
 function textPreview(value?: string, limit = 900): string {
   if (!value) return ''
   return value.length > limit ? `${value.slice(0, limit)}...` : value
+}
+
+function artifactExtension(type: Artifact['type']): string {
+  if (type === 'script') return 'sh'
+  if (type === 'diff') return 'diff'
+  if (type === 'log') return 'log'
+  if (type === 'note') return 'md'
+  return 'md'
+}
+
+function artifactFilename(artifact: Artifact): string {
+  const basename =
+    artifact.title
+      .trim()
+      .replace(/[^\w.-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || artifact.id
+  return `${basename}.${artifactExtension(artifact.type)}`
+}
+
+function downloadArtifact(artifact: Artifact): void {
+  const blob = new Blob([artifact.content], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = artifactFilename(artifact)
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
 }
 
 function parseCommand(part: AgentPart): string {
@@ -301,7 +332,23 @@ export function AgentRunDetailDrawer({
                     <div key={artifact.id} className="rounded-md border border-white/60 bg-white/60 p-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="truncate text-xs font-bold">{artifact.title}</span>
-                        <Badge variant="neutral">{artifact.type}</Badge>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Badge variant="neutral">{artifact.type}</Badge>
+                          <IconButton
+                            aria-label="复制 Artifact"
+                            className="h-7 w-7"
+                            onClick={() => void navigator.clipboard.writeText(artifact.content)}
+                          >
+                            <Clipboard size={12} />
+                          </IconButton>
+                          <IconButton
+                            aria-label="导出 Artifact"
+                            className="h-7 w-7"
+                            onClick={() => downloadArtifact(artifact)}
+                          >
+                            <Download size={12} />
+                          </IconButton>
+                        </div>
                       </div>
                       <pre className="mt-2 max-h-36 overflow-y-auto whitespace-pre-wrap rounded-md bg-white/70 px-3 py-2 font-mono text-[11px] text-muted-foreground">
                         {textPreview(artifact.content, 1200)}

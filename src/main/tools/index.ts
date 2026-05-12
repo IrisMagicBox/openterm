@@ -18,6 +18,7 @@ import searchMemoryTool from './search-memory'
 import searchTopicsTool from './search-topics'
 import readNotesTool from './read-notes'
 import writeNotesTool from './write-notes'
+import createArtifactTool from './create-artifact'
 import searchTerminalHistoryTool from './search-terminal-history'
 import getDeletedTerminalsTool from './get-deleted-terminals'
 import grepTool from './grep'
@@ -53,6 +54,7 @@ export function createDefaultRegistry(): ToolRegistry {
   registry.register(searchTopicsTool)
   registry.register(readNotesTool)
   registry.register(writeNotesTool)
+  registry.register(createArtifactTool)
   registry.register(searchTerminalHistoryTool)
   registry.register(getDeletedTerminalsTool)
   registry.register(grepTool)

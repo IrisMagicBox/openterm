@@ -61,39 +61,6 @@ export function useAgentSessions({
       })
     })
 
-    const unlistenTerminalShow = window.api.onAgentTerminalShow((data) => {
-      if (selectedTopicId && data.topicId !== selectedTopicId) return
-      setAgentSessions((prev) => {
-        const exists = prev.find((s) => s.id === data.id)
-        if (exists) {
-          return prev.map((s) =>
-            s.id === data.id
-              ? {
-                  ...s,
-                  ...data,
-                  visible: true,
-                  paused: data.paused ?? s.paused ?? false,
-                  takeoverMode: data.takeoverMode ?? s.takeoverMode ?? null
-                }
-              : s
-          )
-        }
-        return [
-          ...prev,
-          {
-            ...data,
-            visible: true,
-            paused: data.paused ?? false,
-            takeoverMode: data.takeoverMode ?? null
-          }
-        ]
-      })
-    })
-
-    const unlistenTerminalHide = window.api.onAgentTerminalHide(({ id }) => {
-      setAgentSessions((prev) => prev.map((s) => (s.id === id ? { ...s, visible: false } : s)))
-    })
-
     const unlistenSessionCreated = window.api.onAgentSessionCreated((data) => {
       if (selectedTopicId && data.topicId !== selectedTopicId) return
       setAgentSessions((prev) => {
@@ -128,8 +95,6 @@ export function useAgentSessions({
       cancelled = true
       unlistenAuth()
       unlistenThinking()
-      unlistenTerminalShow()
-      unlistenTerminalHide()
       unlistenSessionCreated()
       unlistenSessionClosed()
     }

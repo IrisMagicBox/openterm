@@ -89,10 +89,16 @@ export function parseFullCliArgs(command: string, rest: string[]): FullCliComman
   try {
     if (command === 'app') return parseAppArgs(rest)
     if (command === 'hosts' || command === 'host') return parseHostsArgs(rest)
-    if ((command === 'topics' || command === 'topic') && !READONLY_TOPICS.has(rest[0] ?? 'list')) {
+    if (
+      (command === 'topics' || command === 'topic') &&
+      !READONLY_TOPICS.has(firstSubcommand(rest, 'list'))
+    ) {
       return parseFullTopicsArgs(rest)
     }
-    if ((command === 'chat' || command === 'message') && !READONLY_CHAT.has(rest[0] ?? 'send')) {
+    if (
+      (command === 'chat' || command === 'message') &&
+      !READONLY_CHAT.has(firstSubcommand(rest, 'send'))
+    ) {
       return parseChatWatchArgs(rest)
     }
     if (command === 'runs' || command === 'runlog') return parseRunsArgs(rest)
@@ -101,7 +107,7 @@ export function parseFullCliArgs(command: string, rest: string[]): FullCliComman
     if (command === 'artifacts' || command === 'artifact') return parseArtifactsArgs(rest)
     if (
       (command === 'terminal' || command === 'term' || command === 'terminals') &&
-      !READONLY_TERMINAL.has(rest[0] ?? 'list')
+      !READONLY_TERMINAL.has(firstSubcommand(rest, 'list'))
     ) {
       return parseFullTerminalArgs(rest)
     }
@@ -121,6 +127,11 @@ export function parseFullCliArgs(command: string, rest: string[]): FullCliComman
     }
     throw error
   }
+}
+
+function firstSubcommand(argv: string[], fallback: string): string {
+  const first = argv[0]
+  return first && !first.startsWith('--') ? first : fallback
 }
 
 export function isFullCliCommand(command: { name: string }): boolean {
@@ -994,6 +1005,7 @@ async function executeTopicHostsList(command: FullCliCommand, io: CliIO): Promis
 }
 
 async function executeRunsList(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'runs list reads the database run index')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const params: unknown[] = []
     const where: string[] = ['1 = 1']
@@ -1022,6 +1034,7 @@ async function executeRunsList(command: FullCliCommand, io: CliIO): Promise<numb
 }
 
 async function executeRunsShow(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'runs show reads a database run snapshot')
   const result = withDatabase(command.dbPath as string | undefined, (db) =>
     getRunById(db, resolveRequiredRunId(db, requireCommandString(command, 'id')))
   )
@@ -1030,6 +1043,7 @@ async function executeRunsShow(command: FullCliCommand, io: CliIO): Promise<numb
 }
 
 async function executeRunParts(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'runs parts reads the database run timeline')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const runId = resolveRequiredRunId(db, requireCommandString(command, 'id'))
     const rows = db
@@ -1042,6 +1056,7 @@ async function executeRunParts(command: FullCliCommand, io: CliIO): Promise<numb
 }
 
 async function executeApprovalsList(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'approvals list reads database approval records')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const params: unknown[] = []
     const where: string[] = ['1 = 1']
@@ -1066,6 +1081,7 @@ async function executeApprovalsList(command: FullCliCommand, io: CliIO): Promise
 }
 
 async function executeApprovalsShow(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'approvals show reads a database approval record')
   const result = withDatabase(command.dbPath as string | undefined, (db) =>
     getApprovalById(db, requireCommandString(command, 'id'))
   )
@@ -1076,6 +1092,7 @@ async function executeApprovalsShow(command: FullCliCommand, io: CliIO): Promise
 }
 
 async function executeTasksList(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'tasks list reads legacy task records from the database')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const params: unknown[] = []
     const where: string[] = ['1 = 1']
@@ -1098,6 +1115,7 @@ async function executeTasksList(command: FullCliCommand, io: CliIO): Promise<num
 }
 
 async function executeTasksShow(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'tasks show reads a legacy task record from the database')
   const result = withDatabase(command.dbPath as string | undefined, (db) =>
     getTaskById(db, resolveRequiredTaskId(db, requireCommandString(command, 'id')))
   )
@@ -1106,6 +1124,7 @@ async function executeTasksShow(command: FullCliCommand, io: CliIO): Promise<num
 }
 
 async function executeTaskSteps(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'tasks steps reads legacy TaskStep compatibility data')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const taskId = resolveRequiredTaskId(db, requireCommandString(command, 'id'))
     const rows = db
@@ -1118,6 +1137,7 @@ async function executeTaskSteps(command: FullCliCommand, io: CliIO): Promise<num
 }
 
 async function executeArtifactsList(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'artifacts list reads artifact records from the database')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const params: unknown[] = []
     const where: string[] = ['1 = 1']
@@ -1138,6 +1158,7 @@ async function executeArtifactsList(command: FullCliCommand, io: CliIO): Promise
 }
 
 async function executeArtifactsShow(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'artifacts show reads an artifact record from the database')
   const result = withDatabase(command.dbPath as string | undefined, (db) =>
     getArtifactById(db, requireCommandString(command, 'id'))
   )
@@ -1148,6 +1169,7 @@ async function executeArtifactsShow(command: FullCliCommand, io: CliIO): Promise
 }
 
 async function executeArtifactsExport(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'artifacts export reads an artifact from the database before writing a file')
   const artifact = withDatabase(command.dbPath as string | undefined, (db) =>
     getArtifactById(db, requireCommandString(command, 'id'))
   )
@@ -1163,6 +1185,7 @@ async function executeArtifactsExport(command: FullCliCommand, io: CliIO): Promi
 }
 
 async function executeLocalFileCommand(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'files local runs in the CLI process, not through the app runtime')
   const fsPromises = fs.promises
   if (command.name === 'files-local-ls') {
     const dir = path.resolve(expandHome(String(command.path ?? '.')))
@@ -1203,6 +1226,7 @@ async function executeLocalFileCommand(command: FullCliCommand, io: CliIO): Prom
 }
 
 async function executeProvidersList(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'settings providers list reads provider records from the database')
   const result = withDatabase(command.dbPath as string | undefined, (db) =>
     selectRows<ProviderRow, Provider>(db, 'providers', 'ORDER BY createdAt DESC', mapProviderRow)
   )
@@ -1211,6 +1235,7 @@ async function executeProvidersList(command: FullCliCommand, io: CliIO): Promise
 }
 
 async function executeProvidersShow(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'settings providers show reads a provider record from the database')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const row = db
       .prepare('SELECT * FROM providers WHERE id = ?')
@@ -1224,6 +1249,7 @@ async function executeProvidersShow(command: FullCliCommand, io: CliIO): Promise
 }
 
 async function executeModelsList(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'settings models list reads model records from the database')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const providerId = command.providerId ? String(command.providerId) : undefined
     const rows = providerId
@@ -1238,6 +1264,7 @@ async function executeModelsList(command: FullCliCommand, io: CliIO): Promise<nu
 }
 
 async function executeModelsShow(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'settings models show reads a model record from the database')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const row = db
       .prepare('SELECT * FROM models WHERE id = ?')
@@ -1249,6 +1276,7 @@ async function executeModelsShow(command: FullCliCommand, io: CliIO): Promise<nu
 }
 
 async function executePermissionsGet(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'settings permissions get reads permission settings from the database')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const row = db.prepare("SELECT * FROM permissions WHERE id = 'default'").get() as
       | {
@@ -1304,6 +1332,7 @@ function normalizeStoredPermissionMode(
 }
 
 async function executeModelSettingsGet(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'settings model-settings get reads legacy settings from the database')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const row = db.prepare("SELECT * FROM model_settings WHERE id = 'default'").get()
     return row ?? {}
@@ -1313,6 +1342,7 @@ async function executeModelSettingsGet(command: FullCliCommand, io: CliIO): Prom
 }
 
 async function executeMemoryList(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'memory list reads memory records from the database')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const params: unknown[] = []
     const where: string[] = ['1 = 1']
@@ -1337,6 +1367,7 @@ async function executeMemoryList(command: FullCliCommand, io: CliIO): Promise<nu
 }
 
 async function executeGlobalMemoryGet(command: FullCliCommand, io: CliIO): Promise<number> {
+  rejectLiveOnly(command, 'memory global get reads global memory from the database')
   const result = withDatabase(command.dbPath as string | undefined, (db) => {
     const row = db.prepare("SELECT * FROM global_memory WHERE id = 'default'").get() as
       | { data: string; updatedAt: number }
@@ -1508,6 +1539,11 @@ async function watchRecoverableSessions(command: FullCliCommand, io: CliIO): Pro
 function watchUnsupported(command: FullCliCommand, io: CliIO, message: string): number {
   writeOutput(io, command, { ok: false, message }, () => `${message}\n`)
   return 1
+}
+
+function rejectLiveOnly(command: FullCliCommand, reason: string): void {
+  if (!command.liveOnly) return
+  throw new Error(`--live-only is only supported by live-first read commands. ${reason}.`)
 }
 
 function requestLiveControl(
@@ -2025,8 +2061,10 @@ function formatTasks(tasks: Task[]): string {
 }
 
 function formatSteps(steps: TaskStep[]): string {
-  if (steps.length === 0) return 'No task steps found.\n'
+  const header = 'Legacy task steps view. New runtime details live in agent run parts.\n'
+  if (steps.length === 0) return `${header}No task steps found.\n`
   return (
+    header +
     steps
       .map(
         (step) =>

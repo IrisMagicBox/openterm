@@ -65,6 +65,10 @@ function formatDate(ts: number): string {
   })
 }
 
+function joinRemotePath(base: string, name: string): string {
+  return base === '/' ? `/${name}` : `${base}/${name}`
+}
+
 export function FileBrowser({
   hostId,
   hostAlias,
@@ -171,7 +175,7 @@ export function FileBrowser({
 
   const handleItemClick = (item: FileItem): void => {
     if (item.type === 'directory') {
-      const newPath = currentPath === '/' ? `/${item.name}` : `${currentPath}/${item.name}`
+      const newPath = joinRemotePath(currentPath, item.name)
       navigateTo(newPath)
     } else {
       setSelectedItem(item.name)
@@ -194,7 +198,7 @@ export function FileBrowser({
     setUploading(true)
     setError(null)
     try {
-      const remotePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`
+      const remotePath = joinRemotePath(currentPath, file.name)
       const filePath = (file as ElectronFile).path
       if (!filePath) {
         setError('无法读取本地文件路径')
@@ -212,7 +216,7 @@ export function FileBrowser({
 
   const handleDownload = async (): Promise<void> => {
     if (!selectedItem || !sessionId) return
-    const remotePath = currentPath === '/' ? `/${selectedItem}` : `${currentPath}/${selectedItem}`
+    const remotePath = joinRemotePath(currentPath, selectedItem)
     const localPath = `~/Downloads/${selectedItem}`
     setLoading(true)
     setError(null)
@@ -231,7 +235,7 @@ export function FileBrowser({
     setError(null)
     try {
       const newPath =
-        currentPath === '/' ? `/${mkdirName.trim()}` : `${currentPath}/${mkdirName.trim()}`
+        joinRemotePath(currentPath, mkdirName.trim())
       await fsMkdir(sessionId, newPath)
       setShowMkdir(false)
       setMkdirName('')
@@ -248,7 +252,7 @@ export function FileBrowser({
     setLoading(true)
     setError(null)
     try {
-      const remotePath = currentPath === '/' ? `/${selectedItem}` : `${currentPath}/${selectedItem}`
+      const remotePath = joinRemotePath(currentPath, selectedItem)
       await fsDelete(sessionId, remotePath)
       setSelectedItem(null)
       await loadDirectory(currentPath)
@@ -267,7 +271,7 @@ export function FileBrowser({
   }
 
   const handleRowDragStart = (e: React.DragEvent, item: FileItem): void => {
-    const fullPath = currentPath === '/' ? `/${item.name}` : `${currentPath}/${item.name}`
+    const fullPath = joinRemotePath(currentPath, item.name)
 
     const dragData: FileDragData = {
       type: 'file-transfer',
@@ -307,7 +311,7 @@ export function FileBrowser({
           const file = e.dataTransfer.files[i]
           const filePath = (file as ElectronFile).path
           if (!filePath) continue
-          const remotePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`
+          const remotePath = joinRemotePath(currentPath, file.name)
           await fsUpload(sessionId, filePath, remotePath)
         }
         await loadDirectory(currentPath)
@@ -339,12 +343,20 @@ export function FileBrowser({
 
     if (!onFileDrop) return
 
-    const destPath =
-      currentPath === '/' ? `/${dragData.fileName}` : `${currentPath}/${dragData.fileName}`
+    const destPath = joinRemotePath(currentPath, dragData.fileName)
     onFileDrop(dragData.sourceHostId, dragData.sourcePath, dragData.fileName, hostId, destPath)
   }
 
   const pathParts = currentPath.split('/').filter(Boolean)
+  const selectedFile = selectedItem
+    ? items.find((item) => item.name === selectedItem && item.type === 'file')
+    : undefined
+  const selectedPath = selectedItem ? joinRemotePath(currentPath, selectedItem) : ''
+  const deleteConfirmTitle = selectedItem
+    ? selectedFile
+      ? `删除 ${selectedPath}`
+      : `递归删除目录 ${selectedPath}`
+    : '删除'
 
   return (
     <div
@@ -453,8 +465,8 @@ export function FileBrowser({
           disabled={!selectedItem}
           className="rounded-lg p-1.5 text-workspace-muted-foreground hover:bg-danger/15 hover:text-danger disabled:cursor-not-allowed disabled:opacity-30"
           confirmClassName="disabled:opacity-30"
-          confirmingTitle={selectedItem ? `删除 ${selectedItem}` : '删除'}
-          title="删除"
+          confirmingTitle={deleteConfirmTitle}
+          title={selectedPath ? `删除 ${selectedPath}` : '删除'}
         >
           <Trash2 className="w-3.5 h-3.5" />
         </ConfirmActionButton>

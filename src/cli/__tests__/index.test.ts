@@ -74,8 +74,34 @@ describe('opentermctl arg parsing', () => {
       outputFormat: 'plain',
       limit: 20,
       includeDeleted: false,
-      raw: false
+      raw: false,
+      liveOnly: false
     })
+  })
+
+  it('parses terminal live-only reads', () => {
+    expect(parseCliArgs(['terminal', 'list', '--live-only', '--active'])).toEqual({
+      name: 'terminal-list',
+      topicId: undefined,
+      dbPath: undefined,
+      outputFormat: 'plain',
+      includeDeleted: false,
+      status: 'active',
+      liveOnly: true
+    })
+  })
+
+  it('keeps default read subcommands when options come first', () => {
+    expect(parseCliArgs(['topics', '--json'])).toEqual({
+      name: 'topics-list',
+      dbPath: undefined,
+      limit: 20,
+      outputFormat: 'json'
+    })
+  })
+
+  it('rejects live-only on database-only read commands', () => {
+    expect(() => parseCliArgs(['topics', 'list', '--live-only'])).toThrow(CliUsageError)
   })
 
   it('parses app status controls', () => {

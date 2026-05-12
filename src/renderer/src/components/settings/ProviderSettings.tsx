@@ -38,6 +38,23 @@ interface ProviderSettingsProps {
   onRemoveModel?: (providerId: string, modelId: string) => Promise<void> | void
 }
 
+function describeProviderTestMessage(message: string): string {
+  const lower = message.toLowerCase()
+  if (lower.includes('401') || lower.includes('403') || lower.includes('api key')) {
+    return `鉴权失败：请检查 API 密钥或服务权限。${message}`
+  }
+  if (lower.includes('404') || lower.includes('model not found') || lower.includes('not found')) {
+    return `模型或接口路径不存在：请检查模型 ID 和 API 主机。${message}`
+  }
+  if (lower.includes('timeout') || lower.includes('network') || lower.includes('fetch')) {
+    return `网络或服务不可达：请检查本机网络、代理和服务地址。${message}`
+  }
+  if (lower.includes('api host') || lower.includes('base url') || lower.includes('baseurl')) {
+    return `API 主机配置可能有误：请确认地址包含正确的版本路径。${message}`
+  }
+  return message
+}
+
 export function ProviderSettings({
   provider,
   models,
@@ -109,10 +126,11 @@ export function ProviderSettings({
     try {
       const result = await onTestConnection({ ...provider, ...formData } as Provider, modelId)
       setTestResult(result.ok)
-      setTestMessage(result.message)
+      setTestMessage(result.ok ? result.message : describeProviderTestMessage(result.message))
     } catch (error) {
       setTestResult(false)
-      setTestMessage(error instanceof Error ? error.message : '连接测试失败')
+      const message = error instanceof Error ? error.message : '连接测试失败'
+      setTestMessage(describeProviderTestMessage(message))
     } finally {
       setIsTesting(false)
       setTestingModelId(null)
@@ -244,7 +262,7 @@ export function ProviderSettings({
             type="text"
             value={formData.apiHost || ''}
             onChange={(e) => handleChange('apiHost', e.target.value)}
-            placeholder="https://api.example.com"
+            placeholder="https://api.openai.com/v1"
             className="h-7 text-xs"
           />
         </FormField>
@@ -295,7 +313,7 @@ export function ProviderSettings({
                       }
                     }
                   } catch {
-                    setModelError('自动获取模型失败，请手动添加。')
+                    setModelError('自动获取模型失败，请检查 API 主机、密钥和网络后重试，或手动添加模型。')
                   } finally {
                     setIsFetchingModels(false)
                   }
@@ -363,7 +381,7 @@ export function ProviderSettings({
           <div className="custom-scrollbar max-h-60 space-y-1.5 overflow-y-auto pr-2">
             {models.length === 0 ? (
               <div className="rounded-lg border border-dashed border-white/70 bg-white/55 py-6 text-center">
-                <p className="text-xs text-muted-foreground">暂无模型，请添加模型</p>
+                <p className="text-xs text-muted-foreground">暂无模型。可以自动获取，或手动添加模型 ID。</p>
               </div>
             ) : (
               models.map((model) => {
@@ -438,7 +456,7 @@ export function ProviderSettings({
         <Surface className="mt-5" padding="sm" variant="subtle">
           <p className="text-xs leading-5 text-muted-foreground">
             这是系统提供商。您可以修改其配置，但无法删除。
-            点击提供商列表中的&quot;恢复默认设置&quot;可还原原始设置。
+            点击提供商列表中的“恢复默认设置”可还原原始设置。
           </p>
         </Surface>
       )}

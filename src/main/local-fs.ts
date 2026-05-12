@@ -96,11 +96,14 @@ export function registerLocalFsIPC(): void {
     const fs = await import('fs/promises')
     const expandedItemPath = expandUserPath(itemPath)
     const stat = await fs.stat(expandedItemPath)
+    const itemType = stat.isDirectory() ? 'directory' : 'file'
+    logger.info('LocalFS', `Deleting ${itemType}: ${expandedItemPath}`)
     if (stat.isDirectory()) {
       await fs.rm(expandedItemPath, { recursive: true })
     } else {
       await fs.unlink(expandedItemPath)
     }
+    logger.info('LocalFS', `Deleted ${itemType}: ${expandedItemPath}`)
   })
 
   ipcMain.handle('local-fs:close', async () => {

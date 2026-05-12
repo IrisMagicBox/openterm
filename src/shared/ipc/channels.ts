@@ -7,7 +7,6 @@ import type {
   AgentRun,
   AgentPart,
   Approval,
-  ApprovalStatus,
   Artifact,
   ModelSettings,
   Provider,
@@ -163,51 +162,12 @@ export interface IpcInvokeChannels {
 
   'get-tasks': { payload: [topicId?: string]; result: Task[] }
   'get-latest-task': { payload: [topicId: string]; result: Task | undefined }
-  'create-task': {
-    payload: [
-      task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> &
-        Partial<Pick<Task, 'id' | 'createdAt' | 'updatedAt'>>
-    ]
-    result: Task
-  }
-  'update-task': {
-    payload: [id: string, updates: Partial<Omit<Task, 'id' | 'topicId' | 'createdAt'>>]
-    result: Task | undefined
-  }
 
   'get-task-steps': { payload: [taskId: string]; result: TaskStep[] }
-  'create-task-step': {
-    payload: [
-      step: Omit<TaskStep, 'id' | 'createdAt' | 'updatedAt'> &
-        Partial<Pick<TaskStep, 'id' | 'createdAt' | 'updatedAt'>>
-    ]
-    result: TaskStep
-  }
-  'update-task-step': {
-    payload: [id: string, updates: Partial<Omit<TaskStep, 'id' | 'taskId' | 'createdAt'>>]
-    result: TaskStep | undefined
-  }
 
   'get-approvals': { payload: [taskId: string]; result: Approval[] }
-  'create-approval': {
-    payload: [
-      approval: Omit<Approval, 'id' | 'createdAt'> & Partial<Pick<Approval, 'id' | 'createdAt'>>
-    ]
-    result: Approval
-  }
-  'update-approval-status': {
-    payload: [id: string, status: ApprovalStatus]
-    result: Approval | undefined
-  }
 
   'get-artifacts': { payload: [taskId: string]; result: Artifact[] }
-  'create-artifact': {
-    payload: [
-      artifact: Omit<Artifact, 'id' | 'createdAt' | 'updatedAt'> &
-        Partial<Pick<Artifact, 'id' | 'createdAt' | 'updatedAt'>>
-    ]
-    result: Artifact
-  }
 
   'get-memories': {
     payload: [filters?: { hostId?: string; topicId?: string; includeDisabled?: boolean }]
@@ -423,8 +383,6 @@ interface IpcPushChannelsStatic {
   'agent:task-complete': {
     payload: { topicId: string; taskId: string; status: 'completed' | 'failed'; summary: string }
   }
-  'agent:terminal-show': { payload: TerminalSession }
-  'agent:terminal-hide': { payload: { id: string } }
   'agent:session-created': { payload: TerminalSession }
   'agent:session-closed': { payload: { id: string } }
   'topic:updated': { payload: TopicUpdatedPayload }

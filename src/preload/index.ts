@@ -5,12 +5,8 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { createTypedIpc } from './typed-ipc'
 import type {
   Host,
-  Task,
-  TaskStep,
   AgentRun,
   AgentPart,
-  Approval,
-  Artifact,
   Message,
   ModelSettings,
   Provider,
@@ -57,30 +53,9 @@ const api: Record<string, unknown> = {
   getMessages: (topicId: string) => ipcRenderer.invoke('get-messages', topicId),
   getTasks: (topicId?: string) => ipcRenderer.invoke('get-tasks', topicId),
   getLatestTask: (topicId: string) => ipcRenderer.invoke('get-latest-task', topicId),
-  createTask: (
-    task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> &
-      Partial<Pick<Task, 'id' | 'createdAt' | 'updatedAt'>>
-  ) => ipcRenderer.invoke('create-task', task),
-  updateTask: (id: string, updates: Partial<Omit<Task, 'id' | 'topicId' | 'createdAt'>>) =>
-    ipcRenderer.invoke('update-task', id, updates),
   getTaskSteps: (taskId: string) => ipcRenderer.invoke('get-task-steps', taskId),
-  createTaskStep: (
-    step: Omit<TaskStep, 'id' | 'createdAt' | 'updatedAt'> &
-      Partial<Pick<TaskStep, 'id' | 'createdAt' | 'updatedAt'>>
-  ) => ipcRenderer.invoke('create-task-step', step),
-  updateTaskStep: (id: string, updates: Partial<Omit<TaskStep, 'id' | 'taskId' | 'createdAt'>>) =>
-    ipcRenderer.invoke('update-task-step', id, updates),
   getApprovals: (taskId: string) => ipcRenderer.invoke('get-approvals', taskId),
-  createApproval: (
-    approval: Omit<Approval, 'id' | 'createdAt'> & Partial<Pick<Approval, 'id' | 'createdAt'>>
-  ) => ipcRenderer.invoke('create-approval', approval),
-  updateApprovalStatus: (id: string, status: Approval['status']) =>
-    ipcRenderer.invoke('update-approval-status', id, status),
   getArtifacts: (taskId: string) => ipcRenderer.invoke('get-artifacts', taskId),
-  createArtifact: (
-    artifact: Omit<Artifact, 'id' | 'createdAt' | 'updatedAt'> &
-      Partial<Pick<Artifact, 'id' | 'createdAt' | 'updatedAt'>>
-  ) => ipcRenderer.invoke('create-artifact', artifact),
   getMemories: (filters?: { hostId?: string; topicId?: string; includeDisabled?: boolean }) =>
     ipcRenderer.invoke('get-memories', filters),
   createMemory: (
@@ -308,16 +283,6 @@ const api: Record<string, unknown> = {
     return () => ipcRenderer.removeListener('agent:task-complete', listener)
   },
 
-  onAgentTerminalShow: (callback: (data: TerminalSession) => void) => {
-    const listener = (_event: IpcRendererEvent, data: TerminalSession) => callback(data)
-    ipcRenderer.on('agent:terminal-show', listener)
-    return () => ipcRenderer.removeListener('agent:terminal-show', listener)
-  },
-  onAgentTerminalHide: (callback: (data: { id: string }) => void) => {
-    const listener = (_event: IpcRendererEvent, data: { id: string }) => callback(data)
-    ipcRenderer.on('agent:terminal-hide', listener)
-    return () => ipcRenderer.removeListener('agent:terminal-hide', listener)
-  },
   onAgentSessionCreated: (callback: (data: TerminalSession) => void) => {
     const listener = (_event: IpcRendererEvent, data: TerminalSession) => callback(data)
     ipcRenderer.on('agent:session-created', listener)

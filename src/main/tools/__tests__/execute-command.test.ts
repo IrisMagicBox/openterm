@@ -2,15 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Tool } from '../tool-factory'
 
 const mocks = vi.hoisted(() => ({
-  run: vi.fn(),
   executeAgentCommand: vi.fn(),
   ensureSession: vi.fn()
-}))
-
-vi.mock('../../command-runner', () => ({
-  commandRunner: {
-    run: mocks.run
-  }
 }))
 
 vi.mock('../../terminal', () => ({
@@ -91,7 +84,7 @@ function makeContext(): Tool.Context {
 }
 
 describe('execute_command tool', () => {
-  it('uses a visible agent command terminal and does not call hidden CommandRunner', async () => {
+  it('uses a visible agent command terminal', async () => {
     mocks.ensureSession.mockResolvedValueOnce('session-1')
     mocks.executeAgentCommand.mockResolvedValueOnce({
       content: 'ok\n',
@@ -115,7 +108,6 @@ describe('execute_command tool', () => {
       makeContext()
     )
 
-    expect(mocks.run).not.toHaveBeenCalled()
     expect(mocks.ensureSession).toHaveBeenCalledWith('local', '本机', undefined, {
       role: 'agent_command',
       visible: true

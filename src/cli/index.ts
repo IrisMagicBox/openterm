@@ -94,6 +94,7 @@ type CliCommand =
       outputFormat: OutputFormat
       includeDeleted: boolean
       status?: string
+      liveOnly: boolean
     }
   | {
       name: 'terminal-count'
@@ -102,6 +103,7 @@ type CliCommand =
       outputFormat: OutputFormat
       includeDeleted: boolean
       status?: string
+      liveOnly: boolean
     }
   | {
       name: 'terminal-output'
@@ -112,6 +114,7 @@ type CliCommand =
       limit: number
       includeDeleted: boolean
       raw: boolean
+      liveOnly: boolean
     }
   | {
       name: 'run'
@@ -243,11 +246,16 @@ function mergeGlobalOptions(rest: string[], globalOptions: string[]): string[] {
   return [...rest.slice(0, separatorIndex), ...globalOptions, ...rest.slice(separatorIndex)]
 }
 
+function splitSubcommand(argv: string[], fallback: string): [string, string[]] {
+  const [first, ...rest] = argv
+  if (!first || first.startsWith('--')) return [fallback, argv]
+  return [first, rest]
+}
+
 function filterLegacyGlobalOptions(globalOptions: string[], command: string): string[] {
   const filtered: string[] = []
   for (let index = 0; index < globalOptions.length; index += 1) {
     const option = globalOptions[index]
-    if (option === '--live-only') continue
     if (
       option === '--timeout-ms' &&
       command !== 'chat' &&
@@ -327,6 +335,9 @@ function parseDiagnoseArgs(argv: string[]): CliCommand {
       outputFormat = 'json'
       continue
     }
+    if (arg === '--live-only') {
+      throw unsupportedLiveOnly('diagnose is a database diagnostics command')
+    }
     if (arg === '--focused') {
       scope = 'focused'
       continue
@@ -361,7 +372,7 @@ function parseDiagnoseArgs(argv: string[]): CliCommand {
 }
 
 function parseTopicsArgs(argv: string[]): CliCommand {
-  const [subcommand = 'list', ...rest] = argv
+  const [subcommand, rest] = splitSubcommand(argv, 'list')
   if (subcommand === '--help' || subcommand === '-h') return { name: 'help' }
   if (subcommand === 'list') return parseTopicsListArgs(rest)
   if (subcommand === 'show') return parseTopicsShowArgs(rest)
@@ -389,6 +400,9 @@ function parseTopicsListArgs(argv: string[]): CliCommand {
       outputFormat = 'json'
       continue
     }
+    if (arg === '--live-only') {
+      throw unsupportedLiveOnly('topics list reads the database')
+    }
     throw new CliUsageError(`Unknown topics list option: ${arg}`)
   }
 
@@ -412,6 +426,9 @@ function parseTopicsShowArgs(argv: string[]): CliCommand {
       outputFormat = 'json'
       continue
     }
+    if (arg === '--live-only') {
+      throw unsupportedLiveOnly('topics show reads the database')
+    }
     if (arg === '--messages') {
       messageLimit = parsePositiveInteger(requireValue(argv, index, arg), arg)
       index += 1
@@ -427,7 +444,7 @@ function parseTopicsShowArgs(argv: string[]): CliCommand {
 }
 
 function parseChatArgs(argv: string[]): CliCommand {
-  const [subcommand = 'send', ...rest] = argv
+  const [subcommand, rest] = splitSubcommand(argv, 'send')
   if (subcommand === '--help' || subcommand === '-h') return { name: 'help' }
   if (subcommand === 'send' || subcommand === 'ask') return parseChatSendArgs(rest)
   if (subcommand === 'history' || subcommand === 'messages') return parseChatHistoryArgs(rest)
@@ -500,6 +517,9 @@ function parseChatSendArgs(argv: string[]): CliCommand {
       outputFormat = 'json'
       continue
     }
+    if (arg === '--live-only') {
+      throw unsupportedLiveOnly('chat send is an orchestration command, not a live-only read')
+    }
     if (arg.startsWith('--')) throw new CliUsageError(`Unknown chat send option: ${arg}`)
     content = [arg, ...argv.slice(index + 1)].join(' ')
     break
@@ -554,6 +574,9 @@ function parseChatHistoryArgs(argv: string[]): CliCommand {
       outputFormat = 'json'
       continue
     }
+    if (arg === '--live-only') {
+      throw unsupportedLiveOnly('chat history reads the database')
+    }
     if (arg.startsWith('--')) throw new CliUsageError(`Unknown chat history option: ${arg}`)
     topicId = arg
   }
@@ -562,7 +585,7 @@ function parseChatHistoryArgs(argv: string[]): CliCommand {
 }
 
 function parseTerminalArgs(argv: string[]): CliCommand {
-  const [subcommand = 'list', ...rest] = argv
+  const [subcommand, rest] = splitSubcommand(argv, 'list')
   if (subcommand === '--help' || subcommand === '-h') return { name: 'help' }
   if (subcommand === 'list' || subcommand === 'sessions') return parseTerminalListArgs(rest)
   if (subcommand === 'count') return parseTerminalCountArgs(rest)
@@ -588,12 +611,14 @@ function parseTerminalCommonArgs(argv: string[]): {
   outputFormat: OutputFormat
   includeDeleted: boolean
   status?: string
+  liveOnly: boolean
 } {
   let topicId: string | undefined
   let dbPath: string | undefined
   let outputFormat: OutputFormat = 'plain'
   let includeDeleted = false
   let status: string | undefined
+  let liveOnly = false
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -624,11 +649,15 @@ function parseTerminalCommonArgs(argv: string[]): {
       outputFormat = 'json'
       continue
     }
+    if (arg === '--live-only') {
+      liveOnly = true
+      continue
+    }
     if (arg.startsWith('--')) throw new CliUsageError(`Unknown terminal option: ${arg}`)
     topicId = arg
   }
 
-  return { topicId, dbPath, outputFormat, includeDeleted, status }
+  return { topicId, dbPath, outputFormat, includeDeleted, status, liveOnly }
 }
 
 function parseTerminalOutputArgs(argv: string[]): CliCommand {
@@ -639,6 +668,7 @@ function parseTerminalOutputArgs(argv: string[]): CliCommand {
   let limit = 80
   let includeDeleted = false
   let raw = false
+  let liveOnly = false
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -669,6 +699,10 @@ function parseTerminalOutputArgs(argv: string[]): CliCommand {
       outputFormat = 'json'
       continue
     }
+    if (arg === '--live-only') {
+      liveOnly = true
+      continue
+    }
     if (arg.startsWith('--')) throw new CliUsageError(`Unknown terminal output option: ${arg}`)
     if (sessionId) throw new CliUsageError(`Unexpected extra terminal output argument: ${arg}`)
     sessionId = arg
@@ -683,7 +717,8 @@ function parseTerminalOutputArgs(argv: string[]): CliCommand {
     outputFormat,
     limit,
     includeDeleted,
-    raw
+    raw,
+    liveOnly
   }
 }
 
@@ -713,6 +748,9 @@ function parseRunArgs(argv: string[]): CliCommand {
     if (arg === '--json') {
       outputFormat = 'json'
       continue
+    }
+    if (arg === '--live-only') {
+      throw unsupportedLiveOnly('run is a local utility command')
     }
     if (arg === '--shell') {
       shellCommand = requireValue(argv, index, arg)
@@ -744,6 +782,9 @@ function parseDoctorArgs(argv: string[]): CliCommand {
       outputFormat = 'json'
       continue
     }
+    if (arg === '--live-only') {
+      throw unsupportedLiveOnly('doctor is a local diagnostics command')
+    }
     if (arg === '--timeout-ms') {
       timeoutMs = parsePositiveInteger(requireValue(argv, index, arg), arg)
       index += 1
@@ -773,7 +814,7 @@ function parseDoctorArgs(argv: string[]): CliCommand {
 }
 
 function parseToolsArgs(argv: string[]): CliCommand {
-  const [subcommand = 'list', ...rest] = argv
+  const [subcommand, rest] = splitSubcommand(argv, 'list')
   if (subcommand === '--help' || subcommand === '-h') return { name: 'help' }
   if (subcommand !== 'list') throw new CliUsageError(`Unknown tools subcommand: ${subcommand}`)
 
@@ -784,6 +825,9 @@ function parseToolsArgs(argv: string[]): CliCommand {
     if (arg === '--json') {
       outputFormat = 'json'
       continue
+    }
+    if (arg === '--live-only') {
+      throw unsupportedLiveOnly('tools list is a local manifest command')
     }
     if (arg === '--category') {
       category = requireValue(rest, index, arg)
@@ -1096,9 +1140,13 @@ function executeTerminalList(
   command: Extract<CliCommand, { name: 'terminal-list' }>,
   io: CliIO
 ): number | Promise<number> {
+  assertTerminalLiveOnlyOptions(command.liveOnly, command.dbPath, command.includeDeleted)
   if (!command.dbPath && !command.includeDeleted) {
     return requestLiveControl('terminal.list', { topicId: command.topicId }).then((live) => {
-      if (!live.available) return executeTerminalListFromDb(command, io)
+      if (!live.available) {
+        if (command.liveOnly) throw liveOnlyRuntimeUnavailable()
+        return executeTerminalListFromDb(command, io)
+      }
       const sessions = (Array.isArray(live.result) ? live.result : []) as TerminalSession[]
       const filtered = command.status
         ? sessions.filter((session) => session.status === command.status)
@@ -1139,9 +1187,13 @@ function executeTerminalCount(
   command: Extract<CliCommand, { name: 'terminal-count' }>,
   io: CliIO
 ): number | Promise<number> {
+  assertTerminalLiveOnlyOptions(command.liveOnly, command.dbPath, command.includeDeleted)
   if (!command.dbPath && !command.includeDeleted) {
     return requestLiveControl('terminal.count', { topicId: command.topicId }).then((live) => {
-      if (!live.available) return executeTerminalCountFromDb(command, io)
+      if (!live.available) {
+        if (command.liveOnly) throw liveOnlyRuntimeUnavailable()
+        return executeTerminalCountFromDb(command, io)
+      }
       const result = live.result as { total?: number; byStatus?: Record<string, number> }
       if (command.outputFormat === 'json') {
         io.stdout.write(`${JSON.stringify({ live: true, ...result }, null, 2)}\n`)
@@ -1193,12 +1245,16 @@ function executeTerminalOutput(
   command: Extract<CliCommand, { name: 'terminal-output' }>,
   io: CliIO
 ): number | Promise<number> {
+  assertTerminalLiveOnlyOptions(command.liveOnly, command.dbPath, command.includeDeleted)
   if (!command.dbPath && !command.includeDeleted) {
     return requestLiveControl('terminal.output', {
       sessionId: command.sessionId,
       topicId: command.topicId
     }).then((live) => {
-      if (!live.available) return executeTerminalOutputFromDb(command, io)
+      if (!live.available) {
+        if (command.liveOnly) throw liveOnlyRuntimeUnavailable()
+        return executeTerminalOutputFromDb(command, io)
+      }
       const result = live.result as { session?: TerminalSession; buffer?: string }
       if (command.outputFormat === 'json') {
         io.stdout.write(`${JSON.stringify({ live: true, ...result }, null, 2)}\n`)
@@ -1250,6 +1306,22 @@ function executeTerminalOutputFromDb(
     io.stdout.write(formatTerminalOutput(result.session, result.io))
   }
   return 0
+}
+
+function assertTerminalLiveOnlyOptions(
+  liveOnly: boolean,
+  dbPath: string | undefined,
+  includeDeleted: boolean
+): void {
+  if (!liveOnly) return
+  if (dbPath) throw unsupportedLiveOnly('--db selects a database snapshot, not the live app')
+  if (includeDeleted) {
+    throw unsupportedLiveOnly('--include-deleted is only available from the database snapshot')
+  }
+}
+
+function liveOnlyRuntimeUnavailable(): Error {
+  return new Error('OpenTerm app runtime is not available; --live-only disables database fallback.')
 }
 
 async function executeRun(
@@ -1714,6 +1786,10 @@ function requireValue(argv: string[], index: number, option: string): string {
   return value
 }
 
+function unsupportedLiveOnly(reason: string): never {
+  throw new CliUsageError(`--live-only is only supported by live-first read commands. ${reason}.`)
+}
+
 function parseTargetKind(value: string): ConversationDiagnosticTargetKind {
   const allowed: ConversationDiagnosticTargetKind[] = [
     'auto',
@@ -1875,33 +1951,51 @@ function formatHelp(): string {
   return `Usage:
   npm run cli -- <command> [options]
 
-Commands:
-  app status|ping             Inspect the live app control socket and DB path.
-  hosts list|show|create|delete
-                               Manage local/SSH host records.
-  diagnose <id|latest>        Print conversation diagnostics; exits non-zero on recorded errors.
-  topics list|show|create|rename|delete|model|hosts
-                               Manage topics, topic hosts, and selected model.
-  chat send <message>         Send a message through the same Agent runtime used by the UI.
-  chat history [topic]        Show recent messages for a topic.
-  chat watch [topic]          Stream run/part events as NDJSON by polling the DB.
-  runs list|show|parts|cancel|resume|watch
-                               Inspect and control agent runs.
-  approvals list|show|approve|reject
-                               Inspect and answer agent approval requests.
-  tasks list|show|steps       Inspect tasks and steps.
-  artifacts list|show|export  Inspect and export agent artifacts.
-  terminal list|count|output|open|input|resize|attach|close|rename|pin|pause|execute
-                               Inspect and control live terminal sessions.
-  files local|sftp|transfer   Manage local files, SFTP sessions, and transfers.
-  pf list|create|close        Manage SSH port forwards.
+Runtime groups:
+  Live app control            Requires the desktop app and control socket.
+  Live-first reads            Use the app when available, otherwise read openterm.db.
+  Database inspection         Reads openterm.db directly.
+  Diagnostics/utilities       Local checks, manifests, and conversation diagnostics.
+
+Live app control:
+  app ping                    Require and verify the live app control socket.
+  topics create|rename|delete|model|hosts
+                               Mutate topics, topic hosts, and selected model.
+  approvals approve|reject    Answer agent approval requests.
+  runs cancel|resume          Control active or resumable agent runs.
+  terminal open|input|resize|attach|close|rename|pin|pause|execute
+                               Control live terminal sessions.
+  files sftp|transfer         Manage live SFTP sessions and host-to-host transfers.
+  pf list|create|close        Inspect and manage live SSH port forwards.
   settings providers|models|permissions|model-settings
-                               Manage providers, models, permission settings, and web search keys.
-  memory list|create|update|delete|global
-                               Manage scoped and global memory.
+                               Mutate providers, models, permissions, and legacy web search keys.
+  memory create|update|delete|global import|clear|fact
+                               Mutate scoped and global memory.
+  debug logs --follow         Stream live debug logs as NDJSON.
+
+Live-first reads:
+  hosts list|show             Inspect host records.
+  topics hosts list           Inspect hosts attached to a topic.
+  terminal list|count|output  Observe live terminal state; DB fallback unless --live-only is set.
   history search              Search recorded terminal command inputs.
   sessions recoverable|watch  Inspect recoverable terminal sessions.
-  debug logs --follow         Stream live debug logs as NDJSON.
+
+Database inspection:
+  topics list|show            Inspect topics and conversation summaries.
+  chat history [topic]        Show recent messages for a topic.
+  chat watch [topic]          Stream run/part events as NDJSON by polling the DB.
+  runs list|show|parts|watch  Inspect agent runs and run parts.
+  approvals list|show         Inspect agent approval requests.
+  tasks list|show|steps       Inspect tasks; steps is a legacy TaskStep compatibility view.
+  artifacts list|show|export  Inspect and export agent-created artifacts.
+  settings providers|models|permissions|model-settings get|list|show
+                               Inspect provider, model, and permission records.
+  memory list|global get      Inspect scoped and global memory.
+
+Diagnostics/utilities:
+  app status                  Report live availability, socket path, and DB path.
+  diagnose <id|latest>        Print conversation diagnostics; exits non-zero on recorded errors.
+  files local                 Manage local files from the CLI process.
   run -- <command...>         Run a local command with timeout and optional JSON output.
   doctor                      Run typecheck and tests as one self-feedback loop.
   tools list                  Show the tool/control surface available to agents.
@@ -1909,16 +2003,18 @@ Commands:
 Common options:
   --json                      Emit machine-readable JSON where supported.
   --db <path>                 Use a specific openterm.db path for database commands.
-  --live-only                 Require the desktop app runtime for read commands.
+  --live-only                 For live-first reads, fail instead of reading the database fallback.
   --timeout-ms <ms>           Override command or watch timeout where supported.
 
 Examples:
   npm run cli -- app status --json
   npm run cli -- hosts list
   npm run cli -- topics list --limit 5
+  npm run cli -- terminal list --live-only
   npm run cli -- topics hosts add latest local
   npm run cli -- chat send --new-topic "检查当前项目状态"
   npm run cli -- chat watch latest
+  npm run cli -- runs parts latest
   npm run cli -- runs cancel latest
   npm run cli -- approvals approve latest --always-allow
   npm run cli -- terminal count --topic latest
