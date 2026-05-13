@@ -450,6 +450,40 @@ describe('CommandExecutor shell integration parsing', () => {
     expect(result.screenPhase).toBe('stable_output')
   })
 
+  it('returns an already stable screen after recent agent input without waiting for another change', async () => {
+    const sessionId = `session-${Date.now()}-already-stable`
+    const stream = createFakeStream()
+
+    await commandExecutor.createSession(
+      sessionId,
+      'topic-1',
+      'local',
+      'Local',
+      stream as never,
+      undefined,
+      false
+    )
+
+    await commandExecutor.sendAgentInput(sessionId, 'Enter', 'topic-1', 'key Enter')
+    commandExecutor.handleStreamOutput(
+      sessionId,
+      Buffer.from('Project analysis\r\napps/ - native apps\r\npackages/ - libraries')
+    )
+    await commandExecutor.getTerminalSnapshot(sessionId)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    const result = await commandExecutor.waitForTerminalActivity(sessionId, {
+      timeoutMs: 1000,
+      idleMs: 25,
+      requireFreshMatch: true
+    })
+
+    expect(result.status).toBe('stable_output')
+    expect(result.screenPhase).toBe('stable_output')
+    expect(result.timedOut).toBe(false)
+    expect(result.history.at(-1)?.excerpt).toContain('Project analysis')
+  })
+
   it('classifies terminal screens for TUI phases', () => {
     const base = {
       sessionId: 's1',
@@ -490,5 +524,36 @@ describe('CommandExecutor shell integration parsing', () => {
         lines: [{ row: 0, text: 'Ask anything', wrapped: false }]
       })
     ).toBe('awaiting_input')
+  })
+
+  it('adds semantic fields to terminal snapshots for TUI automation', async () => {
+    const sessionId = `session-${Date.now()}-snapshot-semantics`
+    const stream = createFakeStream()
+
+    await commandExecutor.createSession(
+      sessionId,
+      'topic-1',
+      'local',
+      'Local',
+      stream as never,
+      undefined,
+      false
+    )
+
+    commandExecutor.handleStreamOutput(
+      sessionId,
+      Buffer.from('Choose an option\r\n> Install packages\r\n  Cancel')
+    )
+
+    const snapshot = await commandExecutor.getTerminalSnapshot(sessionId)
+
+    expect(snapshot.visibleText).toContain('Choose an option')
+    expect(snapshot.phase).toBe('awaiting_input')
+    expect(snapshot.phaseConfidence).toBe('high')
+    expect(snapshot.menuLike).toBe(true)
+    expect(snapshot.selectedLineText).toContain('Install packages')
+    expect(snapshot.inputHints).toContain('confirm_choice')
+    expect(snapshot.nonEmptyLines).toContain('> Install packages')
+    expect(snapshot.visibleTextHash).toMatch(/^[0-9a-f]{40}$/)
   })
 })

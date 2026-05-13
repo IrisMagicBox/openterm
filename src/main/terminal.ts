@@ -63,6 +63,10 @@ export interface CommandExecutionOptions {
   timeoutMs?: number
 }
 
+export type TerminalScreenPhase = 'running' | 'stable_output' | 'awaiting_input' | 'unknown'
+
+export type TerminalScreenPhaseConfidence = 'low' | 'medium' | 'high'
+
 export interface TerminalScreenLine {
   row: number
   text: string
@@ -86,6 +90,17 @@ export interface TerminalScreenSnapshot {
   updatedAt: number
   lines: TerminalScreenLine[]
   visibleText: string
+  cursorLineText?: string
+  selectedLineText?: string
+  nonEmptyLines?: string[]
+  phase?: TerminalScreenPhase
+  phaseConfidence?: TerminalScreenPhaseConfidence
+  inputHints?: string[]
+  menuLike?: boolean
+  alternateBuffer?: boolean
+  hasSpinner?: boolean
+  hasProgress?: boolean
+  visibleTextHash?: string
 }
 
 export interface TerminalChangedLine {
@@ -129,8 +144,6 @@ export interface WaitTerminalActivityOptions {
   returnOnIdle?: boolean
 }
 
-export type TerminalScreenPhase = 'running' | 'stable_output' | 'awaiting_input' | 'unknown'
-
 export interface WaitTerminalActivityResult {
   status: 'matched' | 'stable_output' | 'awaiting_input' | 'idle' | 'timeout'
   screenPhase: TerminalScreenPhase
@@ -150,27 +163,51 @@ function lastNonEmptyLine(snapshot: TerminalScreenSnapshot): string {
   return nonEmptyScreenLines(snapshot).at(-1)?.trim() ?? ''
 }
 
-function hasRunningMarker(text: string): boolean {
-  return [
-    /\b\d{1,3}(?:\.\d+)?%\b/,
-    /\(\s*\d{1,3}(?:\.\d+)?%\s*\)/,
-    /\b(?:loading|running|processing|analyzing|thinking|generating|installing|building)\b/i,
-    /\b(?:esc|ctrl\+[a-z])\s+(?:interrupt|commands)\b/i,
-    /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏◐◓◑◒]/
-  ].some((pattern) => pattern.test(text))
+function progressMarkers(text: string): string[] {
+  const markers: string[] = []
+  if (/\b\d{1,3}(?:\.\d+)?%\b/.test(text) || /\(\s*\d{1,3}(?:\.\d+)?%\s*\)/.test(text)) {
+    markers.push('progress_percent')
+  }
+  if (
+    /\b(?:loading|running|processing|analyzing|thinking|generating|installing|building)\b/i.test(
+      text
+    )
+  ) {
+    markers.push('running_word')
+  }
+  if (/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏◐◓◑◒]/.test(text)) {
+    markers.push('spinner')
+  }
+  if (/\b(?:esc|ctrl\+[a-z])\s+(?:interrupt|commands)\b/i.test(text)) {
+    markers.push('interactive_status')
+  }
+  return markers
 }
 
-function hasInputPrompt(snapshot: TerminalScreenSnapshot): boolean {
+function hasRunningMarker(text: string): boolean {
+  return progressMarkers(text).length > 0
+}
+
+function inputPromptHints(snapshot: TerminalScreenSnapshot): string[] {
   const text = snapshot.visibleText
   const lastLine = lastNonEmptyLine(snapshot)
   const cursorLine = snapshot.lines[snapshot.cursorY]?.text.trim() ?? ''
-  return [
-    /\b(?:press|hit)\s+(?:enter|return)\b/i,
-    /\b(?:continue|confirm|select|choose|yes\/no|y\/n)\b/i,
-    /\bask anything\b/i,
-    /\binput\b/i,
-    /\?$/
-  ].some((pattern) => pattern.test(text) || pattern.test(lastLine) || pattern.test(cursorLine))
+  const scopes = [text, lastLine, cursorLine]
+  const patterns: Array<[string, RegExp]> = [
+    ['enter_to_continue', /\b(?:press|hit)\s+(?:enter|return)\b/i],
+    ['confirm_choice', /\b(?:continue|confirm|select|choose|yes\/no|y\/n)\b/i],
+    ['ask_anything', /\bask anything\b/i],
+    ['input_prompt', /\binput\b/i],
+    ['question_prompt', /\?$/]
+  ]
+
+  return patterns
+    .filter(([, pattern]) => scopes.some((scope) => pattern.test(scope)))
+    .map(([hint]) => hint)
+}
+
+function hasInputPrompt(snapshot: TerminalScreenSnapshot): boolean {
+  return inputPromptHints(snapshot).length > 0
 }
 
 export function classifyTerminalScreen(
@@ -187,6 +224,44 @@ export function classifyTerminalScreen(
   return 'unknown'
 }
 
+function detectMenuLike(lines: string[]): boolean {
+  const optionLineCount = lines.filter((line) =>
+    /^\s*(?:[>•*+-]|\[[ xX]\]|\(\s?\)|\(\*\)|\d+[.)]|[a-z][.)])\s+/.test(line)
+  ).length
+  const choiceWordCount = lines.filter((line) =>
+    /\b(?:select|choose|option|menu|上下|选择|确认|取消)\b/i.test(line)
+  ).length
+
+  return optionLineCount >= 2 || (optionLineCount >= 1 && choiceWordCount >= 1)
+}
+
+function detectSelectedLine(snapshot: TerminalScreenSnapshot): string | undefined {
+  const highlightedLine = snapshot.lines.find((line) => /^\s*(?:>|=>|[*])\s+\S/.test(line.text))
+  if (highlightedLine?.text.trim()) return highlightedLine.text.trimEnd()
+
+  const cursorLine = snapshot.lines[snapshot.cursorY]?.text.trimEnd()
+  return cursorLine?.trim() ? cursorLine : undefined
+}
+
+function screenPhaseConfidence(input: {
+  phase: TerminalScreenPhase
+  hasProgress: boolean
+  hasSpinner: boolean
+  inputHints: string[]
+  nonEmptyLines: string[]
+}): TerminalScreenPhaseConfidence {
+  if (input.phase === 'running') {
+    return input.hasProgress || input.hasSpinner ? 'high' : 'medium'
+  }
+  if (input.phase === 'awaiting_input') {
+    return input.inputHints.length > 0 ? 'high' : 'medium'
+  }
+  if (input.phase === 'stable_output') {
+    return input.nonEmptyLines.length >= 5 ? 'high' : 'medium'
+  }
+  return 'low'
+}
+
 interface SessionState {
   session: TerminalSession
   stream: TerminalStream
@@ -199,6 +274,7 @@ interface SessionState {
   screenHistory: TerminalScreenHistoryEntry[]
   lastScreenHash?: string
   lastScreenSnapshot?: TerminalScreenSnapshot
+  lastAgentInputAt?: number
   outputBuffer: string
   rawBuffer: string
   isLocked: boolean
@@ -255,6 +331,7 @@ class CommandExecutor {
       screenWriteChain: Promise.resolve(),
       lastScreenUpdatedAt: Date.now(),
       screenHistory: [],
+      lastAgentInputAt: undefined,
       outputBuffer: '',
       rawBuffer: '',
       isLocked: false,
@@ -787,8 +864,14 @@ class CommandExecutor {
       .map((line) => line.text)
       .join('\n')
       .replace(/\n+$/g, '')
-
-    return {
+    const nonEmptyLines = lines
+      .map((line) => line.text.trimEnd())
+      .filter((line) => line.trim().length > 0)
+    const cursorLineText = lines[activeBuffer.cursorY]?.text.trimEnd() ?? ''
+    const runningMarkers = progressMarkers(visibleText)
+    const hasSpinner = runningMarkers.includes('spinner')
+    const hasProgress = runningMarkers.includes('progress_percent')
+    const baseSnapshot = {
       sessionId,
       hostId: state.session.hostId,
       hostAlias: state.session.hostAlias,
@@ -805,6 +888,29 @@ class CommandExecutor {
       updatedAt: state.lastScreenUpdatedAt,
       lines,
       visibleText
+    } satisfies TerminalScreenSnapshot
+    const inputHints = inputPromptHints(baseSnapshot)
+    const phase = classifyTerminalScreen(baseSnapshot)
+
+    return {
+      ...baseSnapshot,
+      cursorLineText,
+      selectedLineText: detectSelectedLine(baseSnapshot),
+      nonEmptyLines,
+      phase,
+      phaseConfidence: screenPhaseConfidence({
+        phase,
+        hasProgress,
+        hasSpinner,
+        inputHints,
+        nonEmptyLines
+      }),
+      inputHints,
+      menuLike: detectMenuLike(nonEmptyLines),
+      alternateBuffer: activeBuffer.type === 'alternate',
+      hasSpinner,
+      hasProgress,
+      visibleTextHash: this.hashScreen(visibleText)
     }
   }
 
@@ -926,6 +1032,9 @@ class CommandExecutor {
 
     this.ensureAgentCanTakeControl(state, 'send agent input')
 
+    const timestamp = Date.now()
+    state.lastAgentInputAt = timestamp
+
     const input: TerminalIO = {
       id: uuidv4(),
       sessionId,
@@ -936,7 +1045,7 @@ class CommandExecutor {
       content: recordedContent,
       taskId,
       stepId,
-      timestamp: Date.now()
+      timestamp
     }
     this.history.createIO(input)
 
@@ -1016,9 +1125,15 @@ class CommandExecutor {
     const startedAt = Date.now()
     const timeoutMs = Math.max(0, options.timeoutMs)
     const idleMs = Math.max(0, options.idleMs)
+    const state = this.sessions.get(sessionId)
     const baselineSnapshot = await this.getTerminalSnapshot(sessionId)
     const baselineHistory = await this.getTerminalHistory(sessionId, { maxHistory: 1 })
     const baselineUpdatedAt = baselineHistory.at(-1)?.updatedAt ?? baselineSnapshot.updatedAt
+    const hasStopCondition = Boolean(options.stopText || options.stopRegex)
+    const baselineAfterAgentInput =
+      !hasStopCondition &&
+      typeof state?.lastAgentInputAt === 'number' &&
+      baselineUpdatedAt >= state.lastAgentInputAt
 
     let sawChange = false
     let lastChangeAt = Date.now()
@@ -1081,6 +1196,26 @@ class CommandExecutor {
             idleMs,
             snapshot,
             history: historySinceBaseline.slice(-20)
+          }
+        }
+      }
+
+      if (baselineAfterAgentInput && Date.now() - baselineUpdatedAt >= idleMs) {
+        const screenPhase = classifyTerminalScreen(snapshot, baselineHistory)
+        if (options.returnOnIdle === true || screenPhase !== 'running') {
+          const status =
+            screenPhase === 'stable_output' || screenPhase === 'awaiting_input'
+              ? screenPhase
+              : 'idle'
+          return {
+            status,
+            screenPhase,
+            matched: false,
+            timedOut: false,
+            elapsedMs: Date.now() - startedAt,
+            idleMs,
+            snapshot,
+            history: baselineHistory.slice(-20)
           }
         }
       }

@@ -149,6 +149,14 @@ function toolLine(
     const detail = textValue(input.sessionId) || command
     return { label: '观察终端', detail, fullDetail: detail }
   }
+  if (part.toolName === 'start_interactive_command') {
+    const detail = textValue(input.command) || command
+    return { label: '启动交互命令', detail, fullDetail: detail }
+  }
+  if (part.toolName === 'interact_terminal') {
+    const detail = textValue(input.text) || compactJsonValue(input.keys) || command
+    return { label: '操作终端', detail, fullDetail: detail }
+  }
   if (part.toolName === 'wait_terminal_activity' || part.toolName === 'wait_terminal_text') {
     const detail = textValue(input.sessionId) || command
     return { label: '等待终端', detail, fullDetail: detail }

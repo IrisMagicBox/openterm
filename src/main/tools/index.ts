@@ -8,8 +8,10 @@ import manageTerminalTool from './manage-terminal'
 import managePortForwardTool from './manage-port-forward'
 import listTerminalsTool from './list-terminals'
 import {
+  interactTerminalTool,
   observeTerminalTool,
   sendTerminalKeysTool,
+  startInteractiveCommandTool,
   waitTerminalActivityTool,
   waitTerminalTextTool
 } from './terminal-automation'
@@ -47,6 +49,8 @@ export function createDefaultRegistry(): ToolRegistry {
   registry.register(managePortForwardTool)
   registry.register(listTerminalsTool)
   registry.register(observeTerminalTool)
+  registry.register(startInteractiveCommandTool)
+  registry.register(interactTerminalTool)
   registry.register(sendTerminalKeysTool)
   registry.register(waitTerminalActivityTool)
   registry.register(waitTerminalTextTool)

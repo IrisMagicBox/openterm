@@ -2,6 +2,11 @@ import { z } from 'zod'
 import { define, Tool } from './tool-factory'
 import { commandExecutor, TerminalScreenHistoryEntry, TerminalScreenSnapshot } from '../terminal'
 import { normalizeHostId, resolveHostId } from '../utils/host-resolver'
+import { shellQuote } from './shell-quote'
+import { PolicyEngine } from '../PolicyEngine'
+import { permissionDB } from '../db'
+import { shouldRequestApproval } from '../permissions'
+import { ShellAnalyzer } from '../utils/shell-analyzer'
 
 const KEY_SEQUENCES = {
   Enter: '\r',
@@ -76,7 +81,9 @@ const sendParameters = z.object({
   submit: z
     .boolean()
     .default(false)
-    .describe('当 text 存在时自动追加 Enter/Return。若 keys 中已经包含 Enter/Return，则不会重复追加。'),
+    .describe(
+      '当 text 存在时自动追加 Enter/Return。若 keys 中已经包含 Enter/Return，则不会重复追加。'
+    ),
   keys: z.array(keyNameSchema).max(100).optional().describe('要发送的特殊按键列表。'),
   sequence: z
     .array(
@@ -123,8 +130,53 @@ const waitActivityParameters = z.object({
   returnOnIdle: z
     .boolean()
     .default(false)
-    .describe('兼容旧行为：屏幕变化后静默达到 idleMs 即返回 idle。默认 false，会继续区分 stable_output / awaiting_input / running。'),
+    .describe(
+      '兼容旧行为：屏幕变化后静默达到 idleMs 即返回 idle。默认 false，会继续区分 stable_output / awaiting_input / running。'
+    ),
   reason: z.string().optional().describe('等待这个 TUI 阶段的原因。')
+})
+
+const startInteractiveParameters = z.object({
+  hostId: z.string().describe('主机 ID 或 @别名。'),
+  terminalName: z.string().optional().describe('交互终端名称；未指定时会复用或创建一个。'),
+  command: z.string().describe('要启动的 TUI/REPL/安装器/菜单类交互命令。'),
+  workdir: z
+    .string()
+    .optional()
+    .describe('命令工作目录。优先使用此字段，不要手写 cd <dir> && command。'),
+  waitForInitialActivity: z
+    .boolean()
+    .default(true)
+    .describe('启动后是否等待首屏变化并返回最终屏幕。'),
+  initialWaitMs: z.number().min(100).max(30000).default(5000).describe('首屏等待毫秒数。'),
+  reason: z.string().describe('为什么需要启动这个交互命令。')
+})
+
+const interactParameters = sendParameters.extend({
+  waitFor: z
+    .enum(['activity', 'text', 'none'])
+    .default('activity')
+    .describe('发送输入后等待什么：activity 等屏幕变化稳定，text 等明确文本，none 只发送并观察。'),
+  expectText: z.string().optional().describe('waitFor 为 text/activity 时可等待的新文本。'),
+  expectRegex: z.string().optional().describe('waitFor 为 text/activity 时可等待的新正则。'),
+  timeoutMs: z.number().min(100).max(300000).default(120000).describe('最长等待毫秒数。'),
+  idleMs: z
+    .number()
+    .min(250)
+    .max(30000)
+    .default(3000)
+    .describe('waitFor=activity 时，屏幕变化后静默多久视为阶段稳定。'),
+  stableMs: z
+    .number()
+    .min(0)
+    .max(10000)
+    .default(0)
+    .describe('waitFor=text 时，匹配后屏幕需要保持不变的毫秒数。'),
+  requireFreshMatch: z
+    .boolean()
+    .default(true)
+    .describe('waitFor=activity 时，expectText/expectRegex 是否必须出现在本次输入后的新变化中。'),
+  includeHistory: z.boolean().default(true).describe('是否返回最近屏幕变化摘要。')
 })
 
 function summarizeText(text: string): string {
@@ -149,11 +201,16 @@ function formatSnapshot(snapshot: TerminalScreenSnapshot, full = false): string 
     `host: ${snapshot.hostAlias} (${snapshot.hostId})`,
     `size: ${snapshot.cols}x${snapshot.rows}, cursor: ${snapshot.cursorX + 1},${snapshot.cursorY + 1}, buffer: ${snapshot.bufferType}`,
     `locked: ${snapshot.isLocked ? snapshot.lockedBy || 'unknown' : 'false'}, runningCommand: ${snapshot.isCommandRunning}`,
+    `phase: ${snapshot.phase ?? 'unknown'}${snapshot.phaseConfidence ? ` (${snapshot.phaseConfidence})` : ''}, menuLike: ${snapshot.menuLike ?? false}, progress: ${snapshot.hasProgress ?? false}, spinner: ${snapshot.hasSpinner ?? false}`,
+    snapshot.selectedLineText ? `selected: ${snapshot.selectedLineText}` : '',
+    snapshot.inputHints?.length ? `inputHints: ${snapshot.inputHints.join(', ')}` : '',
     'screen:',
     '```text',
     numberedLines || '(blank)',
     '```'
-  ].join('\n')
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 function compactRows(snapshot: TerminalScreenSnapshot): number[] {
@@ -233,6 +290,98 @@ function assertSafeText(text: string): void {
   }
 }
 
+function resolveHostForTool(hostId: string): { id: string; alias: string } | { error: string } {
+  const normalizedHostId = normalizeHostId(hostId)
+  const host = resolveHostId(normalizedHostId)
+  if (!host && normalizedHostId !== 'local') {
+    return { error: `Error: Host ${hostId} not found. Use list_hosts first.` }
+  }
+  return {
+    id: host?.id ?? 'local',
+    alias: host?.alias ?? '本地终端'
+  }
+}
+
+async function authorizeInteractiveCommand(
+  args: z.infer<typeof startInteractiveParameters>,
+  hostId: string,
+  ctx: Tool.Context
+): Promise<{ ok: true; metadata: Record<string, unknown> } | { ok: false; output: string }> {
+  const policyResult = PolicyEngine.evaluateWithTrust(args.command, hostId)
+  if (policyResult.action === 'deny') {
+    return { ok: false, output: `Error: Command blocked by policy: ${policyResult.reason}` }
+  }
+
+  const commandPattern = policyResult.commandPattern || PolicyEngine.normalizeCommand(args.command)
+  const commandSegments = ShellAnalyzer.splitSegments(args.command).map((segment, index) => ({
+    index,
+    raw: segment.raw,
+    command: segment.command,
+    args: segment.args
+  }))
+  const policyMetadata = {
+    riskLevel: policyResult.riskLevel,
+    riskCategory: policyResult.riskCategory,
+    trustLevel: policyResult.trustLevel,
+    commandPattern,
+    commandSegments,
+    requiresVerification: policyResult.requiresVerification,
+    toolName: 'start_interactive_command'
+  }
+
+  if (
+    policyResult.action === 'confirm' &&
+    shouldRequestApproval(permissionDB.getPermissions(), policyResult)
+  ) {
+    const authResult = await ctx.requestAuthorization(
+      args.command,
+      policyResult.riskLevel,
+      args.reason,
+      policyMetadata
+    )
+    if (!authResult.approved) {
+      return { ok: false, output: 'Error: User rejected command authorization' }
+    }
+  }
+
+  return { ok: true, metadata: policyMetadata }
+}
+
+function parseRegex(pattern: string | undefined, label: string): RegExp | string | undefined {
+  if (!pattern) return undefined
+  try {
+    return new RegExp(pattern)
+  } catch (error) {
+    return `Error: Invalid ${label}: ${error}`
+  }
+}
+
+async function observeSession(
+  sessionId: string,
+  includeHistory: boolean,
+  sinceUpdatedAt?: number,
+  maxHistory = 12
+): Promise<{
+  snapshot: TerminalScreenSnapshot
+  history: TerminalScreenHistoryEntry[]
+  output: string
+}> {
+  const snapshot = await commandExecutor.getTerminalSnapshot(sessionId)
+  const history = includeHistory
+    ? await commandExecutor.getTerminalHistory(sessionId, {
+        sinceUpdatedAt,
+        maxHistory
+      })
+    : []
+  return {
+    snapshot,
+    history,
+    output: [formatSnapshot(snapshot), includeHistory ? formatHistory(history) : '']
+      .filter(Boolean)
+      .join('\n\n')
+  }
+}
+
 export function encodeTerminalInput(args: z.input<typeof sendParameters>): {
   data: string
   recordedContent: string
@@ -301,6 +450,102 @@ export const observeTerminalTool = define('observe_terminal', {
   }
 })
 
+export const startInteractiveCommandTool = define('start_interactive_command', {
+  description:
+    '在交互终端中启动 TUI/安装器/菜单/REPL/编辑器类命令，不等待命令退出。它会返回 sessionId、首屏 snapshot 和最近变化；后续用 interact_terminal 或 send_terminal_keys 继续操作。普通会自行结束的命令仍使用 execute_command。',
+  parameters: startInteractiveParameters,
+  async execute(
+    args: z.infer<typeof startInteractiveParameters>,
+    ctx: Tool.Context
+  ): Promise<Tool.ExecuteResult> {
+    const host = resolveHostForTool(args.hostId)
+    if ('error' in host) return { output: host.error }
+
+    const authorization = await authorizeInteractiveCommand(args, host.id, ctx)
+    if (!authorization.ok) return { output: authorization.output }
+
+    const sessionId = await ctx.ensureSession(host.id, host.alias, args.terminalName, {
+      role: 'interactive',
+      visible: true
+    })
+    const visibleCommand = args.workdir
+      ? `cd ${shellQuote(args.workdir)} && ${args.command}`
+      : args.command
+    const recordedContent = `start interactive command ${summarizeText(visibleCommand)}`
+
+    ctx.updatePartMetadata?.({
+      hostId: host.id,
+      hostAlias: host.alias,
+      command: args.command,
+      visibleCommand,
+      workdir: args.workdir,
+      displayMode: 'terminal',
+      sessionId,
+      terminalRole: 'interactive',
+      ...authorization.metadata
+    })
+
+    await commandExecutor.sendAgentInput(
+      sessionId,
+      `${visibleCommand}\r`,
+      ctx.topicId,
+      recordedContent,
+      ctx.taskId,
+      ctx.stepId
+    )
+
+    let waitResult: Awaited<ReturnType<typeof commandExecutor.waitForTerminalActivity>> | undefined
+    if (args.waitForInitialActivity) {
+      waitResult = await commandExecutor.waitForTerminalActivity(
+        sessionId,
+        {
+          timeoutMs: args.initialWaitMs,
+          idleMs: 500,
+          requireFreshMatch: true,
+          returnOnIdle: false
+        },
+        ctx.abort
+      )
+    }
+
+    const observed = waitResult
+      ? {
+          snapshot: waitResult.snapshot,
+          history: waitResult.history,
+          output: [
+            `Started interactive command in ${sessionId}.`,
+            `initialStatus: ${waitResult.status}`,
+            `screenPhase: ${waitResult.screenPhase}`,
+            formatHistory(waitResult.history),
+            formatSnapshot(waitResult.snapshot)
+          ].join('\n')
+        }
+      : await observeSession(sessionId, true)
+
+    const metadata = {
+      ...authorization.metadata,
+      hostId: host.id,
+      hostAlias: host.alias,
+      command: args.command,
+      visibleCommand,
+      workdir: args.workdir,
+      displayMode: 'terminal',
+      sessionId,
+      terminalRole: 'interactive',
+      startedInteractiveCommand: true,
+      waitResult,
+      snapshot: observed.snapshot,
+      history: observed.history
+    }
+    ctx.updatePartMetadata?.(metadata)
+
+    return {
+      output: observed.output,
+      metadata
+    }
+  }
+})
+
 export const sendTerminalKeysTool = define('send_terminal_keys', {
   description:
     '向现有终端发送文本或键盘按键，用于自动操作 TUI/交互式安装器/菜单/REPL。text 只会输入文本，不会自动回车；需要提交时使用 submit=true 或 keys:["Enter"]。发送前应先用 observe_terminal 确认界面状态；发送后应用 wait_terminal_activity 或 observe_terminal 验证界面变化。普通非交互命令优先用 execute_command，只有交互式场景用本工具。',
@@ -329,6 +574,153 @@ export const sendTerminalKeysTool = define('send_terminal_keys', {
         sessionId: args.sessionId,
         bytes: encoded.data.length,
         recordedContent: encoded.recordedContent
+      }
+    }
+  }
+})
+
+export const interactTerminalTool = define('interact_terminal', {
+  description:
+    '组合型 TUI 操作：向现有终端发送文本/按键/序列，然后按需等待屏幕变化或指定文本，最后返回屏幕 snapshot 和最近变化。优先用于一次完整交互动作，减少 send/wait/observe 多工具往返。',
+  parameters: interactParameters,
+  async execute(
+    args: z.infer<typeof interactParameters>,
+    ctx: Tool.Context
+  ): Promise<Tool.ExecuteResult> {
+    const encoded = encodeTerminalInput(args)
+    if (!encoded.data) {
+      return { output: 'Error: No terminal input to send. Provide text, keys, or sequence.' }
+    }
+
+    const sinceHistory = await commandExecutor
+      .getTerminalHistory(args.sessionId, { maxHistory: 1 })
+      .then((history) => history.at(-1)?.updatedAt)
+      .catch(() => undefined)
+
+    await commandExecutor.sendAgentInput(
+      args.sessionId,
+      encoded.data,
+      ctx.topicId,
+      encoded.recordedContent,
+      ctx.taskId,
+      ctx.stepId
+    )
+
+    if (args.waitFor === 'none') {
+      const observed = await observeSession(args.sessionId, args.includeHistory, sinceHistory)
+      return {
+        output: [
+          `Sent terminal input to ${args.sessionId}: ${encoded.recordedContent}`,
+          observed.output
+        ].join('\n\n'),
+        metadata: {
+          sessionId: args.sessionId,
+          bytes: encoded.data.length,
+          recordedContent: encoded.recordedContent,
+          waitFor: args.waitFor,
+          snapshot: observed.snapshot,
+          history: observed.history
+        }
+      }
+    }
+
+    const parsedRegex = parseRegex(args.expectRegex, 'expectRegex')
+    if (typeof parsedRegex === 'string') return { output: parsedRegex }
+
+    if (args.waitFor === 'text') {
+      if (!args.expectText && !parsedRegex) {
+        return {
+          output: 'Error: interact_terminal waitFor=text requires expectText or expectRegex.'
+        }
+      }
+
+      const result = await commandExecutor.waitForTerminalText(
+        args.sessionId,
+        {
+          text: args.expectText,
+          regex: parsedRegex,
+          timeoutMs: args.timeoutMs,
+          stableMs: args.stableMs
+        },
+        ctx.abort
+      )
+      const history = args.includeHistory
+        ? await commandExecutor.getTerminalHistory(args.sessionId, {
+            sinceUpdatedAt: sinceHistory,
+            maxHistory: 20
+          })
+        : []
+      return {
+        output: [
+          `Sent terminal input to ${args.sessionId}: ${encoded.recordedContent}`,
+          result.matched ? 'Matched terminal screen.' : 'Timed out waiting for terminal screen.',
+          `elapsedMs: ${result.elapsedMs}`,
+          args.includeHistory ? formatHistory(history) : '',
+          formatSnapshot(result.snapshot)
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        metadata: {
+          sessionId: args.sessionId,
+          bytes: encoded.data.length,
+          recordedContent: encoded.recordedContent,
+          waitFor: args.waitFor,
+          matched: result.matched,
+          timedOut: result.timedOut,
+          elapsedMs: result.elapsedMs,
+          snapshot: result.snapshot,
+          history
+        }
+      }
+    }
+
+    const result = await commandExecutor.waitForTerminalActivity(
+      args.sessionId,
+      {
+        stopText: args.expectText,
+        stopRegex: parsedRegex,
+        timeoutMs: args.timeoutMs,
+        idleMs: args.idleMs,
+        requireFreshMatch: args.requireFreshMatch,
+        returnOnIdle: false
+      },
+      ctx.abort
+    )
+
+    return {
+      output: [
+        `Sent terminal input to ${args.sessionId}: ${encoded.recordedContent}`,
+        result.status === 'matched'
+          ? 'Matched fresh terminal activity.'
+          : result.status === 'stable_output'
+            ? 'Terminal screen stabilized with readable output.'
+            : result.status === 'awaiting_input'
+              ? 'Terminal appears to be waiting for input.'
+              : result.status === 'idle'
+                ? 'Terminal activity became idle after screen changes.'
+                : 'Timed out waiting for terminal activity.',
+        `status: ${result.status}`,
+        `screenPhase: ${result.screenPhase}`,
+        `elapsedMs: ${result.elapsedMs}`,
+        `idleMs: ${result.idleMs}`,
+        args.includeHistory ? formatHistory(result.history) : '',
+        formatSnapshot(result.snapshot)
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      metadata: {
+        sessionId: args.sessionId,
+        bytes: encoded.data.length,
+        recordedContent: encoded.recordedContent,
+        waitFor: args.waitFor,
+        status: result.status,
+        screenPhase: result.screenPhase,
+        matched: result.matched,
+        timedOut: result.timedOut,
+        elapsedMs: result.elapsedMs,
+        idleMs: result.idleMs,
+        snapshot: result.snapshot,
+        history: result.history
       }
     }
   }
