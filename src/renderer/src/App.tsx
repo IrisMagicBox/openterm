@@ -123,7 +123,6 @@ export default function App(): JSX.Element {
     handleCloseTerminal,
     handleRenameTerminal,
     handleToggleTerminalPin,
-    handleToggleAgentTerminalPaused,
     handleResolveAuth
   } = useAgentSessions({ selectedTopic })
 
@@ -611,8 +610,6 @@ export default function App(): JSX.Element {
               thinking={thinkingTopics.has(selectedTopic.id)}
               onManageHosts={() => setShowManageHosts(true)}
               agentSessions={agentSessions}
-              onCloseAgentTerminal={handleCloseTerminal}
-              onToggleAgentTerminalPaused={handleToggleAgentTerminalPaused}
               terminalWidth={terminalWidth}
               setTerminalWidth={setTerminalWidth}
               terminalFontSize={terminalFontSize}

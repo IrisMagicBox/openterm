@@ -84,8 +84,6 @@ interface ChatPanelProps {
   thinking?: boolean
   onManageHosts: () => void
   agentSessions: TerminalSession[]
-  onCloseAgentTerminal: (id: string) => void | Promise<void>
-  onToggleAgentTerminalPaused: (id: string, paused: boolean) => Promise<void>
   terminalWidth: number
   setTerminalWidth: (w: number) => void
   terminalFontSize: number
@@ -107,8 +105,6 @@ export function ChatPanel({
   thinking,
   onManageHosts,
   agentSessions,
-  onCloseAgentTerminal,
-  onToggleAgentTerminalPaused,
   terminalWidth,
   setTerminalWidth,
   terminalFontSize,
@@ -647,8 +643,6 @@ export function ChatPanel({
                 }
               : null
           }
-          onCloseAgentTerminal={onCloseAgentTerminal}
-          onToggleAgentTerminalPaused={onToggleAgentTerminalPaused}
           onCloseTerminal={onCloseTerminal}
           onOpenCommandPalette={openTerminalCommandPalette}
           onCreateTerminal={onCreateTerminal}

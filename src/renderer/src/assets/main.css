@@ -267,6 +267,10 @@
     padding-left: 172px;
   }
 
+  .app-shell[data-sidebar-collapsed='true'] .terminal-stage-header {
+    padding-left: 12px;
+  }
+
   .app-shell[data-sidebar-collapsed='true'] .sidebar-resize-rail {
     display: none;
   }

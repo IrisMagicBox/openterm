@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { ClipboardAddon } from '@xterm/addon-clipboard'
-import { Sparkles, X } from 'lucide-react'
+import { Info, Sparkles, UserRound, X, Zap } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 import { FileDragData } from './terminal/FileBrowser'
 import type { TerminalCommandCompletionUiEvent } from '../../../shared/terminal-command-assist'
@@ -651,6 +651,10 @@ export function TerminalView({
 
   const isAutoTakeover = lockedBy === 'user' && takeoverMode === 'auto' && !paused
   const isManualTakeover = paused && takeoverMode === 'manual'
+  const showAgentEdge =
+    (isAgentExecuting || (commandStatus === 'running' && commandSource === 'agent')) &&
+    !isAutoTakeover &&
+    !isManualTakeover
 
   const handleCommandAssistSubmit = async (): Promise<void> => {
     if (!commandAssist?.open || commandAssist.busy || !commandAssist.value.trim()) return
@@ -736,36 +740,33 @@ export function TerminalView({
           </span>
         </div>
       )}
-      {(isAgentExecuting || (commandStatus === 'running' && commandSource === 'agent')) &&
-        !isAutoTakeover &&
-        !isManualTakeover && (
-          <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1.5 border border-accent/25 bg-accent px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm shadow-accent/15">
-            <div className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
-            Agent 执行中...
+      {showAgentEdge && (
+        <div
+          className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
+          aria-label="Agent 正在操作终端"
+        >
+          <div className="absolute left-0 top-0 h-full w-[3px] bg-gradient-to-b from-cyan-300 via-accent to-blue-600 shadow-[0_0_16px_rgba(83,154,248,0.85)]" />
+          <div className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-accent via-cyan-300 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-accent/60 to-blue-500/35" />
+          <div className="absolute right-2 top-2 flex h-4 w-4 items-center justify-center rounded-full border border-accent/25 bg-white/75 text-accent shadow-[0_0_16px_rgba(83,154,248,0.24)] backdrop-blur">
+            <Zap size={10} />
           </div>
-        )}
+        </div>
+      )}
       {isAutoTakeover && (
-        <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1.5 border border-warning/25 bg-warning px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm shadow-warning/15">
-          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-            <path
-              fillRule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-              clipRule="evenodd"
-            />
-          </svg>
-          用户已接管
+        <div
+          className="absolute right-2 top-2 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-warning/25 bg-white/80 text-warning shadow-[0_0_16px_rgba(217,119,6,0.18)] backdrop-blur"
+          title="用户已接管"
+        >
+          <UserRound size={10} />
         </div>
       )}
       {isManualTakeover && (
-        <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1.5 border border-warning/25 bg-warning px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm shadow-warning/15">
-          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-            <path
-              fillRule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-              clipRule="evenodd"
-            />
-          </svg>
-          人工接管中
+        <div
+          className="absolute right-2 top-2 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-warning/25 bg-white/80 text-warning shadow-[0_0_16px_rgba(217,119,6,0.18)] backdrop-blur"
+          title="人工接管中"
+        >
+          <Info size={10} />
         </div>
       )}
       {(completion || completionPending) && !commandAssist?.open && (
