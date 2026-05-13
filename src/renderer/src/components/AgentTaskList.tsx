@@ -22,18 +22,19 @@ export function AgentTaskList({ tasks, className }: AgentTaskListProps): React.R
   if (tasks.length === 0) return null
 
   const completedCount = tasks.filter((task) => task.status === 'completed').length
+  const hasExplicitPlan = tasks.some((task) => task.explicit)
 
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-2xl border border-border bg-white/86 shadow-[0_10px_30px_rgba(15,23,42,0.04)]',
+        'overflow-hidden rounded-lg border border-border bg-white/86 shadow-[0_8px_24px_rgba(15,23,42,0.035)]',
         className
       )}
     >
       <div className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-muted-foreground">
         <ListChecks size={15} />
         <span>
-          共 {tasks.length} 个任务，已完成 {completedCount} 个
+          {hasExplicitPlan ? '任务规划' : `共 ${tasks.length} 个任务`}，已完成 {completedCount} 个
         </span>
       </div>
       <ol className="border-t border-border/70 py-2">

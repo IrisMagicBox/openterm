@@ -26,6 +26,7 @@ export function MessageBubble({
 }: MessageBubbleProps): React.ReactElement {
   const msg = message
   const isExpanded = !!expandedThoughts[msg.id]
+  const hasRunTimeline = !!msg.metadata?.taskId
   const assistantContent =
     msg.role === 'assistant' || msg.role === 'system'
       ? stripInternalToolCallMarkup(msg.content)
@@ -70,15 +71,19 @@ export function MessageBubble({
 
   return (
     <div className="mx-auto w-full max-w-[860px] cursor-auto select-text no-drag">
-      <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
-        <span className="shrink-0 font-medium">
-          {msg.role === 'system' ? '系统' : '已处理'} {formatMessageClock(msg.timestamp)}
-        </span>
-        <div className="h-px flex-1 bg-border/80" />
-      </div>
+      {(msg.role === 'system' || !hasRunTimeline) && (
+        <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+          <span className="shrink-0 font-medium">
+            {msg.role === 'system' ? '系统' : '已处理'} {formatMessageClock(msg.timestamp)}
+          </span>
+          <div className="h-px flex-1 bg-border/80" />
+        </div>
+      )}
 
       <div className="space-y-4 text-[var(--chat-text-size)] leading-[var(--chat-line-height)] text-foreground">
-        {msg.metadata?.taskId && <AgentRunTimeline taskId={msg.metadata.taskId} />}
+        {hasRunTimeline && msg.metadata?.taskId && (
+          <AgentRunTimeline taskId={msg.metadata.taskId} />
+        )}
 
         <div className="space-y-3">
           {msg.metadata?.memoryRecalled && (

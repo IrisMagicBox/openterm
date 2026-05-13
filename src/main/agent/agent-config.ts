@@ -45,11 +45,14 @@ const EXPLORE_SYSTEM_PROMPT = `你是 OpenTerm 探索代理，一个只读的远
 
 ### 工作流程：
 1. **理解任务**：分析主代理委派的调查目标。
-2. **收集信息**：使用只读命令（如 ls, cat, status, ps, netstat 等）获取所需信息。
-3. **整理汇报**：将发现整理为清晰、结构化的报告返回给主代理。
+2. **按需规划**：只有复杂、多方向、需要较长时间跟踪的调查才用 update_plan 建立 2-4 步计划；普通状态检查直接收集信息。
+3. **收集信息**：使用只读命令（如 ls, cat, status, ps, netstat 等）获取所需信息。
+4. **整理汇报**：将发现整理为清晰、结构化的报告返回给主代理。
 
 ### 规则：
 - **始终使用中文回复**。
+- **过程可见但克制**：工具前后只写 1-2 句可公开进展，不输出隐藏推理链。
+- **规划克制**：状态检查、版本确认、资料查询或升级建议不要调用 update_plan。
 - **禁止修改操作**：不要执行任何会改变系统状态的命令（如 install, rm, write, restart 等）。
 - **简洁高效**：只收集与任务相关的信息，避免不必要的探索。
 - **证据优先**：所有结论必须基于实际命令输出，不要推测。
@@ -85,6 +88,7 @@ const PLAN_SYSTEM_PROMPT = `你是 OpenTerm 规划代理，一个只读的任务
 - **始终使用中文回复**。
 - **只读优先**：可以读取文件、搜索上下文、执行低风险只读命令来理解现状。
 - **禁止变更**：不要写文件、安装包、修改权限、启动/停止服务或执行破坏性命令。
+- **规划列表**：复杂计划先用 update_plan 呈现 2-6 个步骤；如果只是输出静态方案，不需要反复更新。
 - **输出计划**：说明目标、假设、步骤、风险、验证方式和建议的 PR/提交拆分。
 - **遇到不确定**：明确列出需要用户确认的点，不要擅自推进高风险操作。
 
@@ -103,7 +107,10 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
     description: 'Primary agent for executing multi-step tasks on remote hosts',
     mode: 'primary',
     allowedTools: [], // All tools allowed
-    permissions: [{ tool: 'websearch', action: 'ask' }, { tool: '*', allowed: true }],
+    permissions: [
+      { tool: 'websearch', action: 'ask' },
+      { tool: '*', allowed: true }
+    ],
     maxSteps: 10,
     temperature: 0.1
   },
@@ -120,7 +127,8 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       'list_terminals',
       'search_memory',
       'search_topics',
-      'websearch'
+      'websearch',
+      'update_plan'
     ],
     permissions: [
       { tool: 'execute_command', allowed: true, maxAutoApproveRisk: 'low' },
@@ -130,7 +138,8 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       { tool: 'list_terminals', allowed: true },
       { tool: 'search_memory', allowed: true },
       { tool: 'search_topics', allowed: true },
-      { tool: 'websearch', allowed: true }
+      { tool: 'websearch', allowed: true },
+      { tool: 'update_plan', allowed: true }
     ],
     maxSteps: 5,
     temperature: 0.3
@@ -167,7 +176,8 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       'list_terminals',
       'search_memory',
       'search_topics',
-      'websearch'
+      'websearch',
+      'update_plan'
     ],
     permissions: [
       {
@@ -187,7 +197,8 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       { tool: 'list_terminals', allowed: true },
       { tool: 'search_memory', allowed: true },
       { tool: 'search_topics', allowed: true },
-      { tool: 'websearch', allowed: true }
+      { tool: 'websearch', allowed: true },
+      { tool: 'update_plan', allowed: true }
     ],
     maxSteps: 5,
     temperature: 0.1

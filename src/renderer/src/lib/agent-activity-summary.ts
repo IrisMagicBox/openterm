@@ -1,17 +1,34 @@
 import type { AgentPart } from '../../../shared/types'
-import { agentPartPreview, parseAgentPartCommand } from './agent-part-preview'
+import {
+  agentPartOutput,
+  agentPartPreview,
+  parseAgentPartCommand,
+  sanitizeAgentText
+} from './agent-part-preview'
 
-export type AgentActivityKind = 'explore' | 'edit' | 'command' | 'approval' | 'other'
+export type AgentActivityKind =
+  | 'think'
+  | 'plan'
+  | 'explore'
+  | 'edit'
+  | 'command'
+  | 'approval'
+  | 'other'
 
 export interface AgentActivityLine {
   id: string
   kind: AgentActivityKind
   label: string
   detail: string
+  fullDetail: string
   status: AgentPart['status']
 }
 
+const INLINE_DETAIL_EXPAND_THRESHOLD = 80
+
 function toolDisplayName(part: AgentPart): string {
+  if (part.type === 'text' || part.type === 'reasoning') return '思考'
+  if (part.toolName === 'update_plan' || part.metadata?.planTool === true) return '任务规划'
   if (part.type === 'permission') return '权限'
   if (part.toolName === 'websearch') return '网页搜索'
   if (part.toolName === 'execute_command') return '命令'
@@ -20,11 +37,137 @@ function toolDisplayName(part: AgentPart): string {
   return part.toolName || part.type
 }
 
+function parsePartInput(part: AgentPart): Record<string, unknown> {
+  try {
+    return JSON.parse(part.input || '{}') as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+function textValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function compactJsonValue(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value === undefined || value === null) return ''
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function fullPartDetail(part: AgentPart): string {
+  const command = parseAgentPartCommand(part)
+  const output = agentPartOutput(part)
+  const liveOutputPreview = sanitizeAgentText(textValue(part.metadata?.liveOutputPreview))
+  const input = sanitizeAgentText(part.input || '')
+  if (part.type === 'text' || part.type === 'reasoning') return output || input
+  return output || liveOutputPreview || command || input
+}
+
+function toolLine(
+  part: AgentPart
+): { label: string; detail: string; fullDetail: string } | undefined {
+  const input = parsePartInput(part)
+  const command = parseAgentPartCommand(part)
+
+  if (part.type === 'permission') {
+    const reason = textValue(part.metadata?.reason)
+    const permission = textValue(part.metadata?.permission)
+    const detail = reason || command || permission
+    return {
+      label: part.status === 'blocked' ? '等待确认' : '确认权限',
+      detail,
+      fullDetail: detail
+    }
+  }
+
+  if (part.toolName === 'websearch') {
+    const detail = textValue(input.query) || command
+    return { label: '搜索网页', detail, fullDetail: detail }
+  }
+
+  if (part.toolName === 'execute_command') {
+    const detail = textValue(input.command) || command
+    return { label: '运行命令', detail, fullDetail: fullPartDetail(part) || detail }
+  }
+
+  if (part.toolName === 'read_notes') {
+    const target = textValue(input.target)
+    const targetId = textValue(input.targetId)
+    const detail = [target === 'host' ? '主机' : target, targetId].filter(Boolean).join(' ')
+    return {
+      label: '读取备注',
+      detail,
+      fullDetail: detail
+    }
+  }
+
+  if (part.toolName === 'write_notes') {
+    const target = textValue(input.target)
+    const targetId = textValue(input.targetId)
+    const detail = [target === 'host' ? '主机' : target, targetId].filter(Boolean).join(' ')
+    return {
+      label: '更新备注',
+      detail,
+      fullDetail: detail
+    }
+  }
+
+  if (part.toolName === 'read_file') {
+    const detail = textValue(input.path) || command
+    return { label: '读取文件', detail, fullDetail: detail }
+  }
+
+  if (part.toolName === 'write_file' || part.toolName === 'edit') {
+    const detail = textValue(input.path) || command
+    return { label: '编辑文件', detail, fullDetail: detail }
+  }
+
+  if (part.toolName === 'list_hosts') return { label: '查看主机', detail: '', fullDetail: '' }
+  if (part.toolName === 'list_terminals') return { label: '查看终端', detail: '', fullDetail: '' }
+  if (part.toolName === 'search_memory') {
+    const detail = textValue(input.query) || command
+    return { label: '搜索记忆', detail, fullDetail: detail }
+  }
+  if (part.toolName === 'search_topics') {
+    const detail = textValue(input.query) || command
+    return { label: '搜索话题', detail, fullDetail: detail }
+  }
+  if (part.toolName === 'manage_port_forward') {
+    const detail = textValue(input.action) || command
+    return { label: '管理端口转发', detail, fullDetail: detail }
+  }
+  if (part.toolName === 'manage_terminal') {
+    const detail = textValue(input.action) || command
+    return { label: '管理终端', detail, fullDetail: detail }
+  }
+  if (part.toolName === 'observe_terminal') {
+    const detail = textValue(input.sessionId) || command
+    return { label: '观察终端', detail, fullDetail: detail }
+  }
+  if (part.toolName === 'wait_terminal_activity' || part.toolName === 'wait_terminal_text') {
+    const detail = textValue(input.sessionId) || command
+    return { label: '等待终端', detail, fullDetail: detail }
+  }
+  if (part.toolName === 'send_terminal_keys') {
+    const detail = textValue(input.text) || compactJsonValue(input.keys)
+    return { label: '发送按键', detail, fullDetail: detail }
+  }
+
+  return undefined
+}
+
 function normalizedToolName(part: AgentPart): string {
   return `${part.toolName || ''} ${parseAgentPartCommand(part)}`.toLowerCase()
 }
 
 export function agentActivityKind(part: AgentPart): AgentActivityKind {
+  if (part.type === 'text' || part.type === 'reasoning') return 'think'
+  if (part.toolName === 'update_plan' || part.metadata?.planTool === true) return 'plan'
   if (part.type === 'permission') return 'approval'
 
   const value = normalizedToolName(part)
@@ -45,6 +188,8 @@ export function agentActivityKind(part: AgentPart): AgentActivityKind {
 
 export function agentActivityVerb(part: AgentPart): string {
   const kind = agentActivityKind(part)
+  if (kind === 'think') return '思考'
+  if (kind === 'plan') return '规划'
   if (kind === 'command') return '运行'
   if (kind === 'edit') return '编辑'
   if (kind === 'explore') return '探索'
@@ -69,12 +214,14 @@ export function agentActivitySummary(parts: AgentPart[]): string {
       acc[agentActivityKind(part)] += 1
       return acc
     },
-    { explore: 0, edit: 0, command: 0, approval: 0, other: 0 } satisfies Record<
+    { think: 0, plan: 0, explore: 0, edit: 0, command: 0, approval: 0, other: 0 } satisfies Record<
       AgentActivityKind,
       number
     >
   )
   const fragments: string[] = []
+  if (counts.think > 0) fragments.push(`思考 ${counts.think} 次`)
+  if (counts.plan > 0) fragments.push(`规划 ${counts.plan} 次`)
   if (counts.explore > 0) fragments.push(`探索 ${counts.explore} 项`)
   if (counts.edit > 0) fragments.push(`编辑 ${counts.edit} 项`)
   if (counts.command > 0) fragments.push(`运行 ${counts.command} 个命令`)
@@ -84,7 +231,10 @@ export function agentActivitySummary(parts: AgentPart[]): string {
   return fragments.join('，')
 }
 
-export function agentActivityLines(parts: AgentPart[], limit = 12): AgentActivityLine[] {
+export function agentActivityLines(
+  parts: AgentPart[],
+  limit = Number.POSITIVE_INFINITY
+): AgentActivityLine[] {
   return parts
     .filter((part) => part.type !== 'usage')
     .slice(0, limit)
@@ -92,12 +242,37 @@ export function agentActivityLines(parts: AgentPart[], limit = 12): AgentActivit
       const kind = agentActivityKind(part)
       const command = parseAgentPartCommand(part)
       const preview = part.type === 'permission' ? '' : agentPartPreview(part, 120)
+      const fullDetail = fullPartDetail(part)
+      const readable = toolLine(part)
+      const detail = readable?.detail || command || preview
       return {
         id: part.id,
         kind,
-        label: `${agentActivityVerb(part)} ${toolDisplayName(part)}`,
-        detail: command || preview,
+        label:
+          readable?.label ||
+          (kind === 'think'
+            ? '思考'
+            : kind === 'plan'
+              ? '更新规划'
+              : `${agentActivityVerb(part)} ${toolDisplayName(part)}`),
+        detail,
+        fullDetail: readable?.fullDetail || fullDetail || detail,
         status: part.status
       }
     })
+}
+
+function comparableDetail(value: string): string {
+  return sanitizeAgentText(value).replace(/\s+/g, ' ').trim()
+}
+
+export function shouldShowAgentActivityDetail(line: AgentActivityLine | undefined): boolean {
+  if (!line?.fullDetail) return false
+
+  const detail = comparableDetail(line.detail)
+  const fullDetail = comparableDetail(line.fullDetail)
+  if (!fullDetail) return false
+  if (!detail) return true
+  if (detail !== fullDetail) return true
+  return line.fullDetail.length > INLINE_DETAIL_EXPAND_THRESHOLD
 }

@@ -24,9 +24,16 @@ import { shouldShowAgentLivePart } from '../lib/agent-live-stream'
 import {
   agentActivityLines,
   agentActivityStatus,
-  agentActivitySummary
+  agentActivitySummary,
+  shouldShowAgentActivityDetail
 } from '../lib/agent-activity-summary'
 import { deriveAgentTasks } from '../lib/agent-task-list'
+import {
+  agentProcessParts,
+  isAssistantTextPart,
+  isIntermediateAssistantTextPart,
+  sortAgentParts
+} from '../lib/agent-process-parts'
 
 interface AgentLiveStreamProps {
   parts: AgentPart[]
@@ -34,8 +41,21 @@ interface AgentLiveStreamProps {
   focusedPartId?: string | null
 }
 
-function sortParts(parts: AgentPart[]): AgentPart[] {
-  return [...parts].sort((a, b) => a.orderIndex - b.orderIndex || a.createdAt - b.createdAt)
+function elapsedMs(parts: AgentPart[]): number | undefined {
+  const starts = parts
+    .map((part) => part.startedAt ?? part.createdAt)
+    .filter((value): value is number => typeof value === 'number')
+  if (starts.length === 0) return undefined
+  return Math.max(0, Date.now() - Math.min(...starts))
+}
+
+function formatDuration(ms: number | undefined): string {
+  if (ms === undefined) return ''
+  const totalSeconds = Math.max(1, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes === 0) return `${seconds}s`
+  return `${minutes}m ${seconds.toString().padStart(2, '0')}s`
 }
 
 function statusLabel(part: AgentPart): string {
@@ -96,18 +116,40 @@ export function AgentLiveStream({
   focusedPartId
 }: AgentLiveStreamProps): React.ReactElement | null {
   const [expanded, setExpanded] = useState(true)
-  const visibleParts = useMemo(() => sortParts(parts).filter(shouldShowAgentLivePart), [parts])
+  const [expandedPartIds, setExpandedPartIds] = useState<Set<string>>(() => new Set())
+  const [, setTick] = useState(0)
+  const visibleParts = useMemo(() => sortAgentParts(parts).filter(shouldShowAgentLivePart), [parts])
+
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((value) => value + 1), 1000)
+    return () => window.clearInterval(id)
+  }, [])
+
   const textContent = stripInternalToolCallMarkup(
     visibleParts
-      .filter((part) => part.type === 'text' && part.role === 'assistant' && part.output)
+      .filter(
+        (part) => isAssistantTextPart(part) && !isIntermediateAssistantTextPart(part, visibleParts)
+      )
       .map((part) => part.output)
       .join('\n\n')
   )
-  const activityParts = visibleParts.filter((part) => part.type !== 'text')
+  const activityParts = agentProcessParts(parts)
   const activityLines = agentActivityLines(activityParts)
   const summary = agentActivitySummary(activityParts)
   const status = agentActivityStatus(activityParts)
   const tasks = deriveAgentTasks(activityParts)
+  const duration = formatDuration(elapsedMs(visibleParts))
+  const togglePart = (partId: string): void => {
+    setExpandedPartIds((current) => {
+      const next = new Set(current)
+      if (next.has(partId)) {
+        next.delete(partId)
+      } else {
+        next.add(partId)
+      }
+      return next
+    })
+  }
 
   return (
     <div className="mx-auto w-full max-w-[860px]">
@@ -120,61 +162,89 @@ export function AgentLiveStream({
             >
               {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               <span className="font-medium">{status}</span>
+              {duration && <span>{duration}</span>}
               {summary && <span>{summary}</span>}
             </button>
 
             {expanded && (
-              <div className="mt-1 space-y-1 pl-6">
-                {activityParts.map((part, index) => {
-                  const line = activityLines[index]
-                  const output = toolOutput(part)
-                  const input = parseAgentPartCommand(part)
-                  const isLive = part.status === 'running' || part.metadata?.live === true
-                  const sessionId = agentPartSessionId(part)
-                  const isFocused = focusedPartId === part.id
-                  return (
-                    <div
-                      key={part.id}
-                      className={cn(
-                        'rounded-lg px-2 py-1.5 transition-colors',
-                        part.status === 'error'
-                          ? 'bg-danger-soft/55 text-danger'
-                          : isLive
-                            ? 'bg-accent-soft/50 text-foreground'
-                            : 'text-muted-foreground',
-                        isFocused && 'ring-1 ring-accent/25'
-                      )}
-                    >
-                      <div className="flex min-w-0 items-center gap-2 text-sm">
-                        {statusIcon(part)}
-                        <TerminalSquare size={13} className="shrink-0 text-muted-foreground" />
-                        <span className="shrink-0 font-medium">{line?.label || '处理'}</span>
-                        {(line?.detail || input) && (
-                          <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-                            {line?.detail || input}
+              <div className="mt-1 space-y-3 pl-6">
+                <AgentTaskList tasks={tasks} />
+                <div className="space-y-1">
+                  {activityParts.map((part, index) => {
+                    const line = activityLines[index]
+                    const output = toolOutput(part)
+                    const input = parseAgentPartCommand(part)
+                    const isLive = part.status === 'running' || part.metadata?.live === true
+                    const sessionId = agentPartSessionId(part)
+                    const isFocused = focusedPartId === part.id
+                    const fullDetail = line?.fullDetail || output || input
+                    const canExpandPart =
+                      shouldShowAgentActivityDetail(line) || Boolean(output && isLive)
+                    const isPartExpanded = expandedPartIds.has(part.id)
+                    return (
+                      <div
+                        key={part.id}
+                        className={cn(
+                          'rounded-lg px-2 py-1.5 transition-colors',
+                          part.status === 'error'
+                            ? 'bg-danger-soft/55 text-danger'
+                            : isLive
+                              ? 'bg-accent-soft/50 text-foreground'
+                              : 'text-muted-foreground',
+                          isFocused && 'ring-1 ring-accent/25'
+                        )}
+                      >
+                        <div className="flex min-w-0 items-center gap-2 text-sm">
+                          {canExpandPart ? (
+                            <button
+                              type="button"
+                              onClick={() => togglePart(part.id)}
+                              className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
+                              aria-label={isPartExpanded ? '收起过程详情' : '展开过程详情'}
+                            >
+                              {isPartExpanded ? (
+                                <ChevronDown size={13} />
+                              ) : (
+                                <ChevronRight size={13} />
+                              )}
+                            </button>
+                          ) : (
+                            <span className="h-4 w-4 shrink-0" />
+                          )}
+                          {statusIcon(part)}
+                          <TerminalSquare size={13} className="shrink-0 text-muted-foreground" />
+                          <span className="shrink-0 font-medium">{line?.label || '处理'}</span>
+                          {(line?.detail || input) && (
+                            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+                              {line?.detail || input}
+                            </span>
+                          )}
+                          {sessionId && onRevealTerminal && (
+                            <button
+                              onClick={() => onRevealTerminal(sessionId, part.id)}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
+                            >
+                              <Eye size={12} />
+                              终端
+                            </button>
+                          )}
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {statusLabel(part)}
                           </span>
-                        )}
-                        {sessionId && onRevealTerminal && (
-                          <button
-                            onClick={() => onRevealTerminal(sessionId, part.id)}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
-                          >
-                            <Eye size={12} />
-                            终端
-                          </button>
-                        )}
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {statusLabel(part)}
-                        </span>
-                      </div>
+                        </div>
 
-                      {output && <LiveToolOutput output={output} isLive={isLive} />}
-                    </div>
-                  )
-                })}
+                        {canExpandPart && isPartExpanded && (
+                          <LiveToolOutput output={fullDetail} isLive={isLive} />
+                        )}
+                        {output && isLive && !isPartExpanded && (
+                          <LiveToolOutput output={output} isLive={isLive} />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
-            <AgentTaskList tasks={tasks} className="mt-3" />
           </div>
         )}
 

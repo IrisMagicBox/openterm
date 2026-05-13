@@ -1,23 +1,63 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  Loader2,
+  TerminalSquare,
+  XCircle
+} from 'lucide-react'
 import type { JSX } from 'react'
 import type { AgentPart } from '../../../shared/types'
 import { AgentTaskList } from './AgentTaskList'
 import {
   agentActivityLines,
   agentActivityStatus,
-  agentActivitySummary
+  agentActivitySummary,
+  shouldShowAgentActivityDetail
 } from '../lib/agent-activity-summary'
 import { deriveAgentTasks } from '../lib/agent-task-list'
+import { agentPartPreview } from '../lib/agent-part-preview'
+import { agentProcessParts } from '../lib/agent-process-parts'
+import { cn } from '../lib/utils'
 
 interface AgentRunTimelineProps {
   taskId: string
+}
+
+function formatDuration(parts: AgentPart[]): string {
+  const starts = parts
+    .map((part) => part.startedAt ?? part.createdAt)
+    .filter((value): value is number => typeof value === 'number')
+  const ends = parts
+    .map((part) => part.endedAt ?? part.updatedAt ?? part.createdAt)
+    .filter((value): value is number => typeof value === 'number')
+  if (starts.length === 0 || ends.length === 0) return ''
+  const ms = Math.max(0, Math.max(...ends) - Math.min(...starts))
+  const totalSeconds = Math.max(1, Math.round(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes === 0) return `${seconds}s`
+  return `${minutes}m ${seconds.toString().padStart(2, '0')}s`
+}
+
+function statusIcon(part: AgentPart): JSX.Element {
+  if (part.status === 'pending' || part.status === 'running') {
+    return <Loader2 size={13} className="animate-spin text-muted-foreground" />
+  }
+  if (part.status === 'completed') {
+    return <CheckCircle2 size={13} className="text-muted-foreground" />
+  }
+  if (part.status === 'error') return <XCircle size={13} className="text-danger" />
+  return <Circle size={13} className="text-muted-foreground" />
 }
 
 export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element | null {
   const [parts, setParts] = useState<AgentPart[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(false)
+  const [expandedPartIds, setExpandedPartIds] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
     const fetchParts = async (): Promise<void> => {
@@ -47,10 +87,7 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
     }
   }, [taskId])
 
-  const visibleParts = useMemo(
-    () => parts.filter((part) => part.type !== 'usage' && part.type !== 'text'),
-    [parts]
-  )
+  const visibleParts = useMemo(() => agentProcessParts(parts), [parts])
 
   if (loading && visibleParts.length === 0) {
     return (
@@ -67,6 +104,18 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
   const summary = agentActivitySummary(visibleParts)
   const status = agentActivityStatus(visibleParts)
   const tasks = deriveAgentTasks(visibleParts)
+  const duration = formatDuration(parts)
+  const togglePart = (partId: string): void => {
+    setExpandedPartIds((current) => {
+      const next = new Set(current)
+      if (next.has(partId)) {
+        next.delete(partId)
+      } else {
+        next.add(partId)
+      }
+      return next
+    })
+  }
 
   return (
     <div>
@@ -76,25 +125,59 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
       >
         {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <span className="font-medium">{status}</span>
+        {duration && <span>{duration}</span>}
         {summary && <span>{summary}</span>}
       </button>
 
       {expanded && (
-        <div className="mt-2 space-y-2 pl-6">
-          <div className="space-y-1">
-            {lines.map((line) => (
-              <div
-                key={line.id}
-                className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground"
-              >
-                <span className="shrink-0 font-medium">{line.label}</span>
-                {line.detail && (
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{line.detail}</span>
-                )}
-              </div>
-            ))}
-          </div>
+        <div className="mt-2 space-y-3 pl-6">
           <AgentTaskList tasks={tasks} />
+          <div className="space-y-1">
+            {visibleParts.map((part, index) => {
+              const line = lines[index]
+              const detail = line?.detail || agentPartPreview(part, 120)
+              const fullDetail = line?.fullDetail || detail
+              const canExpandPart = shouldShowAgentActivityDetail(line)
+              const isPartExpanded = expandedPartIds.has(part.id)
+              return (
+                <div
+                  key={part.id}
+                  className={cn(
+                    'rounded-lg px-2 py-1.5 text-sm',
+                    part.status === 'error'
+                      ? 'bg-danger-soft/55 text-danger'
+                      : 'text-muted-foreground'
+                  )}
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    {canExpandPart ? (
+                      <button
+                        type="button"
+                        onClick={() => togglePart(part.id)}
+                        className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
+                        aria-label={isPartExpanded ? '收起过程详情' : '展开过程详情'}
+                      >
+                        {isPartExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                      </button>
+                    ) : (
+                      <span className="h-4 w-4 shrink-0" />
+                    )}
+                    {statusIcon(part)}
+                    <TerminalSquare size={13} className="shrink-0 text-muted-foreground" />
+                    <span className="shrink-0 font-medium">{line?.label || '处理'}</span>
+                    {detail && (
+                      <span className="min-w-0 flex-1 truncate font-mono text-xs">{detail}</span>
+                    )}
+                  </div>
+                  {canExpandPart && isPartExpanded && (
+                    <pre className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap rounded-lg border border-workspace-border bg-workspace/85 px-3 py-2 font-mono text-xs leading-relaxed text-workspace-foreground">
+                      {fullDetail}
+                    </pre>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>
