@@ -409,13 +409,13 @@ export function TerminalLayout({
     >
       <div className="workspace-primary-content flex min-w-0 flex-1 flex-col">
         <div className="workspace-layer-header flex flex-col flex-shrink-0 border-b border-workspace-border bg-white">
-          <div className="h-[var(--workspace-header-height)] px-5 flex items-center justify-between flex-shrink-0 drag text-workspace-foreground">
-            <div className="flex items-center gap-3 no-drag">
+          <div className="h-[var(--workspace-header-height)] px-4 flex items-center justify-between flex-shrink-0 drag text-workspace-foreground">
+            <div className="flex min-w-0 items-center gap-2.5 no-drag">
               <TerminalIcon size={13} className="text-accent" />
-              <span className="font-mono text-xs font-semibold text-workspace-foreground">
+              <span className="truncate font-mono text-[11px] font-semibold text-workspace-foreground">
                 {activeTab?.title || activeTab?.host.alias || selectedHost?.alias}
               </span>
-              <span className="font-mono text-xs text-workspace-muted-foreground">
+              <span className="truncate font-mono text-[11px] text-workspace-muted-foreground">
                 {activeTab?.host.id === 'local' || selectedHost?.id === 'local'
                   ? '本机'
                   : activeTab
@@ -425,7 +425,7 @@ export function TerminalLayout({
                       : ''}
               </span>
             </div>
-            <div className="flex items-center gap-1.5 no-drag">
+            <div className="flex items-center gap-1 no-drag">
               {allTabs.length > 0 && (
                 <div className="flex gap-1">
                   {leafToSplit && (

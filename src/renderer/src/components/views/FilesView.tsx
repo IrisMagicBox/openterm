@@ -409,15 +409,17 @@ export function FilesView({
     <div className="workspace-canvas relative flex flex-1 flex-col overflow-hidden bg-transparent">
       <div className="workspace-primary-content flex min-h-0 flex-1 flex-col">
         <div className="workspace-layer-header flex flex-col flex-shrink-0 border-b border-workspace-border bg-workspace-muted/70 backdrop-blur-2xl">
-          <div className="h-[var(--workspace-header-height)] text-workspace-foreground px-5 flex items-center justify-between flex-shrink-0 drag">
-            <div className="flex items-center gap-3 no-drag">
+          <div className="h-[var(--workspace-header-height)] text-workspace-foreground px-4 flex items-center justify-between flex-shrink-0 drag">
+            <div className="flex min-w-0 items-center gap-2.5 no-drag">
               <Folder size={13} className="text-accent" />
-              <span className="text-xs font-semibold font-mono text-workspace-foreground">
+              <span className="truncate text-[11px] font-semibold font-mono text-workspace-foreground">
                 {activeTab?.title || activeTab?.hostAlias || '文件管理'}
               </span>
-              <span className="text-xs text-workspace-muted-foreground font-mono">文件管理</span>
+              <span className="truncate text-[11px] text-workspace-muted-foreground font-mono">
+                文件管理
+              </span>
             </div>
-            <div className="flex items-center gap-1.5 no-drag">
+            <div className="flex items-center gap-1 no-drag">
               {allTabs.length > 0 && (
                 <div className="flex gap-1">
                   {(() => {

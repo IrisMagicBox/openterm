@@ -276,29 +276,27 @@ export function TerminalStage({
       >
         <div
           className={cn(
-            'workspace-layer-header terminal-stage-header flex h-[var(--workspace-header-height)] items-center justify-between gap-2 border-b border-black/[0.06] bg-white px-3 py-0',
+            'workspace-layer-header terminal-stage-header flex h-[var(--workspace-header-height)] items-center justify-between gap-2 border-b border-black/[0.045] bg-white px-3 py-0',
             highlightedSessionId && 'shadow-[inset_0_-1px_0_rgba(83,154,248,0.18)]'
           )}
         >
           <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-            <Monitor size={14} className="shrink-0 text-accent" />
-            <div className="min-w-0 flex-1 overflow-hidden">
-              <div className="flex min-w-0 items-center gap-2">
-                <h3 className="truncate text-sm font-bold text-foreground">终端</h3>
-                <span className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full border border-accent/15 bg-accent-soft/70 px-1 text-[10px] font-bold leading-none text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
-                  {visibleSessions.length}
-                </span>
-              </div>
-              <div className="truncate text-[11px] font-semibold text-muted-foreground">
-                {focusedSession
-                  ? `${focusedSession.hostAlias} / ${focusedSession.name || '终端'}`
-                  : '暂无聚焦'}
-              </div>
-            </div>
+            <Monitor size={13} className="shrink-0 text-accent" />
+            <h3 className="shrink-0 truncate text-[13px] font-semibold leading-none text-foreground">
+              终端
+            </h3>
+            <span className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-black/[0.045] px-1 text-[10px] font-bold leading-none text-muted-foreground">
+              {visibleSessions.length}
+            </span>
+            <span className="min-w-0 truncate text-[11px] font-medium text-muted-foreground">
+              {focusedSession
+                ? `${focusedSession.hostAlias} / ${focusedSession.name || '终端'}`
+                : '暂无聚焦'}
+            </span>
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            <div className="flex items-center gap-0.5 rounded-lg bg-black/[0.035] p-0.5">
+            <div className="flex items-center gap-0.5 rounded-lg bg-black/[0.025] p-0.5">
               {[
                 { id: 'stage' as const, label: '舞台', icon: Monitor },
                 { id: 'grid' as const, label: '网格', icon: Grid2X2 }
@@ -310,9 +308,9 @@ export function TerminalStage({
                       aria-label={item.label}
                       onClick={() => onSetMode(item.id)}
                       className={cn(
-                        'blue-ring flex h-7 w-8 items-center justify-center rounded-md text-muted-foreground transition',
+                        'blue-ring flex h-6 w-7 items-center justify-center rounded-md text-muted-foreground transition',
                         mode === item.id
-                          ? 'bg-white text-accent shadow-sm'
+                          ? 'bg-white text-accent shadow-[0_1px_2px_rgba(15,23,42,0.04)]'
                           : 'hover:bg-white/70 hover:text-foreground'
                       )}
                     >

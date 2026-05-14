@@ -1,7 +1,10 @@
 import React from 'react'
 import type { AgentRun, Host, MemoryEntry, TerminalSession } from '../../../shared/types'
 import {
+  Activity,
   Brain,
+  CircleAlert,
+  CircleCheck,
   Edit3,
   ExternalLink,
   FileText,
@@ -16,6 +19,7 @@ import {
   Save,
   Server,
   Terminal,
+  Timer,
   Trash2,
   X
 } from 'lucide-react'
@@ -60,6 +64,7 @@ interface Tunnel {
 }
 
 type WorkspaceView = 'hosts' | 'runs' | 'memory' | 'tunnels'
+type HubTone = 'accent' | 'success' | 'danger' | 'warning' | 'neutral'
 
 function runStatusLabel(status: AgentRun['status']): string {
   if (status === 'completed') return '完成'
@@ -88,12 +93,37 @@ function typeLabel(type: MemoryEntry['type']): string {
 
 function statusTone(
   status: AgentRun['status']
-): 'accent' | 'success' | 'danger' | 'warning' | 'neutral' {
+): HubTone {
   if (status === 'completed') return 'success'
   if (status === 'failed' || status === 'cancelled') return 'danger'
   if (status === 'waiting_approval' || status === 'retrying') return 'warning'
   if (status === 'running' || status === 'compacting') return 'accent'
   return 'neutral'
+}
+
+function isActiveRun(status: AgentRun['status']): boolean {
+  return (
+    status === 'running' ||
+    status === 'waiting_approval' ||
+    status === 'compacting' ||
+    status === 'retrying'
+  )
+}
+
+function hostAddress(host: Host): string {
+  if (host.id === 'local') return '本机'
+  return `${host.username}@${host.ip}:${host.port || 22}`
+}
+
+function formatRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp
+  if (diff < 60_000) return '刚刚'
+  const minutes = Math.floor(diff / 60_000)
+  if (minutes < 60) return `${minutes} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时前`
+  const days = Math.floor(hours / 24)
+  return `${days} 天前`
 }
 
 export function TopicHub({
@@ -124,6 +154,22 @@ export function TopicHub({
   const hostsById = React.useMemo(
     () => new Map(hosts.map((host) => [host.id, host] as const)),
     [hosts]
+  )
+  const activeSessions = React.useMemo(
+    () => sessions.filter((session) => session.status !== 'closed' && session.visible !== false),
+    [sessions]
+  )
+  const activeRuns = React.useMemo(
+    () => runs.filter((run) => isActiveRun(run.status)),
+    [runs]
+  )
+  const enabledMemories = React.useMemo(
+    () => memories.filter((memory) => !memory.disabled),
+    [memories]
+  )
+  const activeTunnels = React.useMemo(
+    () => tunnels.filter((tunnel) => tunnel.status !== 'closed'),
+    [tunnels]
   )
 
   const refreshWorkspace = React.useCallback(async (): Promise<void> => {
@@ -204,36 +250,24 @@ export function TopicHub({
         onValueChange={(next) => setView(next as WorkspaceView)}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="flex h-[var(--workspace-header-height)] shrink-0 items-center border-b border-black/[0.05] bg-white/55 px-2 py-0">
-          <TabsList className="grid h-7 w-full grid-cols-4 rounded-lg border-0 bg-black/[0.025] p-0.5 shadow-none backdrop-blur-0">
-            <TabsTrigger
-              value="hosts"
-              className="h-6 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
-              <Server size={12} />
-              主机
-            </TabsTrigger>
-            <TabsTrigger
-              value="runs"
-              className="h-6 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
-              <History size={12} />
-              Run
-            </TabsTrigger>
-            <TabsTrigger
-              value="memory"
-              className="h-6 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
-              <Brain size={12} />
-              记忆
-            </TabsTrigger>
-            <TabsTrigger
+        <div className="shrink-0 border-b border-black/[0.05] bg-white/65 px-2 py-2">
+          <HubStatusStrip
+            hostsCount={hosts.length}
+            sessionsCount={activeSessions.length}
+            activeRunsCount={activeRuns.length}
+            memoriesCount={enabledMemories.length}
+            tunnelsCount={activeTunnels.length}
+          />
+          <TabsList className="mt-2 grid h-7 w-full grid-cols-4 rounded-lg border-0 bg-black/[0.025] p-0.5 shadow-none backdrop-blur-0">
+            <WorkspaceTab value="hosts" icon={Server} label="主机" count={hosts.length} />
+            <WorkspaceTab value="runs" icon={History} label="Run" count={activeRuns.length} />
+            <WorkspaceTab value="memory" icon={Brain} label="记忆" count={enabledMemories.length} />
+            <WorkspaceTab
               value="tunnels"
-              className="h-6 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
-              <Globe size={12} />
-              转发
-            </TabsTrigger>
+              icon={Globe}
+              label="转发"
+              count={activeTunnels.length}
+            />
           </TabsList>
         </div>
 
@@ -284,6 +318,79 @@ export function TopicHub({
         </div>
       </Tabs>
     </div>
+  )
+}
+
+function HubStatusStrip({
+  hostsCount,
+  sessionsCount,
+  activeRunsCount,
+  memoriesCount,
+  tunnelsCount
+}: {
+  hostsCount: number
+  sessionsCount: number
+  activeRunsCount: number
+  memoriesCount: number
+  tunnelsCount: number
+}): React.ReactElement {
+  const items = [
+    { label: '主机', value: hostsCount, tone: hostsCount > 0 ? 'accent' : 'neutral' },
+    { label: '终端', value: sessionsCount, tone: sessionsCount > 0 ? 'success' : 'neutral' },
+    { label: '运行', value: activeRunsCount, tone: activeRunsCount > 0 ? 'warning' : 'neutral' },
+    { label: '记忆', value: memoriesCount, tone: memoriesCount > 0 ? 'accent' : 'neutral' },
+    { label: '转发', value: tunnelsCount, tone: tunnelsCount > 0 ? 'success' : 'neutral' }
+  ] satisfies Array<{ label: string; value: number; tone: HubTone }>
+
+  return (
+    <div className="grid grid-cols-5 gap-1">
+      {items.map((item) => (
+        <div
+          key={item.label}
+          className="min-w-0 rounded-md border border-black/[0.045] bg-white/75 px-1.5 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.74)]"
+        >
+          <div
+            className={cn(
+              'text-sm font-bold leading-none',
+              item.tone === 'accent' && 'text-accent',
+              item.tone === 'success' && 'text-success',
+              item.tone === 'warning' && 'text-warning',
+              item.tone === 'neutral' && 'text-muted-foreground'
+            )}
+          >
+            {item.value}
+          </div>
+          <div className="mt-0.5 truncate text-[10px] font-semibold text-muted-foreground">
+            {item.label}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function WorkspaceTab({
+  value,
+  icon: Icon,
+  label,
+  count
+}: {
+  value: WorkspaceView
+  icon: React.ElementType
+  label: string
+  count: number
+}): React.ReactElement {
+  return (
+    <TabsTrigger
+      value={value}
+      className="h-6 gap-1 px-1 text-[11px] data-[state=active]:bg-white data-[state=active]:text-foreground data-[state=active]:shadow-none"
+    >
+      <Icon size={12} />
+      <span className="truncate">{label}</span>
+      <span className="min-w-3 rounded-full bg-black/[0.045] px-1 text-[9px] font-bold leading-4 text-muted-foreground data-[state=active]:text-accent">
+        {count}
+      </span>
+    </TabsTrigger>
   )
 }
 
@@ -340,9 +447,11 @@ function HostsPane({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2 px-1">
-        <span className="text-[11px] font-bold text-muted-foreground">当前对话主机</span>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2 px-0.5">
+        <span className="text-[11px] font-bold text-muted-foreground">
+          主机 {hosts.length} / 终端 {sessions.length}
+        </span>
         <Tooltip content="添加主机到当前对话" side="left">
           <IconButton
             aria-label="添加主机到当前对话"
@@ -357,12 +466,15 @@ function HostsPane({
         const hostSessions = sessions.filter((session) => session.hostId === host.id)
 
         return (
-          <div key={host.id} className="group/host">
-            <div className="mb-2 flex items-center justify-between gap-2 px-1">
-              <div className="flex min-w-0 items-center gap-2">
+          <div
+            key={host.id}
+            className="group/host rounded-lg border border-black/[0.055] bg-white/80 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 flex-1 items-start gap-2">
                 <div
                   className={cn(
-                    'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
+                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold',
                     host.id === 'local'
                       ? 'bg-success-soft text-success'
                       : 'bg-accent-soft text-accent'
@@ -374,9 +486,21 @@ function HostsPane({
                     host.alias.slice(0, 1).toUpperCase()
                   )}
                 </div>
-                <span className="truncate text-xs font-bold text-foreground">{host.alias}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-xs font-bold text-foreground">
+                      {host.alias}
+                    </span>
+                    <Badge variant={hostSessions.length > 0 ? 'success' : 'neutral'}>
+                      {hostSessions.length}
+                    </Badge>
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-[10px] font-medium text-muted-foreground">
+                    {hostAddress(host)}
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-1 opacity-100 transition-opacity">
+              <div className="flex shrink-0 items-center gap-0.5">
                 <IconButton
                   aria-label={`为 ${host.alias} 开启新终端`}
                   onClick={() => onCreateTerminal(host.id)}
@@ -418,13 +542,13 @@ function HostsPane({
               </div>
             </div>
 
-            <div className="ml-3 space-y-1 border-l border-black/[0.06] pl-3">
+            <div className="mt-2 space-y-1">
               {hostSessions.length === 0 ? (
                 <Button
                   onClick={() => onCreateTerminal(host.id)}
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-start rounded-xl border border-dashed border-black/[0.08] bg-black/[0.015] text-xs text-muted-foreground hover:bg-black/[0.03]"
+                  className="h-7 w-full justify-start rounded-md border border-dashed border-black/[0.08] bg-black/[0.015] text-xs text-muted-foreground hover:bg-black/[0.03]"
                 >
                   <Plus size={12} /> 初始化终端
                 </Button>
@@ -435,7 +559,7 @@ function HostsPane({
                     <div
                       key={session.id}
                       className={cn(
-                        'group/session relative flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors',
+                        'group/session relative flex h-8 cursor-pointer items-center gap-2 rounded-md border px-2 transition-colors',
                         focused
                           ? 'border-black/[0.08] bg-black/[0.04] text-foreground shadow-sm'
                           : 'border-black/[0.06] bg-white text-muted-foreground hover:border-black/[0.08] hover:bg-black/[0.02]'
@@ -445,6 +569,16 @@ function HostsPane({
                       <Terminal
                         size={11}
                         className={focused ? 'text-accent' : 'text-muted-foreground'}
+                      />
+                      <span
+                        className={cn(
+                          'h-1.5 w-1.5 shrink-0 rounded-full',
+                          session.commandStatus === 'running' && 'animate-pulse bg-accent',
+                          session.commandStatus === 'failed' && 'bg-danger',
+                          session.commandStatus === 'completed' && 'bg-success',
+                          (!session.commandStatus || session.commandStatus === 'idle') &&
+                            'bg-muted-foreground/35'
+                        )}
                       />
 
                       {editingSessionId === session.id ? (
@@ -458,7 +592,7 @@ function HostsPane({
                           onClick={(event) => event.stopPropagation()}
                         />
                       ) : (
-                        <span className="min-w-0 flex-1 truncate text-xs font-semibold leading-none">
+                        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold leading-none">
                           {session.name || '终端'}
                         </span>
                       )}
@@ -527,32 +661,75 @@ function RunsPane({
   runs: AgentRun[]
   onOpenRunDetail?: (runId: string) => void
 }): React.ReactElement {
+  const activeCount = runs.filter((run) => isActiveRun(run.status)).length
+
   if (runs.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs font-semibold text-muted-foreground">
+      <div className="rounded-lg border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs font-semibold text-muted-foreground">
         暂无 Run。
       </div>
     )
   }
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
+      <div className="flex items-center justify-between px-0.5">
+        <span className="text-[11px] font-bold text-muted-foreground">最近 Run</span>
+        <Badge variant={activeCount > 0 ? 'warning' : 'neutral'}>{activeCount} 活跃</Badge>
+      </div>
       {runs.map((run) => (
         <button
           key={run.id}
           onClick={() => onOpenRunDetail?.(run.id)}
-          className="w-full rounded-2xl border border-black/[0.06] bg-white px-3 py-2.5 text-left transition hover:border-black/[0.08] hover:bg-black/[0.015]"
+          className="w-full rounded-lg border border-black/[0.06] bg-white/85 px-2.5 py-2 text-left transition hover:border-black/[0.08] hover:bg-black/[0.015]"
         >
-          <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-xs font-bold text-foreground">{run.goal}</span>
-            <Badge variant={statusTone(run.status)}>{runStatusLabel(run.status)}</Badge>
-          </div>
-          <div className="mt-1 truncate text-[11px] font-semibold text-muted-foreground">
-            {run.agentName} / {new Date(run.updatedAt).toLocaleTimeString('zh-CN')}
+          <div className="flex items-start gap-2">
+            <RunStatusGlyph status={run.status} />
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-xs font-bold text-foreground">
+                  {run.goal || run.agentName || 'Agent Run'}
+                </span>
+                <Badge variant={statusTone(run.status)}>{runStatusLabel(run.status)}</Badge>
+              </div>
+              <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-muted-foreground">
+                <span className="truncate">{run.agentName}</span>
+                <span className="shrink-0 text-muted-foreground/45">/</span>
+                <span className="shrink-0">{formatRelativeTime(run.updatedAt)}</span>
+              </div>
+            </div>
+            <ExternalLink size={11} className="mt-0.5 shrink-0 text-muted-foreground/70" />
           </div>
         </button>
       ))}
     </div>
+  )
+}
+
+function RunStatusGlyph({ status }: { status: AgentRun['status'] }): React.ReactElement {
+  const tone = statusTone(status)
+  const Icon =
+    tone === 'success'
+      ? CircleCheck
+      : tone === 'danger'
+        ? CircleAlert
+        : tone === 'warning'
+          ? Timer
+          : Activity
+
+  return (
+    <span
+      className={cn(
+        'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
+        tone === 'success' && 'bg-success-soft text-success',
+        tone === 'danger' && 'bg-danger-soft text-danger',
+        tone === 'warning' && 'bg-warning-soft text-warning',
+        tone === 'accent' && 'bg-accent-soft text-accent',
+        tone === 'neutral' && 'bg-black/[0.035] text-muted-foreground'
+      )}
+    >
+      <Icon size={12} />
+    </span>
   )
 }
 
@@ -582,15 +759,15 @@ function MemoryPane({
 
   if (memories.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs font-semibold text-muted-foreground">
+      <div className="rounded-lg border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs font-semibold text-muted-foreground">
         暂无可见记忆。
       </div>
     )
   }
 
   return (
-    <div className="space-y-3">
-      <div className="light-control flex items-center gap-1 rounded-xl p-1">
+    <div className="space-y-2">
+      <div className="light-control flex items-center gap-1 rounded-lg p-1">
         {[
           { value: 'all' as const, label: '全部' },
           { value: 'global' as const, label: '全局' },
@@ -601,7 +778,7 @@ function MemoryPane({
             key={item.value}
             onClick={() => setScopeFilter(item.value)}
             className={cn(
-              'h-7 flex-1 rounded-md text-xs font-bold transition-colors',
+              'h-6 flex-1 rounded-md text-[11px] font-bold transition-colors',
               scopeFilter === item.value
                 ? 'bg-white text-foreground shadow-none'
                 : 'text-muted-foreground hover:bg-white hover:text-foreground'
@@ -613,7 +790,7 @@ function MemoryPane({
       </div>
 
       {visibleMemories.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs font-semibold text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs font-semibold text-muted-foreground">
           当前范围暂无记忆。
         </div>
       ) : (
@@ -624,10 +801,10 @@ function MemoryPane({
             <article
               key={memory.id}
               className={cn(
-                'rounded-lg border px-3 py-3 transition-colors',
+                'rounded-lg border px-2.5 py-2.5 transition-colors',
                 memory.disabled
                   ? 'border-black/[0.05] bg-black/[0.02] opacity-65'
-                  : 'border-black/[0.06] bg-white'
+                  : 'border-black/[0.06] bg-white/85'
               )}
             >
               <div className="flex items-start justify-between gap-2">
@@ -645,17 +822,17 @@ function MemoryPane({
                 <textarea
                   value={draft}
                   onChange={(event) => onDraft(memory.id, event.target.value)}
-                  className="mt-3 min-h-32 w-full resize-y rounded-xl border border-black/[0.08] bg-black/[0.015] px-3 py-2 text-sm leading-6 text-foreground outline-none focus:border-black/[0.14]"
+                  className="mt-2 min-h-24 w-full resize-y rounded-lg border border-black/[0.08] bg-black/[0.015] px-2.5 py-2 text-sm leading-6 text-foreground outline-none focus:border-black/[0.14]"
                 />
               ) : (
-                <p className="mt-3 whitespace-pre-wrap break-words text-[13px] leading-6 text-foreground">
+                <p className="mt-2 whitespace-pre-wrap break-words text-[12px] leading-5 text-foreground">
                   {memory.content}
                 </p>
               )}
 
-              <div className="mt-3 flex items-center justify-between gap-2 border-t border-black/[0.06] pt-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-                  <span>重要性 {memory.importance}</span>
+              <div className="mt-2 flex items-center justify-between gap-2 border-t border-black/[0.06] pt-2">
+                <div className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground">
+                  <span>重要 {memory.importance}</span>
                   <IconButton
                     aria-label="降低重要性"
                     className="h-6 w-6"
@@ -680,7 +857,7 @@ function MemoryPane({
                   {editing ? (
                     <IconButton
                       aria-label="保存记忆"
-                      className="h-7 w-7 text-success"
+                      className="h-6 w-6 text-success"
                       onClick={() => {
                         void onUpdate(memory, { content: draft })
                         setEditingId(null)
@@ -691,7 +868,7 @@ function MemoryPane({
                   ) : (
                     <IconButton
                       aria-label="编辑记忆"
-                      className="h-7 w-7"
+                      className="h-6 w-6"
                       onClick={() => setEditingId(memory.id)}
                     >
                       <Edit3 size={12} />
@@ -700,14 +877,14 @@ function MemoryPane({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 text-xs"
+                    className="h-6 px-2 text-[11px]"
                     onClick={() => void onUpdate(memory, { disabled: !memory.disabled })}
                   >
                     {memory.disabled ? '启用' : '禁用'}
                   </Button>
                   <ConfirmActionButton
                     aria-label="删除记忆"
-                    className="blue-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-danger no-drag hover:bg-white/60"
+                    className="blue-ring inline-flex h-6 w-6 items-center justify-center rounded-md text-danger no-drag hover:bg-white/60"
                     confirmClassName="hover:bg-danger-strong"
                     confirmingTitle="删除记忆"
                     onConfirm={() => void onDelete(memory)}
@@ -739,11 +916,13 @@ function TunnelsPane({
   const firstTunnelHost = tunnelHosts[0]
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {onOpenPortForward && (
-        <div className="rounded-lg border border-black/[0.06] bg-white p-2">
+        <div className="rounded-lg border border-black/[0.06] bg-white/85 p-2">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-[11px] font-bold text-muted-foreground">新建转发</span>
+            <span className="text-[11px] font-bold text-muted-foreground">
+              可转发主机 {tunnelHosts.length}
+            </span>
             {firstTunnelHost && (
               <IconButton
                 aria-label="新建端口转发"
@@ -759,14 +938,14 @@ function TunnelsPane({
               添加远程主机后即可创建 tunnel。
             </p>
           ) : (
-            <div className="grid grid-cols-1 gap-1.5">
+            <div className="grid grid-cols-1 gap-1">
               {tunnelHosts.map((host) => (
                 <Button
                   key={host.id}
                   onClick={() => onOpenPortForward(host)}
                   variant="subtle"
                   size="sm"
-                  className="justify-start border-black/[0.06] bg-white"
+                  className="h-7 justify-start border-black/[0.06] bg-white text-[11px]"
                 >
                   <Plus size={12} />
                   {host.alias}
@@ -799,12 +978,17 @@ function TunnelsPane({
             return (
               <div
                 key={tunnel.id}
-                className="rounded-2xl border border-black/[0.06] bg-white px-3 py-2.5"
+                className="rounded-lg border border-black/[0.06] bg-white/85 px-2.5 py-2"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-xs font-bold text-foreground">
-                    {host?.alias || tunnel.hostId}
-                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-bold text-foreground">
+                      localhost:{tunnel.localPort}
+                    </div>
+                    <div className="mt-0.5 truncate text-[10px] font-semibold text-muted-foreground">
+                      {host?.alias || tunnel.hostId}
+                    </div>
+                  </div>
                   <IconButton
                     aria-label="打开 localhost 地址"
                     className="h-6 w-6"
@@ -814,7 +998,7 @@ function TunnelsPane({
                   </IconButton>
                 </div>
                 <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-                  localhost:{tunnel.localPort} {'->'} {tunnel.remoteHost}:{tunnel.remotePort}
+                  {'->'} {tunnel.remoteHost}:{tunnel.remotePort}
                 </div>
               </div>
             )
