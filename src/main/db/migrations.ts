@@ -283,12 +283,6 @@ const migrations: Migration[] = [
     }
   },
   {
-    id: '017_model_settings_exa_api_key',
-    run: (db) => {
-      addColumnIfMissing(db, 'model_settings', 'exaApiKey', "TEXT DEFAULT ''")
-    }
-  },
-  {
     id: '018_permission_mode',
     run: (db) => {
       addColumnIfMissing(db, 'permissions', 'permissionMode', "TEXT DEFAULT 'default'")

@@ -5,7 +5,6 @@ vi.mock('electron', () => ({
 }))
 
 const mocks = vi.hoisted(() => ({
-  getModelSettings: vi.fn(() => ({ exaApiKey: '' })),
   getPermissions: vi.fn(() => ({
     permissionMode: 'default',
     updatedAt: 1
@@ -13,9 +12,6 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../db', () => ({
-  modelSettingsDB: {
-    getSettings: mocks.getModelSettings
-  },
   permissionDB: {
     getPermissions: mocks.getPermissions
   }
@@ -51,7 +47,6 @@ function makeCtx(): Tool.Context {
 describe('websearch tool', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
-    mocks.getModelSettings.mockReturnValue({ exaApiKey: '' })
     mocks.getPermissions.mockReturnValue({
       permissionMode: 'default',
       updatedAt: 1
@@ -135,11 +130,14 @@ describe('websearch tool', () => {
     expect(result.output).not.toContain('正当时')
   })
 
-  it('uses default Exa parameters and asks permission for the query', async () => {
+  it('uses DuckDuckGo search without API credentials and asks permission for the query', async () => {
     const fetchMock = vi.fn(async () => {
       return new Response(
-        'data: {"result":{"content":[{"type":"text","text":"default result"}]},"jsonrpc":"2.0","id":1}\n',
-        { status: 200, headers: { 'content-type': 'text/event-stream' } }
+        [
+          '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Frelease">OpenTerm Release</a>',
+          '<a class="result__snippet" href="#">Latest release details.</a>'
+        ].join('\n'),
+        { status: 200, headers: { 'content-type': 'text/html' } }
       )
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -167,49 +165,29 @@ describe('websearch tool', () => {
     })
     expect(result.output).toContain('Search reference time:')
     expect(result.output).toContain('Treat this as authoritative')
-    expect(result.output).toContain('default result')
+    expect(result.output).toContain('Provider: DuckDuckGo HTML Search')
+    expect(result.output).toContain('OpenTerm Release')
+    expect(result.output).toContain('https://example.com/release')
     expect(result.metadata).toMatchObject({
-      provider: 'exa',
+      provider: 'duckduckgo',
       query: 'latest openterm release',
       effectiveQuery: expect.stringContaining('Current date context:'),
+      searchQuery: 'latest openterm release',
       searchDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       searchTimeZone: expect.any(String),
       staleCurrentNewsResults: false,
       numResults: 8
     })
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    const body = JSON.parse(String(init.body))
-    expect(body).toMatchObject({
-      params: {
-        name: 'web_search_exa',
-        arguments: {
-          numResults: 8
-        }
-      }
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://html.duckduckgo.com/html/?q=latest+openterm+release')
+    expect(init.method).toBe('GET')
+    expect(init.headers).toMatchObject({
+      Accept: 'text/html,application/xhtml+xml',
+      'User-Agent': 'OpenTerm/1.0 websearch'
     })
-    expect(body.params.arguments.query).toContain('latest openterm release')
-    expect(body.params.arguments.query).toContain('Current date context:')
-    expect(body.params.arguments.query).toContain('Interpret relative words')
   })
 
-  it('uses a configured Exa API key for hosted MCP requests', async () => {
-    mocks.getModelSettings.mockReturnValue({ exaApiKey: 'configured-key' })
-    const fetchMock = vi.fn(async () => {
-      return new Response(
-        'data: {"result":{"content":[{"type":"text","text":"keyed result"}]},"jsonrpc":"2.0","id":1}\n',
-        { status: 200, headers: { 'content-type': 'text/event-stream' } }
-      )
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    const tool = await websearchTool.init()
-    await tool.execute({ query: 'anything' } as Parameters<typeof tool.execute>[0], makeCtx())
-
-    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe('https://mcp.exa.ai/mcp?exaApiKey=configured-key')
-  })
-
-  it('returns a readable error when the hosted MCP request fails', async () => {
+  it('returns a readable error when web search fails', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('bad gateway', { status: 502 }))
@@ -225,24 +203,21 @@ describe('websearch tool', () => {
     expect(result.metadata?.error).toBe(true)
   })
 
-  it('falls back to DuckDuckGo search when Exa is rate limited', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          '{"jsonrpc":"2.0","error":{"code":-32000,"message":"You have hit Exa rate limit"},"id":null}',
-          { status: 429 }
-        )
+  it('anchors current-news DuckDuckGo queries to the current date', async () => {
+    const today = new Date()
+    const yyyy = today.getFullYear()
+    const mm = String(today.getMonth() + 1).padStart(2, '0')
+    const dd = String(today.getDate()).padStart(2, '0')
+    const todayIso = `${yyyy}-${mm}-${dd}`
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        [
+          '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Ftoday">Today News</a>',
+          `<a class="result__snippet" href="#">Published ${todayIso} and updated today.</a>`
+        ].join('\n'),
+        { status: 200 }
       )
-      .mockResolvedValueOnce(
-        new Response(
-          [
-            '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Ftoday">Today News</a>',
-            '<a class="result__snippet" href="#">Published 2026-05-06 and updated today.</a>'
-          ].join('\n'),
-          { status: 200 }
-        )
-      )
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     const tool = await websearchTool.init()
@@ -251,38 +226,16 @@ describe('websearch tool', () => {
       makeCtx()
     )
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(result.output).toContain('Falling back to DuckDuckGo HTML Search')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(result.output).toContain('Today News')
     expect(result.output).toContain('https://example.com/today')
     expect(result.metadata).toMatchObject({
       provider: 'duckduckgo',
-      fallbackFrom: 'exa',
-      fallbackReason: 'rate_limit'
+      searchQuery: expect.stringMatching(/^today news \d{4}-\d{2}-\d{2} \d{4}年\d+月\d+日$/)
     })
-  })
-
-  it('returns a clean rate-limit message for anonymous Exa MCP 429 responses', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response(
-            '{"jsonrpc":"2.0","error":{"code":-32000,"message":"You have hit Exa rate limit"},"id":null}',
-            { status: 429 }
-          )
-      )
+    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(decodeURIComponent(url)).toMatch(
+      /^https:\/\/html\.duckduckgo\.com\/html\/\?q=today\+news\+\d{4}-\d{2}-\d{2}\+\d{4}年\d+月\d+日$/
     )
-
-    const tool = await websearchTool.init()
-    const result = await tool.execute(
-      { query: 'today news' } as Parameters<typeof tool.execute>[0],
-      makeCtx()
-    )
-
-    expect(result.output).toContain('Exa hosted MCP rate limit reached (HTTP 429).')
-    expect(result.output).toContain('Settings -> General -> Web Search')
-    expect(result.output).not.toContain('jsonrpc')
-    expect(result.metadata).toMatchObject({ error: true, errorCode: 'rate_limit' })
   })
 })

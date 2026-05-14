@@ -246,7 +246,6 @@ export interface ModelSettingsRow {
   apiKey: string
   baseURL: string
   model: string
-  exaApiKey?: string | null
   terminalCompletionMode?: string | null
   updatedAt: number
 }

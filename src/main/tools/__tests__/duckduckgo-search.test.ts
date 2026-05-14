@@ -19,7 +19,7 @@ describe('duckduckgo-search fallback', () => {
     ])
   })
 
-  it('fetches and formats fallback search results', async () => {
+  it('fetches and formats search results', async () => {
     const fetchMock = vi.fn(async () => new Response(html, { status: 200 }))
 
     const output = await callDuckDuckGoSearch(
@@ -27,7 +27,7 @@ describe('duckduckgo-search fallback', () => {
       { fetchImpl: fetchMock as unknown as typeof fetch, timeoutMs: 1000 }
     )
 
-    expect(output).toContain('Fallback provider: DuckDuckGo HTML Search')
+    expect(output).toContain('Provider: DuckDuckGo HTML Search')
     expect(output).toContain('Example & News')
     expect(output).toContain('https://example.com/news?a=1&b=2')
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]

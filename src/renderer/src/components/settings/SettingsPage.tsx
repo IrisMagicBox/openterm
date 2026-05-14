@@ -3,11 +3,6 @@ import {
   Brain,
   Bot,
   ChevronLeft,
-  Eye,
-  EyeOff,
-  Key,
-  Save,
-  Search,
   Server,
   Shield,
   Check
@@ -27,7 +22,7 @@ import {
   DEFAULT_TERMINAL_COMPLETION_MODE,
   normalizeTerminalCompletionMode
 } from '../../lib/terminal-command-assist'
-import { Badge, Button, FormField, IconButton, Input, PageHeader, Surface } from '../ui'
+import { Badge, IconButton, PageHeader, Surface } from '../ui'
 import { cn } from '../../lib/utils'
 
 interface SettingsPageProps {
@@ -90,12 +85,8 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
   )
   const [terminalCompletionMode, setTerminalCompletionMode] =
     useState<TerminalCompletionBackendMode>(DEFAULT_TERMINAL_COMPLETION_MODE)
-  const [exaApiKey, setExaApiKey] = useState('')
-  const [savedExaApiKey, setSavedExaApiKey] = useState('')
-  const [showExaApiKey, setShowExaApiKey] = useState(false)
   const [completionSettingsLoading, setCompletionSettingsLoading] = useState(true)
   const [completionSettingsSaving, setCompletionSettingsSaving] = useState(false)
-  const [webSearchSettingsSaving, setWebSearchSettingsSaving] = useState(false)
 
   const {
     providers,
@@ -123,15 +114,11 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
           setTerminalCompletionMode(
             normalizeTerminalCompletionMode(settings.terminalCompletionMode)
           )
-          setExaApiKey(settings.exaApiKey || '')
-          setSavedExaApiKey(settings.exaApiKey || '')
         }
       })
       .catch(() => {
         if (!cancelled) {
           setTerminalCompletionMode(DEFAULT_TERMINAL_COMPLETION_MODE)
-          setExaApiKey('')
-          setSavedExaApiKey('')
         }
       })
       .finally(() => {
@@ -146,21 +133,6 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
   const handleResetProvider = async (id: string): Promise<void> => {
     if (isSystemProviderId(id)) {
       await resetSystemProvider(id)
-    }
-  }
-
-  const handleExaApiKeySave = async (): Promise<void> => {
-    if (exaApiKey === savedExaApiKey || webSearchSettingsSaving) return
-
-    const previousKey = savedExaApiKey
-    setSavedExaApiKey(exaApiKey)
-    setWebSearchSettingsSaving(true)
-    try {
-      await window.api.saveModelSettings({ exaApiKey })
-    } catch {
-      setSavedExaApiKey(previousKey)
-    } finally {
-      setWebSearchSettingsSaving(false)
     }
   }
 
@@ -352,68 +324,6 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
                       )
                     })}
                   </div>
-                </Surface>
-
-                <Surface padding="sm" className="rounded-md px-3 py-2.5">
-                  <div className="mb-2.5 flex items-start gap-2">
-                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
-                      <Search size={14} />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="text-[13px] font-bold text-foreground">网页搜索</h3>
-                      <p className="mt-0.5 text-xs leading-4 text-muted-foreground">
-                        匿名 Exa hosted MCP 可直接使用；配置 Exa API Key 后可避免免费额度限流。
-                      </p>
-                    </div>
-                  </div>
-
-                  <FormField
-                    className="[&>div:first-child]:text-xs"
-                    label={
-                      <span className="flex items-center gap-2">
-                        <Key size={13} />
-                        Exa API Key
-                      </span>
-                    }
-                    hint="留空时使用匿名 hosted MCP；也可通过 EXA_API_KEY 环境变量配置。"
-                  >
-                    <div className="flex gap-2">
-                      <div className="relative min-w-0 flex-1">
-                        <Input
-                          type={showExaApiKey ? 'text' : 'password'}
-                          value={exaApiKey}
-                          onChange={(event) => setExaApiKey(event.target.value)}
-                          placeholder="可选，输入 Exa API Key"
-                          className="h-7 pr-9 text-xs"
-                          disabled={completionSettingsLoading}
-                        />
-                        <IconButton
-                          aria-label={showExaApiKey ? '隐藏 Exa API Key' : '显示 Exa API Key'}
-                          type="button"
-                          onClick={() => setShowExaApiKey(!showExaApiKey)}
-                          className="absolute right-1 top-1/2 -translate-y-1/2"
-                        >
-                          {showExaApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </IconButton>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={exaApiKey !== savedExaApiKey ? 'primary' : 'subtle'}
-                        disabled={
-                          completionSettingsLoading ||
-                          webSearchSettingsSaving ||
-                          exaApiKey === savedExaApiKey
-                        }
-                        onClick={() => {
-                          void handleExaApiKeySave()
-                        }}
-                      >
-                        <Save size={13} />
-                        {webSearchSettingsSaving ? '保存中' : '保存'}
-                      </Button>
-                    </div>
-                  </FormField>
                 </Surface>
 
                 <div className="space-y-2.5">

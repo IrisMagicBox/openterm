@@ -88,7 +88,7 @@ function formatDuckDuckGoResults(results: DuckDuckGoResult[]): string | undefine
   if (results.length === 0) return undefined
 
   return [
-    'Fallback provider: DuckDuckGo HTML Search',
+    'Provider: DuckDuckGo HTML Search',
     '',
     ...results.map((result, index) =>
       [
@@ -131,19 +131,19 @@ export async function callDuckDuckGoSearch(
       method: 'GET',
       headers: {
         Accept: 'text/html,application/xhtml+xml',
-        'User-Agent': 'OpenTerm/1.0 websearch fallback'
+        'User-Agent': 'OpenTerm/1.0 websearch'
       },
       signal: controller.signal
     })
 
     if (!response.ok) {
-      throw new Error(`DuckDuckGo fallback failed with HTTP ${response.status}`)
+      throw new Error(`DuckDuckGo search failed with HTTP ${response.status}`)
     }
 
     return formatDuckDuckGoResults(parseDuckDuckGoHtml(await response.text(), args.numResults))
   } catch (error) {
-    if (timedOut) throw new Error(`DuckDuckGo fallback timed out after ${timeoutMs}ms`)
-    if (options.signal?.aborted) throw new Error('DuckDuckGo fallback aborted')
+    if (timedOut) throw new Error(`DuckDuckGo search timed out after ${timeoutMs}ms`)
+    if (options.signal?.aborted) throw new Error('DuckDuckGo search aborted')
     throw error
   } finally {
     clearTimeout(timeout)

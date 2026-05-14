@@ -324,7 +324,6 @@ export interface ModelSettings {
   apiKey: string
   baseURL: string
   model: string
-  exaApiKey: string
   terminalCompletionMode: TerminalCompletionBackendMode
   updatedAt: number
 }

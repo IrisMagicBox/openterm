@@ -268,7 +268,7 @@ export const CLI_TOOL_MANIFEST: CliToolManifestItem[] = [
     category: 'web',
     mode: 'read',
     requiresAppRuntime: false,
-    summary: 'Search the web through Exa hosted MCP without requiring an API key.'
+    summary: 'Search the web without requiring an API key.'
   },
   {
     id: 'read_notes',

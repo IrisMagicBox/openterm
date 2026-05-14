@@ -1968,7 +1968,7 @@ Live app control:
   files sftp|transfer         Manage live SFTP sessions and host-to-host transfers.
   pf list|create|close        Inspect and manage live SSH port forwards.
   settings providers|models|permissions|model-settings
-                               Mutate providers, models, permissions, and legacy web search keys.
+                               Mutate providers, models, and permission settings.
   memory create|update|delete|global import|clear|fact
                                Mutate scoped and global memory.
   debug logs --follow         Stream live debug logs as NDJSON.

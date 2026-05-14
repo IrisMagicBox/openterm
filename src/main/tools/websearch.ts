@@ -1,8 +1,7 @@
 import { z } from 'zod'
 import { define, Tool } from './tool-factory'
-import { modelSettingsDB, permissionDB } from '../db'
+import { permissionDB } from '../db'
 import { callDuckDuckGoSearch } from './duckduckgo-search'
-import { callMcpExaSearch, McpExaError } from './mcp-exa'
 import { getErrorMessage } from '../../shared/errors'
 import { shouldAskToolPermission } from '../permissions'
 
@@ -51,30 +50,8 @@ const EXPLICIT_DATE_PATTERNS = [
   /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2},?\s+20\d{2}\b/gi
 ]
 
-function getConfiguredExaApiKey(): string | undefined {
-  const settingsKey = modelSettingsDB.getSettings().exaApiKey.trim()
-  if (settingsKey) return settingsKey
-  const envKey = process.env.EXA_API_KEY?.trim()
-  return envKey || undefined
-}
-
 function formatWebSearchError(error: unknown): string {
-  if (error instanceof McpExaError) {
-    if (error.code === 'rate_limit') {
-      return [
-        'Exa hosted MCP rate limit reached (HTTP 429).',
-        'Configure an Exa API key in Settings -> General -> Web Search, or set EXA_API_KEY in the OpenTerm environment, then retry.'
-      ].join(' ')
-    }
-    if (error.code === 'auth') {
-      return 'Exa hosted MCP rejected the configured API key. Check the Exa API key in Settings -> General -> Web Search, then retry.'
-    }
-  }
   return getErrorMessage(error)
-}
-
-function shouldTryFallbackSearch(error: unknown): error is McpExaError {
-  return error instanceof McpExaError && (error.code === 'rate_limit' || error.code === 'auth')
 }
 
 function buildFallbackSearchQuery(query: string, context: SearchTimeContext): string {
@@ -244,12 +221,13 @@ export function buildSearchOutput(
 
 export default define('websearch', {
   description:
-    'Search the web using Exa AI hosted MCP. Use this for current information, third-party docs, release notes, recent events, or facts beyond the model cutoff. Relative-date searches are anchored to the current local date. Anonymous search works by default; a configured Exa API key is used when available to avoid hosted MCP rate limits.',
+    'Search the web without requiring an API key. Use this for current information, third-party docs, release notes, recent events, or facts beyond the model cutoff. Relative-date searches are anchored to the current local date.',
   parameters,
   async execute(args: z.infer<typeof parameters>, ctx: Tool.Context): Promise<Tool.ExecuteResult> {
     const timeContext = getSearchTimeContext()
     const normalizedQuery = normalizeCurrentNewsQuery(args.query, timeContext)
     const effectiveQuery = buildFreshnessSearchQuery(args.query, timeContext)
+    const searchQuery = buildFallbackSearchQuery(args.query, timeContext)
 
     const permissionMetadata = {
       query: normalizedQuery.displayQuery,
@@ -277,12 +255,12 @@ export default define('websearch', {
     }
 
     try {
-      const output = await callMcpExaSearch(
+      const output = await callDuckDuckGoSearch(
         {
-          query: effectiveQuery,
+          query: searchQuery,
           numResults: args.numResults
         },
-        { apiKey: getConfiguredExaApiKey(), signal: ctx.abort }
+        { signal: ctx.abort }
       )
       const searchOutput = buildSearchOutput(normalizedQuery.query, output, timeContext)
 
@@ -290,13 +268,14 @@ export default define('websearch', {
         title: `Web search: ${normalizedQuery.displayQuery}`,
         output: searchOutput.output,
         metadata: {
-          provider: 'exa',
+          provider: 'duckduckgo',
           query: normalizedQuery.displayQuery,
           originalQuery: args.query,
           normalizedQuery: normalizedQuery.query,
           displayQuery: normalizedQuery.displayQuery,
           removedDates: normalizedQuery.removedDates,
           effectiveQuery,
+          searchQuery,
           searchDate: timeContext.isoDate,
           searchTimeZone: timeContext.timeZone,
           latestResultDate: searchOutput.latestResultDate,
@@ -305,84 +284,20 @@ export default define('websearch', {
         }
       }
     } catch (error) {
-      if (shouldTryFallbackSearch(error)) {
-        const fallbackQuery = buildFallbackSearchQuery(args.query, timeContext)
-        try {
-          const fallbackOutput = await callDuckDuckGoSearch(
-            {
-              query: fallbackQuery,
-              numResults: args.numResults
-            },
-            { signal: ctx.abort }
-          )
-          const fallbackNotice = `Notice: Exa hosted MCP could not complete this search (${error.code}). Falling back to DuckDuckGo HTML Search.`
-          const searchOutput = buildSearchOutput(
-            normalizedQuery.query,
-            fallbackOutput
-              ? [fallbackNotice, fallbackOutput].join('\n\n')
-              : `${fallbackNotice}\n\nNo search results found. Please try a different query.`,
-            timeContext
-          )
-
-          return {
-            title: `Web search: ${normalizedQuery.displayQuery}`,
-            output: searchOutput.output,
-            metadata: {
-              provider: 'duckduckgo',
-              fallbackFrom: 'exa',
-              fallbackReason: error.code,
-              query: normalizedQuery.displayQuery,
-              originalQuery: args.query,
-              normalizedQuery: normalizedQuery.query,
-              displayQuery: normalizedQuery.displayQuery,
-              removedDates: normalizedQuery.removedDates,
-              effectiveQuery,
-              fallbackQuery,
-              searchDate: timeContext.isoDate,
-              searchTimeZone: timeContext.timeZone,
-              latestResultDate: searchOutput.latestResultDate,
-              staleCurrentNewsResults: searchOutput.stale,
-              numResults: args.numResults
-            }
-          }
-        } catch (fallbackError) {
-          return {
-            title: `Web search: ${normalizedQuery.displayQuery}`,
-            output: `Error: Web search failed: ${formatWebSearchError(error)} Fallback search also failed: ${getErrorMessage(fallbackError)}`,
-            metadata: {
-              provider: 'exa',
-              fallbackProvider: 'duckduckgo',
-              query: normalizedQuery.displayQuery,
-              originalQuery: args.query,
-              normalizedQuery: normalizedQuery.query,
-              displayQuery: normalizedQuery.displayQuery,
-              removedDates: normalizedQuery.removedDates,
-              effectiveQuery,
-              fallbackQuery,
-              searchDate: timeContext.isoDate,
-              searchTimeZone: timeContext.timeZone,
-              errorCode: error.code,
-              fallbackError: getErrorMessage(fallbackError),
-              error: true
-            }
-          }
-        }
-      }
-
       return {
         title: `Web search: ${normalizedQuery.displayQuery}`,
         output: `Error: Web search failed: ${formatWebSearchError(error)}`,
         metadata: {
-          provider: 'exa',
+          provider: 'duckduckgo',
           query: normalizedQuery.displayQuery,
           originalQuery: args.query,
           normalizedQuery: normalizedQuery.query,
           displayQuery: normalizedQuery.displayQuery,
           removedDates: normalizedQuery.removedDates,
           effectiveQuery,
+          searchQuery,
           searchDate: timeContext.isoDate,
           searchTimeZone: timeContext.timeZone,
-          errorCode: error instanceof McpExaError ? error.code : undefined,
           error: true
         }
       }

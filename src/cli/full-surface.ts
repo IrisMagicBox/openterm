@@ -803,15 +803,17 @@ function normalizeCliPermissionMode(value: string): PermissionMode {
 function parseLegacyModelSettings(action: string, rest: string[]): FullCliCommand {
   if (action === 'get') return { name: 'settings-model-settings-get', ...parseCommon(rest) }
   if (action === 'save') {
-    const parsed = parseFlags(rest, { optional: ['api-key', 'base-url', 'model', 'exa-api-key'] })
+    const parsed = parseFlags(rest, { optional: ['api-key', 'base-url', 'model'] })
+    if (parsed.booleans.has('exa-api-key')) {
+      throw usage('settings model-settings save no longer supports --exa-api-key')
+    }
     return {
       name: 'settings-model-settings-save',
       ...parsed.common,
       settings: {
         apiKey: parsed.flags['api-key'],
         baseURL: parsed.flags['base-url'],
-        model: parsed.flags.model,
-        exaApiKey: parsed.flags['exa-api-key']
+        model: parsed.flags.model
       }
     }
   }
@@ -1996,8 +1998,9 @@ function redactSecrets(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return value
   const output: Record<string, unknown> = {}
   for (const [key, child] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase()
     output[key] =
-      key === 'password' || key === 'apiKey' || key === 'exaApiKey'
+      normalizedKey === 'password' || normalizedKey.endsWith('apikey')
         ? child
           ? '[redacted]'
           : child
