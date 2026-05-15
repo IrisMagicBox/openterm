@@ -16,7 +16,7 @@ describe('agent-config', () => {
       expect(config.name).toBe('build')
       expect(config.mode).toBe('primary')
       expect(config.allowedTools).toEqual([])
-      expect(config.maxSteps).toBe(10)
+      expect(config.maxSteps).toBe(100)
       expect(config.temperature).toBe(0.1)
     })
 

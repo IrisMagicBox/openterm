@@ -111,7 +111,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       { tool: 'websearch', action: 'ask' },
       { tool: '*', allowed: true }
     ],
-    maxSteps: 10,
+    maxSteps: 100,
     temperature: 0.1
   },
   explore: {

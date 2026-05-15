@@ -21,7 +21,16 @@ export interface AgentActivityLine {
   label: string
   detail: string
   fullDetail: string
+  sections: AgentActivityDetailSection[]
   status: AgentPart['status']
+}
+
+export interface AgentActivityDetailSection {
+  id: string
+  label: string
+  content: string
+  tone: 'observation' | 'call' | 'result' | 'error'
+  defaultOpen?: boolean
 }
 
 const INLINE_DETAIL_EXPAND_THRESHOLD = 80
@@ -42,6 +51,15 @@ function parsePartInput(part: AgentPart): Record<string, unknown> {
     return JSON.parse(part.input || '{}') as Record<string, unknown>
   } catch {
     return {}
+  }
+}
+
+function parseJsonValue(value: string | undefined): unknown {
+  if (!value) return undefined
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    return undefined
   }
 }
 
@@ -66,6 +84,89 @@ function fullPartDetail(part: AgentPart): string {
   const input = sanitizeAgentText(part.input || '')
   if (part.type === 'text' || part.type === 'reasoning') return output || input
   return output || liveOutputPreview || command || input
+}
+
+function prettyInput(part: AgentPart): string {
+  const raw = sanitizeAgentText(part.input || '')
+  const parsed = parseJsonValue(part.input)
+  if (parsed && typeof parsed === 'object') {
+    try {
+      return JSON.stringify(parsed, null, 2)
+    } catch {
+      return raw
+    }
+  }
+  return raw
+}
+
+function detailSections(part: AgentPart): AgentActivityDetailSection[] {
+  const sections: AgentActivityDetailSection[] = []
+  const input = prettyInput(part)
+  const output = agentPartOutput(part)
+  const liveOutputPreview = sanitizeAgentText(textValue(part.metadata?.liveOutputPreview))
+  const error = sanitizeAgentText(part.error || '')
+
+  if (part.type === 'text' || part.type === 'reasoning') {
+    const observation = output || input
+    if (observation) {
+      sections.push({
+        id: `${part.id}:observation`,
+        label: '自我观察',
+        content: observation,
+        tone: 'observation',
+        defaultOpen: true
+      })
+    }
+    return sections
+  }
+
+  if (part.type === 'permission') {
+    if (part.status !== 'blocked' && part.status !== 'error') return sections
+
+    const reason = sanitizeAgentText(textValue(part.metadata?.reason) || input)
+    if (reason) {
+      sections.push({
+        id: `${part.id}:permission`,
+        label: '权限观察',
+        content: reason,
+        tone: 'error',
+        defaultOpen: true
+      })
+    }
+    return sections
+  }
+
+  if (input) {
+    sections.push({
+      id: `${part.id}:call`,
+      label: '工具调用',
+      content: input,
+      tone: 'call'
+    })
+  }
+
+  const result = output || liveOutputPreview
+  if (result) {
+    sections.push({
+      id: `${part.id}:result`,
+      label: '工具结果',
+      content: result,
+      tone: 'result',
+      defaultOpen: part.status === 'completed' || part.status === 'running'
+    })
+  }
+
+  if (error && error !== result) {
+    sections.push({
+      id: `${part.id}:error`,
+      label: '错误',
+      content: error,
+      tone: 'error',
+      defaultOpen: true
+    })
+  }
+
+  return sections
 }
 
 function toolLine(
@@ -196,7 +297,7 @@ export function agentActivityKind(part: AgentPart): AgentActivityKind {
 
 export function agentActivityVerb(part: AgentPart): string {
   const kind = agentActivityKind(part)
-  if (kind === 'think') return '思考'
+  if (kind === 'think') return '观察'
   if (kind === 'plan') return '规划'
   if (kind === 'command') return '运行'
   if (kind === 'edit') return '编辑'
@@ -228,7 +329,7 @@ export function agentActivitySummary(parts: AgentPart[]): string {
     >
   )
   const fragments: string[] = []
-  if (counts.think > 0) fragments.push(`思考 ${counts.think} 次`)
+  if (counts.think > 0) fragments.push(`观察 ${counts.think} 次`)
   if (counts.plan > 0) fragments.push(`规划 ${counts.plan} 次`)
   if (counts.explore > 0) fragments.push(`探索 ${counts.explore} 项`)
   if (counts.edit > 0) fragments.push(`编辑 ${counts.edit} 项`)
@@ -253,18 +354,20 @@ export function agentActivityLines(
       const fullDetail = fullPartDetail(part)
       const readable = toolLine(part)
       const detail = readable?.detail || command || preview
+      const sections = detailSections(part)
       return {
         id: part.id,
         kind,
         label:
           readable?.label ||
           (kind === 'think'
-            ? '思考'
+            ? '观察'
             : kind === 'plan'
               ? '更新规划'
               : `${agentActivityVerb(part)} ${toolDisplayName(part)}`),
         detail,
         fullDetail: readable?.fullDetail || fullDetail || detail,
+        sections,
         status: part.status
       }
     })
@@ -275,7 +378,9 @@ function comparableDetail(value: string): string {
 }
 
 export function shouldShowAgentActivityDetail(line: AgentActivityLine | undefined): boolean {
-  if (!line?.fullDetail) return false
+  if (!line) return false
+  if (line.sections.length > 0) return true
+  if (!line.fullDetail) return false
 
   const detail = comparableDetail(line.detail)
   const fullDetail = comparableDetail(line.fullDetail)

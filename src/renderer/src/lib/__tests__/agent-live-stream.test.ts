@@ -262,4 +262,47 @@ describe('agent live stream visibility', () => {
     expect(shouldShowAgentActivityDetail(commandLine)).toBe(true)
     expect(shouldShowAgentActivityDetail(longThinkingLine)).toBe(true)
   })
+
+  it('builds nested process detail sections for observations and tool results', () => {
+    const [observationLine, commandLine] = agentActivityLines([
+      part({
+        id: 'observation-1',
+        type: 'text',
+        role: 'assistant',
+        status: 'completed',
+        output: '我已经确认需要先查看系统版本。',
+        orderIndex: 1
+      }),
+      part({
+        id: 'cmd-1',
+        type: 'tool',
+        toolName: 'execute_command',
+        status: 'completed',
+        input: '{"command":"uname -s","hostId":"local"}',
+        output: '{"content":"Linux\\n","exitCode":0}',
+        orderIndex: 2
+      })
+    ])
+
+    expect(observationLine).toMatchObject({
+      label: '观察',
+      detail: '我已经确认需要先查看系统版本。'
+    })
+    expect(observationLine.sections).toEqual([
+      {
+        id: 'observation-1:observation',
+        label: '自我观察',
+        content: '我已经确认需要先查看系统版本。',
+        tone: 'observation',
+        defaultOpen: true
+      }
+    ])
+    expect(commandLine.sections.map((section) => [section.label, section.tone])).toEqual([
+      ['工具调用', 'call'],
+      ['工具结果', 'result']
+    ])
+    expect(commandLine.sections[0].content).toContain('"command": "uname -s"')
+    expect(commandLine.sections[1].content).toBe('Exit 0\nLinux')
+    expect(shouldShowAgentActivityDetail(commandLine)).toBe(true)
+  })
 })

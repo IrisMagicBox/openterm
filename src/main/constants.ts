@@ -32,7 +32,7 @@ export const DEFAULT_TERMINAL_COLS = 80
 export const DEFAULT_TERMINAL_ROWS = 24
 
 // Agent runner (from AgentRunner.ts)
-export const MAX_AGENT_TURNS = 10
+export const MAX_AGENT_TURNS = 100
 export const AGENT_TEMPERATURE = 0.1
 export const TASK_SUMMARY_MAX_LENGTH = 500
 

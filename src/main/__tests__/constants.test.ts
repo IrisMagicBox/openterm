@@ -84,7 +84,7 @@ describe('Main Constants - Local Terminal', () => {
 
 describe('Main Constants - Agent', () => {
   it('should have correct agent runner constants', () => {
-    expect(MAX_AGENT_TURNS).toBe(10)
+    expect(MAX_AGENT_TURNS).toBe(100)
     expect(AGENT_TEMPERATURE).toBe(0.1)
     expect(TASK_SUMMARY_MAX_LENGTH).toBe(500)
   })

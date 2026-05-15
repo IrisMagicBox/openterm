@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   CheckCircle2,
   ChevronDown,
@@ -6,13 +6,13 @@ import {
   Circle,
   Eye,
   Loader2,
-  TerminalSquare,
   XCircle
 } from 'lucide-react'
 import type { AgentPart } from '../../../shared/types'
 import { stripInternalToolCallMarkup } from '../../../shared/internal-tool-call-markup'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { AgentTaskList } from './AgentTaskList'
+import { AgentActivityDetail } from './AgentActivityDetail'
 import { agentPartSessionId } from '../lib/terminal-stage'
 import { cn } from '../lib/utils'
 import {
@@ -27,6 +27,7 @@ import {
   agentActivitySummary,
   shouldShowAgentActivityDetail
 } from '../lib/agent-activity-summary'
+import { AgentActivityIcon } from '../lib/agent-activity-icons'
 import { deriveAgentTasks } from '../lib/agent-task-list'
 import {
   agentProcessParts,
@@ -83,31 +84,6 @@ function metadataString(part: AgentPart, key: string): string | undefined {
 
 function toolOutput(part: AgentPart): string {
   return sanitizeAgentText(metadataString(part, 'liveOutputPreview') || agentPartOutput(part))
-}
-
-function LiveToolOutput({
-  output,
-  isLive
-}: {
-  output: string
-  isLive: boolean
-}): React.ReactElement {
-  const outputRef = useRef<HTMLPreElement>(null)
-
-  useEffect(() => {
-    const node = outputRef.current
-    if (node) node.scrollTop = node.scrollHeight
-  }, [output])
-
-  return (
-    <pre
-      ref={outputRef}
-      aria-live={isLive ? 'polite' : undefined}
-      className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap rounded-lg border border-workspace-border bg-workspace/85 px-3 py-2 font-mono text-xs leading-relaxed text-workspace-foreground"
-    >
-      {output}
-    </pre>
-  )
 }
 
 export function AgentLiveStream({
@@ -212,7 +188,11 @@ export function AgentLiveStream({
                             <span className="h-4 w-4 shrink-0" />
                           )}
                           {statusIcon(part)}
-                          <TerminalSquare size={13} className="shrink-0 text-muted-foreground" />
+                          <AgentActivityIcon
+                            kind={line?.kind || 'other'}
+                            toolName={part.toolName}
+                            className="shrink-0 text-muted-foreground"
+                          />
                           <span className="shrink-0 font-medium">{line?.label || '处理'}</span>
                           {(line?.detail || input) && (
                             <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
@@ -234,10 +214,14 @@ export function AgentLiveStream({
                         </div>
 
                         {canExpandPart && isPartExpanded && (
-                          <LiveToolOutput output={fullDetail} isLive={isLive} />
+                          <AgentActivityDetail
+                            line={line}
+                            fallback={fullDetail}
+                            isLive={isLive}
+                          />
                         )}
                         {output && isLive && !isPartExpanded && (
-                          <LiveToolOutput output={output} isLive={isLive} />
+                          <AgentActivityDetail fallback={output} isLive={isLive} />
                         )}
                       </div>
                     )
