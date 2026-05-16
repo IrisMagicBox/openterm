@@ -1,10 +1,19 @@
-import { Server, Trash2, Terminal as TerminalIcon, Folder, Zap, Globe } from 'lucide-react'
+import {
+  Server,
+  Trash2,
+  Terminal as TerminalIcon,
+  Folder,
+  Zap,
+  Globe,
+  Pencil
+} from 'lucide-react'
 import type { Host } from '../../../../shared/types'
 import { Badge, Button, ConfirmActionButton, IconButton, Surface } from '../ui'
 
 interface HostCardProps {
   host: Host
   onConnect: () => void
+  onEdit: () => void
   onDelete: () => void | Promise<void>
   onAgentClick: () => void
   onFileBrowser: () => void
@@ -14,6 +23,7 @@ interface HostCardProps {
 export function HostCard({
   host,
   onConnect,
+  onEdit,
   onDelete,
   onAgentClick,
   onFileBrowser,
@@ -36,15 +46,20 @@ export function HostCard({
             {host.username}@{host.ip}:{host.port || 22}
           </span>
         </div>
-        <ConfirmActionButton
-          aria-label={`删除主机 ${host.alias}`}
-          onConfirm={onDelete}
-          className="blue-ring inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground no-drag hover:border-white/70 hover:bg-white/60 hover:text-danger hover:shadow-sm"
-          confirmClassName="hover:bg-danger-strong"
-          confirmingTitle={`删除 ${host.alias}`}
-        >
-          <Trash2 size={14} />
-        </ConfirmActionButton>
+        <div className="flex shrink-0 items-center gap-1">
+          <IconButton aria-label={`编辑主机 ${host.alias}`} onClick={onEdit}>
+            <Pencil size={14} />
+          </IconButton>
+          <ConfirmActionButton
+            aria-label={`删除主机 ${host.alias}`}
+            onConfirm={onDelete}
+            className="blue-ring inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground no-drag hover:border-white/70 hover:bg-white/60 hover:text-danger hover:shadow-sm"
+            confirmClassName="hover:bg-danger-strong"
+            confirmingTitle={`删除 ${host.alias}`}
+          >
+            <Trash2 size={14} />
+          </ConfirmActionButton>
+        </div>
       </div>
 
       {host.tags && host.tags.length > 0 && (

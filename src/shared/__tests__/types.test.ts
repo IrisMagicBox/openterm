@@ -30,7 +30,7 @@ describe('Shared Types - Host', () => {
     expect(host.tags).toEqual(['prod'])
   })
 
-  it('should accept a Host with optional password and keyPath', () => {
+  it('should accept a Host with optional password and ssh key fields', () => {
     const host: Host = {
       id: '2',
       alias: 'key-host',
@@ -39,11 +39,15 @@ describe('Shared Types - Host', () => {
       username: 'admin',
       password: 'secret',
       keyPath: '/home/user/.ssh/id_rsa',
+      keyContent: 'ssh-private-key-placeholder',
+      keyPassphrase: 'key-secret',
       tags: [],
       createdAt: Date.now()
     }
     expect(host.password).toBe('secret')
     expect(host.keyPath).toBe('/home/user/.ssh/id_rsa')
+    expect(host.keyContent).toBe('ssh-private-key-placeholder')
+    expect(host.keyPassphrase).toBe('key-secret')
   })
 })
 

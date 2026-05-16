@@ -7,6 +7,8 @@ export const BASE_SCHEMA_SQL = `
     username TEXT NOT NULL,
     password TEXT,
     keyPath TEXT,
+    keyContent TEXT,
+    keyPassphrase TEXT,
     tags TEXT,
     createdAt INTEGER NOT NULL
   );

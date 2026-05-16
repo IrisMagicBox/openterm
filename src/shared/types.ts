@@ -6,6 +6,8 @@ export interface Host {
   username: string
   password?: string
   keyPath?: string
+  keyContent?: string
+  keyPassphrase?: string
   tags: string[]
   createdAt: number
   agentNotes?: string

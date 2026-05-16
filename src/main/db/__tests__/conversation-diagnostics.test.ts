@@ -301,6 +301,8 @@ function createDiagnosticTables(): DbTables {
         username: 'ubuntu',
         password: null,
         keyPath: null,
+        keyContent: null,
+        keyPassphrase: null,
         tags: '["prod"]',
         createdAt: now,
         agentNotes: 'primary'

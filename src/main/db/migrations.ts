@@ -54,6 +54,8 @@ const migrations: Migration[] = [
       addColumnIfMissing(db, 'terminal_io', 'deletedBy', 'TEXT')
 
       addColumnIfMissing(db, 'hosts', 'agentNotes', 'TEXT')
+      addColumnIfMissing(db, 'hosts', 'keyContent', 'TEXT')
+      addColumnIfMissing(db, 'hosts', 'keyPassphrase', 'TEXT')
       addColumnIfMissing(db, 'topics', 'selectedProviderId', 'TEXT')
       addColumnIfMissing(db, 'topics', 'selectedModelId', 'TEXT')
 
@@ -311,6 +313,18 @@ const migrations: Migration[] = [
         `
         ).run()
       }
+    }
+  },
+  {
+    id: '019_host_key_content',
+    run: (db) => {
+      addColumnIfMissing(db, 'hosts', 'keyContent', 'TEXT')
+    }
+  },
+  {
+    id: '020_host_key_passphrase',
+    run: (db) => {
+      addColumnIfMissing(db, 'hosts', 'keyPassphrase', 'TEXT')
     }
   }
 ]

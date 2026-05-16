@@ -17,6 +17,16 @@ export function useHosts() {
     setHosts((prev) => [newHost, ...prev])
   }, [])
 
+  const handleUpdateHost = useCallback(
+    async (id: string, updates: Partial<Omit<Host, 'id' | 'createdAt'>>) => {
+      const updatedHost = await window.api.updateHost(id, updates)
+      if (!updatedHost) return
+      setHosts((prev) => prev.map((host) => (host.id === id ? updatedHost : host)))
+      setSelectedHost((prev) => (prev?.id === id ? updatedHost : prev))
+    },
+    []
+  )
+
   const handleDeleteHost = useCallback(async (id: string) => {
     await window.api.deleteHost(id)
     setHosts((prev) => prev.filter((h) => h.id !== id))
@@ -44,6 +54,7 @@ export function useHosts() {
     setSearchQuery,
     loadHosts,
     handleCreateHost,
+    handleUpdateHost,
     handleDeleteHost,
     filteredHosts
   }

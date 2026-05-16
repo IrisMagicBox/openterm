@@ -43,6 +43,8 @@ import {
   type CliControlRequest,
   type CliControlResponse
 } from './cli-control-protocol'
+import { getUserDataPath } from './utils/app-paths'
+import { removeStoredSSHKey } from './utils/ssh-key-store'
 import type { PermissionMode, Topic } from '../shared/types'
 
 let server: net.Server | null = null
@@ -131,9 +133,12 @@ async function handleRequest(
       return hostDB.getHostById(readString(args, 'id'))
     case 'hosts.create':
       return hostDB.createHost(readObject(args, 'host') as Parameters<typeof hostDB.createHost>[0])
-    case 'hosts.delete':
-      hostDB.deleteHost(readString(args, 'id'))
+    case 'hosts.delete': {
+      const hostId = readString(args, 'id')
+      hostDB.deleteHost(hostId)
+      removeStoredSSHKey(getUserDataPath(), hostId)
       return { ok: true }
+    }
     case 'topics.create':
       return notifyTopicUpdated(
         agentService,

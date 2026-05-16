@@ -40,6 +40,10 @@ declare global {
       hosts: {
         list: () => Promise<Host[]>
         create: (host: Omit<Host, 'id' | 'createdAt'>) => Promise<Host>
+        update: (
+          id: string,
+          updates: Partial<Omit<Host, 'id' | 'createdAt'>>
+        ) => Promise<Host | undefined>
         delete: (id: string) => Promise<void>
         getTopicHosts: (topicId: string) => Promise<Host[]>
         addToTopic: (topicId: string, hostId: string) => Promise<boolean>
@@ -204,6 +208,10 @@ declare global {
       }
       getHosts: () => Promise<Host[]>
       createHost: (host: Omit<Host, 'id' | 'createdAt'>) => Promise<Host>
+      updateHost: (
+        id: string,
+        updates: Partial<Omit<Host, 'id' | 'createdAt'>>
+      ) => Promise<Host | undefined>
       deleteHost: (id: string) => Promise<void>
       getTopics: () => Promise<Topic[]>
       createTopic: (title: string, hostIds: string[]) => Promise<Topic>

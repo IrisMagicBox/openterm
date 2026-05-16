@@ -1,6 +1,6 @@
 import { getErrorMessage } from '../../../../shared/errors'
 import { useState } from 'react'
-import { Eye, EyeOff, Plus, Server } from 'lucide-react'
+import { Eye, EyeOff, Plus, Save, Server } from 'lucide-react'
 import { DEFAULT_SSH_PORT } from '../../../../shared/constants'
 import type { Host } from '../../../../shared/types'
 import {
@@ -13,35 +13,71 @@ import {
   DialogTitle,
   FormField,
   IconButton,
-  Input
+  Input,
+  Textarea
 } from '../ui'
 
 interface AddHostModalProps {
+  host?: Host
   onClose: () => void
   onSave: (host: Omit<Host, 'id' | 'createdAt'>) => void
+  onUpdate?: (id: string, updates: Partial<Omit<Host, 'id' | 'createdAt'>>) => void
 }
 
-export function AddHostModal({ onClose, onSave }: AddHostModalProps): React.ReactElement {
+export function AddHostModal({
+  host,
+  onClose,
+  onSave,
+  onUpdate
+}: AddHostModalProps): React.ReactElement {
+  const editing = Boolean(host)
   const [form, setForm] = useState({
-    alias: '',
-    ip: '',
-    port: String(DEFAULT_SSH_PORT),
-    username: 'root',
-    password: '',
-    keyPath: ''
+    alias: host?.alias ?? '',
+    ip: host?.ip ?? '',
+    port: String(host?.port || DEFAULT_SSH_PORT),
+    username: host?.username ?? 'root',
+    password: host?.password ?? '',
+    keyPath: host?.keyPath ?? '',
+    keyContent: host?.keyContent ?? '',
+    keyPassphrase: host?.keyPassphrase ?? ''
   })
-  const [showPass, setShowPass] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showKeyPassphrase, setShowKeyPassphrase] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const handleSave = async (): Promise<void> => {
-    if (!form.alias || !form.ip || !form.username) {
+    const alias = form.alias.trim()
+    const ip = form.ip.trim()
+    const username = form.username.trim()
+    if (!alias || !ip || !username) {
       setError('别名、IP 和用户名是必填项。')
+      return
+    }
+    const port = Number(form.port)
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      setError('端口必须是 1-65535 之间的整数。')
       return
     }
     setSaving(true)
     try {
-      await onSave({ ...form, port: parseInt(form.port) || DEFAULT_SSH_PORT, tags: [] })
+      const payload: Omit<Host, 'id' | 'createdAt'> = {
+        alias,
+        ip,
+        port,
+        username,
+        password: form.password || undefined,
+        keyPath: form.keyPath.trim() || undefined,
+        keyContent: form.keyContent.trim() || undefined,
+        keyPassphrase: form.keyPassphrase || undefined,
+        tags: host?.tags ?? [],
+        agentNotes: host?.agentNotes
+      }
+      if (host && onUpdate) {
+        await onUpdate(host.id, payload)
+      } else {
+        await onSave(payload)
+      }
       onClose()
     } catch (e: unknown) {
       setError(getErrorMessage(e) || '保存失败。')
@@ -57,8 +93,8 @@ export function AddHostModal({ onClose, onSave }: AddHostModalProps): React.Reac
           <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-xl border border-white/70 bg-white/60 text-accent shadow-sm backdrop-blur-xl">
             <Server size={18} />
           </div>
-          <DialogTitle>添加新主机</DialogTitle>
-          <DialogDescription>配置 SSH 终点</DialogDescription>
+          <DialogTitle>{editing ? '编辑主机' : '添加新主机'}</DialogTitle>
+          <DialogDescription>配置 SSH 终点和登录凭据</DialogDescription>
         </DialogHeader>
 
         {error && (
@@ -104,27 +140,59 @@ export function AddHostModal({ onClose, onSave }: AddHostModalProps): React.Reac
             </FormField>
           </div>
 
-          <FormField label="密码" hint="留空时使用 SSH key">
+          <FormField label="密码" hint="账号密码登录时使用；使用 SSH Key 时可以留空">
             <div className="relative">
               <Input
-                type={showPass ? 'text' : 'password'}
+                type={showPassword ? 'text' : 'password'}
                 value={form.password}
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
                 placeholder="可选"
                 className="pr-10"
               />
               <IconButton
-                aria-label={showPass ? '隐藏密码' : '显示密码'}
+                aria-label={showPassword ? '隐藏密码' : '显示密码'}
                 type="button"
-                onClick={() => setShowPass((v) => !v)}
+                onClick={() => setShowPassword((v) => !v)}
                 className="absolute right-1 top-1/2 -translate-y-1/2"
               >
-                {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
               </IconButton>
             </div>
           </FormField>
 
-          <FormField label="SSH Key 路径">
+          <FormField label="SSH Key 内容" hint="可直接粘贴私钥内容，连接时会优先使用这里的 Key">
+            <Textarea
+              value={form.keyContent}
+              onChange={(e) => setForm((f) => ({ ...f, keyContent: e.target.value }))}
+              placeholder="ssh-private-key-placeholder"
+              className="h-28 resize-y font-mono text-xs leading-5"
+              spellCheck={false}
+            />
+          </FormField>
+
+          <FormField label="SSH Key Passphrase" hint="加密私钥的解锁口令；保存后连接会自动使用">
+            <div className="relative">
+              <Input
+                type={showKeyPassphrase ? 'text' : 'password'}
+                value={form.keyPassphrase}
+                onChange={(e) => setForm((f) => ({ ...f, keyPassphrase: e.target.value }))}
+                placeholder="可选"
+                className="pr-10"
+              />
+              <IconButton
+                aria-label={
+                  showKeyPassphrase ? '隐藏 SSH Key Passphrase' : '显示 SSH Key Passphrase'
+                }
+                type="button"
+                onClick={() => setShowKeyPassphrase((v) => !v)}
+                className="absolute right-1 top-1/2 -translate-y-1/2"
+              >
+                {showKeyPassphrase ? <EyeOff size={15} /> : <Eye size={15} />}
+              </IconButton>
+            </div>
+          </FormField>
+
+          <FormField label="SSH Key 路径" hint="兼容旧方式；未填写 Key 内容时使用">
             <Input
               value={form.keyPath}
               onChange={(e) => setForm((f) => ({ ...f, keyPath: e.target.value }))}
@@ -141,6 +209,10 @@ export function AddHostModal({ onClose, onSave }: AddHostModalProps): React.Reac
           <Button onClick={handleSave} disabled={saving} variant="primary">
             {saving ? (
               '正在保存...'
+            ) : editing ? (
+              <>
+                <Save size={16} /> 保存修改
+              </>
             ) : (
               <>
                 <Plus size={16} /> 保存主机

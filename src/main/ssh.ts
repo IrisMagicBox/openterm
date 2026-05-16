@@ -1,9 +1,21 @@
+import { homedir } from 'os'
+import { join } from 'path'
 import { Client } from 'ssh2'
 import { ipcMain, WebContents } from 'electron'
 import { hostDB } from './db'
 import { commandExecutor } from './terminal'
-import { TERMINAL_BUFFER_SIZE, SSH_RAW_BUFFER_MAX, SSH_RAW_BUFFER_TRIM } from './constants'
-import { buildSSHConfig, type SSHConnectionConfig } from './utils/ssh-config'
+import {
+  DEFAULT_TERMINAL_COLS,
+  DEFAULT_TERMINAL_ROWS,
+  TERMINAL_BUFFER_SIZE,
+  SSH_RAW_BUFFER_MAX,
+  SSH_RAW_BUFFER_TRIM
+} from './constants'
+import { buildSSHConfig, resolveSSHAuthSock, type SSHConnectionConfig } from './utils/ssh-config'
+import { writeStoredSSHKey } from './utils/ssh-key-store'
+import { getUserDataPath } from './utils/app-paths'
+import { ensureSSHAskPassScript } from './utils/ssh-askpass'
+import { logger } from './logger'
 import type {
   Host,
   TerminalSessionDeletedBy,
@@ -12,7 +24,7 @@ import type {
 } from '../shared/types'
 
 interface SSHSession {
-  client: Client
+  client?: Client
   stream: TerminalStream | null
   hostId: string
   webContents?: WebContents
@@ -23,6 +35,7 @@ interface SSHSession {
 }
 
 const sessions = new Map<string, SSHSession>()
+let ptyModule: typeof import('node-pty') | null = null
 
 function generateSessionId(hostId: string): string {
   return `${hostId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -40,6 +53,173 @@ function getHostAndConfig(hostId: string): { host: Host; config: SSHConnectionCo
 function getConnectionConfig(hostId: string): { config: SSHConnectionConfig } {
   const { config } = getHostAndConfig(hostId)
   return { config }
+}
+
+async function getPty(): Promise<typeof import('node-pty')> {
+  if (ptyModule) return ptyModule
+  try {
+    ptyModule = await import('node-pty')
+    return ptyModule
+  } catch (err) {
+    logger.error('SSH', 'node-pty is not installed. System SSH terminal support requires node-pty.')
+    throw err
+  }
+}
+
+function expandHome(input: string): string {
+  if (input === '~') return homedir()
+  if (input.startsWith('~/')) return join(homedir(), input.slice(2))
+  return input
+}
+
+function buildSystemSSHArgs(host: Host): string[] {
+  const args = [
+    '-p',
+    String(host.port || 22),
+    '-o',
+    'StrictHostKeyChecking=accept-new',
+    '-o',
+    'BatchMode=no',
+    '-o',
+    'NumberOfPasswordPrompts=1'
+  ]
+
+  if (process.platform === 'darwin') {
+    args.push('-o', 'UseKeychain=yes', '-o', 'AddKeysToAgent=yes')
+  }
+
+  if (host.keyContent) {
+    args.push('-i', writeStoredSSHKey(getUserDataPath(), host.id, host.keyContent))
+  } else if (host.keyPath) {
+    args.push('-i', expandHome(host.keyPath))
+  }
+
+  args.push(`${host.username}@${host.ip}`)
+  return args
+}
+
+async function createSystemSSHSession(
+  host: Host,
+  hostId: string,
+  webContents: WebContents,
+  topicId?: string
+): Promise<string> {
+  const nodePty = await getPty()
+  const args = buildSystemSSHArgs(host)
+  const userDataPath = getUserDataPath()
+  const askPassEnv =
+    host.keyPassphrase && (host.keyContent || host.keyPath)
+      ? {
+          SSH_ASKPASS: ensureSSHAskPassScript(userDataPath),
+          SSH_ASKPASS_REQUIRE: 'force',
+          OPENTERM_SSH_KEY_PASSPHRASE: host.keyPassphrase,
+          DISPLAY: process.env.DISPLAY || 'openterm'
+        }
+      : {}
+  const ptyProcess = nodePty.spawn('ssh', args, {
+    name: 'xterm-256color',
+    cols: DEFAULT_TERMINAL_COLS,
+    rows: DEFAULT_TERMINAL_ROWS,
+    cwd: process.env.HOME,
+    env: {
+      ...process.env,
+      ...askPassEnv,
+      ...(resolveSSHAuthSock() ? { SSH_AUTH_SOCK: resolveSSHAuthSock() } : {})
+    } as Record<string, string>
+  })
+
+  const sessionId = generateSessionId(hostId)
+  const stream: TerminalStream = {
+    write(data: string | Buffer): boolean {
+      ptyProcess.write(typeof data === 'string' ? data : data.toString())
+      return true
+    },
+    setWindow(rows: number, cols: number): boolean {
+      ptyProcess.resize(cols, rows)
+      return true
+    },
+    close(): void {
+      ptyProcess.kill()
+    },
+    on(event: string, listener: (...args: any[]) => void): TerminalStream {
+      if (event === 'data') {
+        ptyProcess.onData((data: string) => listener(Buffer.from(data)))
+      } else if (event === 'close') {
+        ptyProcess.onExit(() => listener())
+      }
+      return stream
+    },
+    removeListener(): TerminalStream {
+      return stream
+    }
+  }
+
+  const session: SSHSession = {
+    stream,
+    hostId,
+    webContents,
+    buffer: '',
+    currentOutput: ''
+  }
+  sessions.set(sessionId, session)
+
+  if (topicId) {
+    commandExecutor.createSession(
+      sessionId,
+      topicId,
+      hostId,
+      host.alias,
+      stream,
+      webContents,
+      false,
+      'user'
+    )
+
+    if (agentServiceRef) {
+      agentServiceRef.registerSession({
+        id: sessionId,
+        topicId,
+        hostId,
+        hostAlias: host.alias,
+        role: 'user',
+        name: `${host.alias} Terminal`,
+        status: 'active',
+        shellIntegrationReady: false,
+        isPinned: false,
+        visible: true,
+        paused: false,
+        createdAt: Date.now()
+      })
+    }
+  }
+
+  ptyProcess.onData((data: string) => {
+    const currentSession = sessions.get(sessionId)
+    if (!currentSession) return
+    const buffer = Buffer.from(data)
+    const { cleanData } = topicId
+      ? commandExecutor.handleStreamOutput(sessionId, buffer)
+      : { cleanData: data }
+
+    currentSession.buffer += data
+    currentSession.currentOutput += data
+    if (currentSession.buffer.length > SSH_RAW_BUFFER_MAX) {
+      currentSession.buffer = currentSession.buffer.slice(-SSH_RAW_BUFFER_TRIM)
+    }
+    currentSession.webContents?.send(`ssh:data:${sessionId}`, cleanData)
+  })
+
+  ptyProcess.onExit(() => {
+    if (topicId) commandExecutor.closeSession(sessionId, 'system')
+    sessions.delete(sessionId)
+    session.webContents?.send(`ssh:closed:${sessionId}`)
+  })
+
+  return sessionId
+}
+
+function shouldUseSystemSSH(host: Host): boolean {
+  return Boolean(host.keyContent || host.keyPath)
 }
 
 export const executeSSHCommand = (hostId: string, command: string): Promise<string> => {
@@ -213,7 +393,7 @@ export const closeSession = (
   if (session) {
     commandExecutor.closeSession(sessionId, deletedBy)
     session.stream?.close()
-    session.client.end()
+    session.client?.end()
     sessions.delete(sessionId)
     return true
   }
@@ -254,6 +434,10 @@ export function setupSSHHandlers(): void {
   ipcMain.handle('ssh:connect', async (event, hostId: string, topicId: string) => {
     const webContents = event.sender
     const { host, config } = getHostAndConfig(hostId)
+
+    if (shouldUseSystemSSH(host)) {
+      return createSystemSSHSession(host, hostId, webContents, topicId)
+    }
 
     const client = new Client()
 

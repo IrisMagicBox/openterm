@@ -32,8 +32,8 @@ export class HostRepository extends BaseRepository<HostRow> {
 
     this.stmt(
       `
-      INSERT INTO hosts (id, alias, ip, port, username, password, keyPath, tags, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO hosts (id, alias, ip, port, username, password, keyPath, keyContent, keyPassphrase, tags, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
     ).run(
       id,
@@ -41,8 +41,10 @@ export class HostRepository extends BaseRepository<HostRow> {
       host.ip,
       host.port,
       host.username,
-      host.password,
-      host.keyPath,
+      host.password ?? null,
+      host.keyPath ?? null,
+      host.keyContent ?? null,
+      host.keyPassphrase ?? null,
       tagsStr,
       createdAt
     )
@@ -86,19 +88,48 @@ export class HostRepository extends BaseRepository<HostRow> {
     return row ? mapHostRow(row) : undefined
   }
 
-  updateHost(id: string, updates: Partial<Pick<Host, 'alias' | 'tags' | 'agentNotes'>>): void {
+  updateHost(id: string, updates: Partial<Omit<Host, 'id' | 'createdAt'>>): Host | undefined {
     const existing = this.getHostById(id)
-    if (!existing) return
+    if (!existing) return undefined
     const alias = updates.alias !== undefined ? updates.alias : existing.alias
+    const ip = updates.ip !== undefined ? updates.ip : existing.ip
+    const port = updates.port !== undefined ? updates.port : existing.port
+    const username = updates.username !== undefined ? updates.username : existing.username
+    const password = Object.prototype.hasOwnProperty.call(updates, 'password')
+      ? updates.password
+      : existing.password
+    const keyPath = Object.prototype.hasOwnProperty.call(updates, 'keyPath')
+      ? updates.keyPath
+      : existing.keyPath
+    const keyContent = Object.prototype.hasOwnProperty.call(updates, 'keyContent')
+      ? updates.keyContent
+      : existing.keyContent
+    const keyPassphrase = Object.prototype.hasOwnProperty.call(updates, 'keyPassphrase')
+      ? updates.keyPassphrase
+      : existing.keyPassphrase
     const tagsStr =
       updates.tags !== undefined ? JSON.stringify(updates.tags) : JSON.stringify(existing.tags)
     const agentNotes = updates.agentNotes !== undefined ? updates.agentNotes : existing.agentNotes
-    this.stmt('UPDATE hosts SET alias = ?, tags = ?, agentNotes = ? WHERE id = ?').run(
+    this.stmt(
+      `
+      UPDATE hosts
+      SET alias = ?, ip = ?, port = ?, username = ?, password = ?, keyPath = ?, keyContent = ?, keyPassphrase = ?, tags = ?, agentNotes = ?
+      WHERE id = ?
+    `
+    ).run(
       alias,
+      ip,
+      port,
+      username,
+      password ?? null,
+      keyPath ?? null,
+      keyContent ?? null,
+      keyPassphrase ?? null,
       tagsStr,
-      agentNotes,
+      agentNotes ?? null,
       id
     )
+    return this.getHostById(id)
   }
 
   updateAgentNotes(id: string, notes: string): void {

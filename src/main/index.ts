@@ -31,6 +31,8 @@ const MAC_WINDOW_VIBRANCY = 'sidebar' as const
 
 app.setName(APP_NAME)
 
+process.env.OPENTERM_USER_DATA_PATH = app.getPath('userData')
+
 function setMacDockIcon(): void {
   if (process.platform !== 'darwin') return
 

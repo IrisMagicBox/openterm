@@ -26,6 +26,7 @@ interface HostsViewProps {
   setFileBrowserHostId: (id: string | null) => void
   setFileBrowserHostAlias: (alias: string) => void
   handleDeleteHost: (id: string) => Promise<void>
+  onEditHost: (host: Host) => void
   onCreateLocalAgentTopic: () => Promise<unknown>
 }
 
@@ -46,6 +47,7 @@ export function HostsView({
   setFileBrowserHostId,
   setFileBrowserHostAlias,
   handleDeleteHost,
+  onEditHost,
   onCreateLocalAgentTopic
 }: HostsViewProps): React.ReactElement {
   const [portForwardHost, setPortForwardHost] = useState<Host | null>(null)
@@ -145,6 +147,7 @@ export function HostsView({
               <HostCard
                 key={host.id}
                 host={host}
+                onEdit={() => onEditHost(host)}
                 onDelete={async () => {
                   await handleDeleteHost(host.id)
                 }}

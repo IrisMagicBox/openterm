@@ -17,6 +17,8 @@ export interface HostRow {
   username: string
   password: string | null
   keyPath: string | null
+  keyContent: string | null
+  keyPassphrase: string | null
   tags: string | null // JSON-encoded string[]
   createdAt: number
   agentNotes: string | null

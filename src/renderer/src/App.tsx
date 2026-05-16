@@ -40,7 +40,7 @@ import {
   clampSidebarWidth
 } from './lib/sidebar-layout'
 import { View, WorkspaceWindowItem } from './types'
-import type { Topic } from '../../shared/types'
+import type { Host, Topic } from '../../shared/types'
 import { WORKSPACE_TERMINALS_TOPIC_ID } from '../../shared/constants'
 
 function isEditableKeyboardTarget(target: EventTarget | null): boolean {
@@ -88,9 +88,11 @@ export default function App(): JSX.Element {
     setSearchQuery,
     loadHosts,
     handleCreateHost,
+    handleUpdateHost,
     handleDeleteHost,
     filteredHosts
   } = useHosts()
+  const [editingHost, setEditingHost] = useState<Host | null>(null)
 
   const {
     topics,
@@ -560,6 +562,10 @@ export default function App(): JSX.Element {
               setFileBrowserHostId={setFileBrowserHostId}
               setFileBrowserHostAlias={setFileBrowserHostAlias}
               handleDeleteHost={handleDeleteHost}
+              onEditHost={(host) => {
+                setEditingHost(host)
+                setShowAddHost(true)
+              }}
               onCreateLocalAgentTopic={handleCreateLocalAgentTopic}
             />
           </div>
@@ -656,7 +662,15 @@ export default function App(): JSX.Element {
         />
 
         {showAddHost && (
-          <AddHostModal onClose={() => setShowAddHost(false)} onSave={handleCreateHost} />
+          <AddHostModal
+            host={editingHost ?? undefined}
+            onClose={() => {
+              setShowAddHost(false)
+              setEditingHost(null)
+            }}
+            onSave={handleCreateHost}
+            onUpdate={handleUpdateHost}
+          />
         )}
         {pendingAuth && !showComposerAuth && (
           <div className="pointer-events-none fixed inset-x-0 bottom-5 z-[220] px-6">

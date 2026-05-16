@@ -150,6 +150,10 @@ export interface HostUpdatedPayload {
 export interface IpcInvokeChannels {
   'get-hosts': { payload: void; result: Host[] }
   'create-host': { payload: [host: Omit<Host, 'id' | 'createdAt'>]; result: Host }
+  'update-host': {
+    payload: [id: string, updates: Partial<Omit<Host, 'id' | 'createdAt'>>]
+    result: Host | undefined
+  }
   'delete-host': { payload: [id: string]; result: void }
 
   'get-topics': { payload: void; result: Topic[] }

@@ -39,6 +39,8 @@ const typedIpc = createTypedIpc(ipcRenderer)
 const api: Record<string, unknown> = {
   getHosts: () => ipcRenderer.invoke('get-hosts'),
   createHost: (host: Omit<Host, 'id' | 'createdAt'>) => ipcRenderer.invoke('create-host', host),
+  updateHost: (id: string, updates: Partial<Omit<Host, 'id' | 'createdAt'>>) =>
+    ipcRenderer.invoke('update-host', id, updates),
   deleteHost: (id: string) => ipcRenderer.invoke('delete-host', id),
   getTopics: () => ipcRenderer.invoke('get-topics'),
   createTopic: (title: string, hostIds: string[]) =>
@@ -457,6 +459,8 @@ const flatApi = api as Record<string, any>
 flatApi.hosts = {
   list: () => typedIpc.invoke('get-hosts'),
   create: (host: Omit<Host, 'id' | 'createdAt'>) => typedIpc.invoke('create-host', host),
+  update: (id: string, updates: Partial<Omit<Host, 'id' | 'createdAt'>>) =>
+    typedIpc.invoke('update-host', id, updates),
   delete: (id: string) => typedIpc.invoke('delete-host', id),
   getTopicHosts: (topicId: string) => typedIpc.invoke('agent:get-topic-hosts', topicId),
   addToTopic: (topicId: string, hostId: string) =>

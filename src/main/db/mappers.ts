@@ -64,6 +64,8 @@ export const mapHostRow = (row: HostRow): Host => ({
   username: row.username,
   password: row.password ?? undefined,
   keyPath: row.keyPath ?? undefined,
+  keyContent: row.keyContent ?? undefined,
+  keyPassphrase: row.keyPassphrase ?? undefined,
   tags: parseJSON(row.tags, []),
   createdAt: row.createdAt,
   agentNotes: row.agentNotes ?? undefined
