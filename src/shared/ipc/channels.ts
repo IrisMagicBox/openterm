@@ -8,6 +8,7 @@ import type {
   AgentPart,
   Approval,
   Artifact,
+  PermissionApprovalScope,
   ModelSettings,
   Provider,
   Model,
@@ -261,7 +262,7 @@ export interface IpcInvokeChannels {
   'agent:cancel-run': { payload: [runId: string]; result: AgentRun | undefined }
   'agent:resume-run': { payload: [runId: string]; result: Message }
   'agent:auth-response': {
-    payload: [requestId: string, approved: boolean, alwaysAllow?: boolean]
+    payload: [requestId: string, approved: boolean, scope?: PermissionApprovalScope | boolean]
     result: void
   }
 

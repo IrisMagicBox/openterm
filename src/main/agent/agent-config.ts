@@ -109,6 +109,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
     allowedTools: [], // All tools allowed
     permissions: [
       { tool: 'websearch', action: 'ask' },
+      { tool: 'webfetch', action: 'ask' },
       { tool: '*', allowed: true }
     ],
     maxSteps: 100,
@@ -128,6 +129,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       'search_memory',
       'search_topics',
       'websearch',
+      'webfetch',
       'update_plan'
     ],
     permissions: [
@@ -139,6 +141,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       { tool: 'search_memory', allowed: true },
       { tool: 'search_topics', allowed: true },
       { tool: 'websearch', allowed: true },
+      { tool: 'webfetch', allowed: true },
       { tool: 'update_plan', allowed: true }
     ],
     maxSteps: 5,
@@ -177,6 +180,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       'search_memory',
       'search_topics',
       'websearch',
+      'webfetch',
       'update_plan'
     ],
     permissions: [
@@ -198,6 +202,7 @@ export const BUILT_IN_AGENTS: Record<string, AgentConfig> = {
       { tool: 'search_memory', allowed: true },
       { tool: 'search_topics', allowed: true },
       { tool: 'websearch', allowed: true },
+      { tool: 'webfetch', allowed: true },
       { tool: 'update_plan', allowed: true }
     ],
     maxSteps: 5,

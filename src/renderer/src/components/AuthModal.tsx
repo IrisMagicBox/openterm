@@ -11,6 +11,7 @@ import {
 import { useState } from 'react'
 import { Badge, Button, Switch } from './ui'
 import { cn } from '../lib/utils'
+import type { PermissionApprovalScope } from '../../../shared/types'
 
 interface AuthModalProps {
   requestId: string
@@ -19,7 +20,7 @@ interface AuthModalProps {
   reason?: string
   metadata?: Record<string, unknown>
   variant?: 'floating' | 'attached'
-  onResolve: (approved: boolean, alwaysAllow?: boolean) => void
+  onResolve: (approved: boolean, scope?: PermissionApprovalScope) => void
 }
 
 export function AuthModal({
@@ -31,6 +32,7 @@ export function AuthModal({
   onResolve
 }: AuthModalProps): React.ReactElement {
   const [alwaysAllow, setAlwaysAllow] = useState(false)
+  const approvalScope: PermissionApprovalScope = alwaysAllow ? 'topic' : 'turn'
   const isCritical = riskLevel?.toLowerCase() === 'critical'
   const getRiskStyles = (
     level?: string
@@ -79,19 +81,26 @@ export function AuthModal({
     typeof metadata?.commandPattern === 'string' ? metadata.commandPattern : undefined
   const requiresVerification = metadata?.requiresVerification === true
   const permission = typeof metadata?.permission === 'string' ? metadata.permission : undefined
-  const isWebSearch = permission === 'websearch'
-  const actionLabel = isWebSearch ? '网页搜索' : '终端命令'
-  const actionType = isWebSearch ? '搜索请求' : 'SSH 命令'
-  const defaultReason = isWebSearch
-    ? '需要你确认本次网页搜索。'
+  const isWebTool = permission === 'websearch' || permission === 'webfetch'
+  const isWebFetch = permission === 'webfetch'
+  const actionLabel = isWebTool ? (isWebFetch ? '网页读取' : '网页搜索') : '终端命令'
+  const actionType = isWebTool ? (isWebFetch ? '网页请求' : '搜索请求') : 'SSH 命令'
+  const defaultReason = isWebTool
+    ? isWebFetch
+      ? '需要你确认本次网页读取。'
+      : '需要你确认本次网页搜索。'
     : '由于当前安全策略，此操作需要你的显式授权。'
   const displayReason =
     reason && !reason.startsWith('Permission required:') ? reason : defaultReason
   const attached = variant === 'attached'
 
   if (attached) {
-    const eyebrow = isWebSearch ? 'Web Search' : 'Computer Use'
-    const title = isWebSearch ? '允许 Agent 使用网页搜索？' : '允许 Agent 执行这项操作？'
+    const eyebrow = isWebTool ? (isWebFetch ? 'Web Fetch' : 'Web Search') : 'Computer Use'
+    const title = isWebTool
+      ? isWebFetch
+        ? '允许 Agent 读取网页？'
+        : '允许 Agent 使用网页搜索？'
+      : '允许 Agent 执行这项操作？'
     const detail = command.trim()
 
     return (
@@ -119,11 +128,11 @@ export function AuthModal({
               <span className="blue-ring flex h-4 w-4 shrink-0 items-center justify-center rounded border border-black/[0.08] bg-white text-white shadow-[inset_0_1px_1px_rgba(15,23,42,0.03)] transition peer-checked:border-foreground peer-checked:bg-foreground">
                 <CheckIcon size={11} strokeWidth={2.6} />
               </span>
-              <span className="truncate">总是允许</span>
+              <span className="truncate">本会话总是允许</span>
             </label>
           ) : (
             <span className="min-w-0 truncate text-[13px] font-medium text-muted-foreground">
-              仅本次授权
+              仅本轮授权
             </span>
           )}
 
@@ -137,7 +146,7 @@ export function AuthModal({
             </button>
             <button
               type="button"
-              onClick={() => onResolve(true, alwaysAllow)}
+              onClick={() => onResolve(true, approvalScope)}
               className="blue-ring inline-flex h-9 items-center gap-2 rounded-full bg-foreground px-4 text-[13px] font-semibold text-white shadow-[0_1px_2px_rgba(15,23,42,0.18)] transition hover:bg-foreground/92"
             >
               允许
@@ -226,8 +235,8 @@ export function AuthModal({
           <label className="mt-2 flex cursor-pointer select-none items-center gap-3 rounded-xl border border-black/[0.06] bg-black/[0.015] px-3 py-2">
             <Switch checked={alwaysAllow} onCheckedChange={setAlwaysAllow} />
             <div className="min-w-0">
-              <span className="text-sm font-semibold text-foreground">总是允许同类操作</span>
-              <p className="truncate text-xs text-muted-foreground">信任后，相似操作将自动执行</p>
+              <span className="text-sm font-semibold text-foreground">本会话总是允许同类操作</span>
+              <p className="truncate text-xs text-muted-foreground">未勾选时，仅允许本轮模型回答中的同类请求</p>
             </div>
           </label>
         )}
@@ -238,12 +247,12 @@ export function AuthModal({
           <X size={16} /> 拒绝执行
         </Button>
         <Button
-          onClick={() => onResolve(true, alwaysAllow)}
+          onClick={() => onResolve(true, approvalScope)}
           variant="primary"
           size="lg"
           className="flex-1"
         >
-          <Check size={16} /> 授权运行
+          <Check size={16} /> 允许本轮
         </Button>
       </div>
     </section>

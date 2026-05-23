@@ -35,12 +35,72 @@ describe('ApprovalBroker', () => {
     broker.rejectRuns(['run-1'], 'Run was cancelled')
     await runOneAssertion
 
-    await broker.handleAuthResponse(
-      (broker as unknown as { pendingRequests: Map<string, unknown> }).pendingRequests.keys().next()
-        .value as string,
-      true,
-      false
+    const pendingIds = Array.from(
+      (broker as unknown as { pendingRequests: Map<string, unknown> }).pendingRequests.keys()
     )
-    await expect(runTwo).resolves.toEqual({ approved: true, alwaysAllow: false })
+    expect(pendingIds).toHaveLength(1)
+
+    await broker.handleAuthResponse(pendingIds[0], true, 'request')
+    await expect(runTwo).resolves.toEqual({
+      approved: true,
+      alwaysAllow: false,
+      scope: 'request'
+    })
+  })
+
+  it('approves matching pending requests in the same turn when scope is turn', async () => {
+    const broker = makeBroker()
+    const first = broker.requestAuthorization('https://example.com/a', 'medium', 'fetch a', {
+      topicId: 'topic-1',
+      runId: 'run-1',
+      taskId: 'task-1',
+      turnId: 'run-1:1',
+      permission: 'webfetch'
+    })
+    const second = broker.requestAuthorization('https://example.com/b', 'medium', 'fetch b', {
+      topicId: 'topic-1',
+      runId: 'run-1',
+      taskId: 'task-1',
+      turnId: 'run-1:1',
+      permission: 'webfetch'
+    })
+
+    const requestId = (broker as unknown as { pendingRequests: Map<string, unknown> }).pendingRequests
+      .keys()
+      .next().value as string
+    await broker.handleAuthResponse(requestId, true, 'turn')
+
+    await expect(first).resolves.toEqual({ approved: true, alwaysAllow: false, scope: 'turn' })
+    await expect(second).resolves.toEqual({ approved: true, alwaysAllow: false, scope: 'turn' })
+  })
+
+  it('remembers topic-scoped approvals for later requests in the same topic', async () => {
+    const broker = makeBroker()
+    const first = broker.requestAuthorization('search one', 'medium', 'search', {
+      topicId: 'topic-1',
+      runId: 'run-1',
+      taskId: 'task-1',
+      turnId: 'run-1:1',
+      permission: 'websearch'
+    })
+    const requestId = (broker as unknown as { pendingRequests: Map<string, unknown> }).pendingRequests
+      .keys()
+      .next().value as string
+    await broker.handleAuthResponse(requestId, true, 'topic')
+    await expect(first).resolves.toEqual({ approved: true, alwaysAllow: true, scope: 'topic' })
+
+    await expect(
+      broker.requestAuthorization('search two', 'medium', 'search again', {
+        topicId: 'topic-1',
+        runId: 'run-2',
+        taskId: 'task-2',
+        turnId: 'run-2:1',
+        permission: 'websearch'
+      })
+    ).resolves.toEqual({ approved: true, alwaysAllow: true, scope: 'topic' })
+
+    expect(
+      (broker as unknown as { pendingRequests: Map<string, unknown> }).pendingRequests.size
+    ).toBe(0)
   })
 })

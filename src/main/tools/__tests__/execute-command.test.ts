@@ -1,9 +1,25 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tool } from '../tool-factory'
 
 const mocks = vi.hoisted(() => ({
+  commandPatternDB: {
+    getPatternByHostAndPattern: vi.fn(),
+    createCommandPattern: vi.fn(),
+    incrementApprovalCount: vi.fn(),
+    incrementRejectionCount: vi.fn()
+  },
   executeAgentCommand: vi.fn(),
-  ensureSession: vi.fn()
+  ensureSession: vi.fn(),
+  permissionDB: {
+    getPermissions: vi.fn(() => ({ permissionMode: 'full_access', updatedAt: 1 }))
+  },
+  policyEvaluateWithTrust: vi.fn(() => ({
+    action: 'allow',
+    riskLevel: 'low',
+    riskCategory: 'read',
+    requiresVerification: false,
+    commandPattern: 'echo *'
+  }))
 }))
 
 vi.mock('../../terminal', () => ({
@@ -32,26 +48,13 @@ vi.mock('../../db', () => ({
   approvalDB: {
     createApproval: vi.fn()
   },
-  permissionDB: {
-    getPermissions: vi.fn(() => ({ permissionMode: 'full_access', updatedAt: 1 }))
-  },
-  commandPatternDB: {
-    getPatternByHostAndPattern: vi.fn(),
-    createCommandPattern: vi.fn(),
-    incrementApprovalCount: vi.fn(),
-    incrementRejectionCount: vi.fn()
-  }
+  permissionDB: mocks.permissionDB,
+  commandPatternDB: mocks.commandPatternDB
 }))
 
 vi.mock('../../PolicyEngine', () => ({
   PolicyEngine: {
-    evaluateWithTrust: vi.fn(() => ({
-      action: 'allow',
-      riskLevel: 'low',
-      riskCategory: 'read',
-      requiresVerification: false,
-      commandPattern: 'echo *'
-    })),
+    evaluateWithTrust: mocks.policyEvaluateWithTrust,
     normalizeCommand: vi.fn((command: string) => command)
   }
 }))
@@ -84,6 +87,21 @@ function makeContext(): Tool.Context {
 }
 
 describe('execute_command tool', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.permissionDB.getPermissions.mockReturnValue({
+      permissionMode: 'full_access',
+      updatedAt: 1
+    })
+    mocks.policyEvaluateWithTrust.mockReturnValue({
+      action: 'allow',
+      riskLevel: 'low',
+      riskCategory: 'read',
+      requiresVerification: false,
+      commandPattern: 'echo *'
+    })
+  })
+
   it('uses a visible agent command terminal', async () => {
     mocks.ensureSession.mockResolvedValueOnce('session-1')
     mocks.executeAgentCommand.mockResolvedValueOnce({
@@ -170,6 +188,50 @@ describe('execute_command tool', () => {
             args: ['status', 'nginx']
           }
         ]
+      })
+    )
+  })
+
+  it('does not turn a topic-scoped approval into a globally trusted command pattern', async () => {
+    mocks.permissionDB.getPermissions.mockReturnValue({ permissionMode: 'default', updatedAt: 1 })
+    mocks.policyEvaluateWithTrust.mockReturnValue({
+      action: 'confirm',
+      riskLevel: 'high',
+      riskCategory: 'write',
+      requiresVerification: true,
+      commandPattern: 'systemctl restart *'
+    })
+    mocks.ensureSession.mockResolvedValueOnce('session-1')
+    mocks.executeAgentCommand.mockResolvedValueOnce({
+      content: 'restarted\n',
+      exitCode: 0,
+      durationMs: 10,
+      timedOut: false,
+      isTruncated: false,
+      sessionId: 'session-1'
+    })
+    const context = makeContext()
+    vi.mocked(context.requestAuthorization).mockResolvedValueOnce({
+      approved: true,
+      alwaysAllow: true,
+      scope: 'topic'
+    })
+
+    const tool = await executeCommandTool.init()
+    await tool.execute(
+      {
+        hostId: 'local',
+        command: 'systemctl restart nginx',
+        timeoutMs: 1234,
+        reason: 'restart service'
+      },
+      context
+    )
+
+    expect(mocks.commandPatternDB.createCommandPattern).toHaveBeenCalledWith(
+      expect.objectContaining({
+        approvalCount: 1,
+        trustLevel: 'untrusted'
       })
     )
   })

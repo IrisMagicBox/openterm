@@ -199,13 +199,17 @@ async function handleRequest(
     case 'approvals.approve': {
       const id = readString(args, 'id')
       const approval = approvalDB.updateApprovalStatus(id, 'approved')
-      await agentService.handleAuthResponse(id, true, readBoolean(args, 'alwaysAllow', false))
+      await agentService.handleAuthResponse(
+        id,
+        true,
+        readBoolean(args, 'alwaysAllow', false) ? 'topic' : 'turn'
+      )
       return approval ?? { ok: true }
     }
     case 'approvals.reject': {
       const id = readString(args, 'id')
       const approval = approvalDB.updateApprovalStatus(id, 'rejected')
-      await agentService.handleAuthResponse(id, false, false)
+      await agentService.handleAuthResponse(id, false, 'request')
       return approval ?? { ok: true }
     }
     case 'tasks.list':

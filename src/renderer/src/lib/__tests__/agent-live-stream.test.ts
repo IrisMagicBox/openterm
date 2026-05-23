@@ -9,6 +9,7 @@ import {
   agentSummaryParts,
   latestLiveAssistantTextPart
 } from '../agent-process-parts'
+import { permissionPartsByParent, permissionTooltipText } from '../agent-permission-parts'
 import { deriveAgentTasks } from '../agent-task-list'
 
 function part(overrides: Partial<AgentPart>): AgentPart {
@@ -270,6 +271,7 @@ describe('agent live stream visibility', () => {
         id: 'permission-1',
         type: 'permission',
         status: 'blocked',
+        parentPartId: 'search-1',
         input: 'demo-cli latest version',
         metadata: {
           permission: 'websearch',
@@ -283,9 +285,41 @@ describe('agent live stream visibility', () => {
       ['查看主机', ''],
       ['读取备注', '主机 shelley-test'],
       ['运行命令', 'demo-cli --version'],
-      ['搜索网页', 'demo-cli latest version'],
-      ['等待确认', '需要联网确认最新版本']
+      ['搜索网页', 'demo-cli latest version']
     ])
+  })
+
+  it('keeps permission parts out of the main process projection and attaches them to tools', () => {
+    const parts = [
+      part({
+        id: 'fetch-1',
+        type: 'tool',
+        toolName: 'webfetch',
+        status: 'completed',
+        input: '{"url":"https://example.com"}',
+        orderIndex: 1
+      }),
+      part({
+        id: 'permission-1',
+        type: 'permission',
+        status: 'completed',
+        parentPartId: 'fetch-1',
+        input: 'https://example.com',
+        metadata: {
+          permission: 'webfetch',
+          reason: 'Permission required: webfetch for pattern "https://example.com"',
+          riskLevel: 'medium',
+          scope: 'turn'
+        },
+        orderIndex: 2
+      })
+    ]
+
+    expect(agentRawProcessParts(parts).map((item) => item.id)).toEqual(['fetch-1'])
+    expect(permissionPartsByParent(parts).get('fetch-1')?.map((item) => item.id)).toEqual([
+      'permission-1'
+    ])
+    expect(permissionTooltipText(parts[1])).toContain('范围：本轮')
   })
 
   it('does not drop readable labels after the first 12 activity lines', () => {
@@ -429,7 +463,7 @@ describe('agent live stream visibility', () => {
   })
 
   it('only offers expanded activity detail when it adds information', () => {
-    const [permissionLine, commandLine, longThinkingLine] = agentActivityLines([
+    const [commandLine, longThinkingLine] = agentActivityLines([
       part({
         id: 'permission-1',
         type: 'permission',
@@ -461,8 +495,6 @@ describe('agent live stream visibility', () => {
       })
     ])
 
-    expect(permissionLine.detail).toBe(permissionLine.fullDetail)
-    expect(shouldShowAgentActivityDetail(permissionLine)).toBe(false)
     expect(shouldShowAgentActivityDetail(commandLine)).toBe(true)
     expect(shouldShowAgentActivityDetail(longThinkingLine)).toBe(true)
   })

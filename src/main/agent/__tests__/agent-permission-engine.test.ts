@@ -161,46 +161,31 @@ describe('AgentPermissionEngine ruleset', () => {
     )
   })
 
-  it('remembers user always-allow approvals for later matching permission checks', async () => {
+  it('records user approval scope without mutating agent config permissions', async () => {
     const context = makeContext()
     vi.mocked(context.requestAuthorization).mockResolvedValue({
       approved: true,
-      alwaysAllow: true
+      alwaysAllow: true,
+      scope: 'topic'
     })
     const config = makeConfig([{ tool: 'websearch', action: 'ask' }])
     const engine = new AgentPermissionEngine(config, context)
 
-    const firstResponse = await engine.ask({
+    const response = await engine.ask({
       permission: 'websearch',
       pattern: '今日新闻 2025年1月20日 重要事件',
       riskLevel: 'medium',
       reason: 'confirm web search'
     })
 
-    const secondResponse = await engine.ask({
-      permission: 'websearch',
-      pattern: '明日新闻 2025年1月21日 重要事件',
-      riskLevel: 'medium',
-      reason: 'confirm web search'
-    })
-
-    expect(firstResponse).toEqual({ approved: true, alwaysAllow: true })
-    expect(secondResponse).toEqual({ approved: true, alwaysAllow: true })
+    expect(response).toEqual({ approved: true, alwaysAllow: true, scope: 'topic' })
     expect(context.requestAuthorization).toHaveBeenCalledTimes(1)
-    expect(config.permissions[0]).toEqual(
-      expect.objectContaining({
-        tool: 'websearch',
-        action: 'allow',
-        allowed: true,
-        scope: 'always',
-        maxAutoApproveRisk: 'medium'
-      })
-    )
+    expect(config.permissions).toEqual([{ tool: 'websearch', action: 'ask' }])
     expect(mocks.agentRunStore.updatePart).toHaveBeenLastCalledWith(
-      'permission-part-2',
+      'permission-part-1',
       expect.objectContaining({
         status: 'completed',
-        metadata: expect.objectContaining({ ruleAction: 'allow', scope: 'always' })
+        metadata: expect.objectContaining({ alwaysAllow: true, scope: 'topic' })
       })
     )
   })

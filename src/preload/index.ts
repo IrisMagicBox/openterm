@@ -181,8 +181,8 @@ const api: Record<string, unknown> = {
     ipcRenderer.on('agent:auth-request', listener)
     return () => ipcRenderer.removeListener('agent:auth-request', listener)
   },
-  sendAgentAuthResponse: (requestId: string, approved: boolean, alwaysAllow?: boolean) =>
-    ipcRenderer.invoke('agent:auth-response', requestId, approved, alwaysAllow),
+  sendAgentAuthResponse: (requestId: string, approved: boolean, scope?: 'request' | 'turn' | 'topic' | boolean) =>
+    ipcRenderer.invoke('agent:auth-response', requestId, approved, scope),
   onTopicUpdated: (callback: (data: TopicUpdatedPayload) => void) => {
     const listener = (_event: IpcRendererEvent, data: TopicUpdatedPayload) => callback(data)
     ipcRenderer.on('topic:updated', listener)
@@ -468,8 +468,8 @@ flatApi.agent = {
   getTaskParts: (taskId: string) => typedIpc.invoke('agent:get-task-parts', taskId),
   cancelRun: (runId: string) => typedIpc.invoke('agent:cancel-run', runId),
   resumeRun: (runId: string) => typedIpc.invoke('agent:resume-run', runId),
-  sendAuthResponse: (requestId: string, approved: boolean, alwaysAllow?: boolean) =>
-    typedIpc.invoke('agent:auth-response', requestId, approved, alwaysAllow),
+  sendAuthResponse: (requestId: string, approved: boolean, scope?: 'request' | 'turn' | 'topic' | boolean) =>
+    typedIpc.invoke('agent:auth-response', requestId, approved, scope),
   onRunCreated: flatApi.onAgentRunCreated,
   onRunUpdated: flatApi.onAgentRunUpdated,
   onPartCreated: flatApi.onAgentPartCreated,

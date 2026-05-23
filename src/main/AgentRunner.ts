@@ -4,10 +4,12 @@ import { getAgentConfig } from './agent/agent-config'
 import { eventBus } from './agent/event-bus'
 import { AgentRuntime, type AgentRuntimeOptions } from './agent/agent-runtime'
 import type { SessionUsage } from './agent/provider-adapter'
+import type { PermissionApprovalScope } from './agent/permission-scope'
 
 export interface AuthResponse {
   approved: boolean
   alwaysAllow: boolean
+  scope?: PermissionApprovalScope
 }
 
 /** Interface for the agent service methods used by tools via AgentContext */

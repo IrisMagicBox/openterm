@@ -154,6 +154,7 @@ describe('ToolRegistry.getFilteredDefinitions', () => {
     registry.register(makeMockTool('search_memory'))
     registry.register(makeMockTool('search_topics'))
     registry.register(makeMockTool('websearch'))
+    registry.register(makeMockTool('webfetch'))
     registry.register(makeMockTool('update_plan'))
     await registry.initializeTools()
   })

@@ -87,6 +87,7 @@ export class AgentLoop {
       const pendingTurn = turnCount === pendingAssistantTurn?.turn ? pendingAssistantTurn : undefined
 
       if (pendingTurn && pendingTurn.toolCalls.length > 0) {
+        this.toolExecutor.setTurnContext(pendingTurn.turn)
         const executedObservations = await this.toolExecutor.executeToolCalls(pendingTurn.toolCalls)
         if (this.options.context.abort?.aborted) {
           return this.finishAborted(state, turnCount)
@@ -229,6 +230,7 @@ export class AgentLoop {
         args: this.safeParseToolArgs(call.function.arguments)
       }))
       const attempts = state.ledger.registerAttempts(parsedCalls, turnCount)
+      this.toolExecutor.setTurnContext(turnCount)
       const executedObservations = await this.toolExecutor.executeToolCalls(attempts)
       if (this.options.context.abort?.aborted) {
         return this.finishAborted(state, turnCount)

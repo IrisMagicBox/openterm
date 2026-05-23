@@ -13,6 +13,7 @@ import { stripInternalToolCallMarkup } from '../../../shared/internal-tool-call-
 import { AssistantMessageBody } from './AssistantMessageBody'
 import { AgentTaskList } from './AgentTaskList'
 import { AgentActivityDetail } from './AgentActivityDetail'
+import { AgentPermissionBadge } from './AgentPermissionBadge'
 import { agentPartSessionId } from '../lib/terminal-stage'
 import { cn } from '../lib/utils'
 import {
@@ -35,6 +36,7 @@ import {
   latestLiveAssistantTextPart,
   sortAgentParts
 } from '../lib/agent-process-parts'
+import { permissionPartsByParent } from '../lib/agent-permission-parts'
 
 interface AgentLiveStreamProps {
   parts: AgentPart[]
@@ -111,6 +113,7 @@ export function AgentLiveStream({
     ? stripInternalToolCallMarkup(liveAssistantPart.output ?? '')
     : ''
   const activityParts = agentRawProcessParts(parts)
+  const permissionsByParent = useMemo(() => permissionPartsByParent(parts), [parts])
   const activityLines = agentActivityLines(activityParts)
   const summary = agentActivitySummary(activityParts)
   const status = agentActivityStatus(activityParts)
@@ -158,6 +161,7 @@ export function AgentLiveStream({
                     const showRawOutputFallback = shouldShowLiveRawOutputFallback(part)
                     const sessionId = agentPartSessionId(part)
                     const isFocused = focusedPartId === part.id
+                    const permissionParts = permissionsByParent.get(part.id)
                     const fullDetail = line?.fullDetail || output || input
                     const canExpandPart =
                       !textContent && (shouldShowAgentActivityDetail(line) || showRawOutputFallback)
@@ -207,6 +211,7 @@ export function AgentLiveStream({
                                 {line?.detail || input}
                               </span>
                             )}
+                            <AgentPermissionBadge permissions={permissionParts} />
                             {sessionId && onRevealTerminal && (
                               <button
                                 onClick={() => onRevealTerminal(sessionId, part.id)}

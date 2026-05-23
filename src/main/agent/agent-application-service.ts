@@ -245,6 +245,7 @@ export class AgentApplicationService {
       requestAuthorization: (command, riskLevel, reason, metadata) =>
         this.approvals.requestAuthorization(command, riskLevel, reason, {
           ...(metadata ?? {}),
+          topicId,
           runId,
           taskId
         }),

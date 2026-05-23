@@ -40,6 +40,7 @@ function toolDisplayName(part: AgentPart): string {
   if (part.toolName === 'update_plan' || part.metadata?.planTool === true) return '任务规划'
   if (part.type === 'permission') return '权限'
   if (part.toolName === 'websearch') return '网页搜索'
+  if (part.toolName === 'webfetch') return '网页读取'
   if (part.toolName === 'execute_command') return '命令'
   if (part.toolName === 'read_file') return '文件'
   if (part.toolName === 'write_file' || part.toolName === 'edit') return '文件'
@@ -193,6 +194,11 @@ function toolLine(
   if (part.toolName === 'websearch') {
     const detail = textValue(input.query) || command
     return { label: '搜索网页', detail, fullDetail: detail }
+  }
+
+  if (part.toolName === 'webfetch') {
+    const detail = textValue(input.url) || command
+    return { label: '读取网页', detail, fullDetail: fullPartDetail(part) || detail }
   }
 
   if (part.toolName === 'execute_command') {
@@ -349,7 +355,7 @@ export function agentActivityLines(
   limit = Number.POSITIVE_INFINITY
 ): AgentActivityLine[] {
   return parts
-    .filter((part) => part.type !== 'usage')
+    .filter((part) => part.type !== 'usage' && part.type !== 'permission')
     .slice(0, limit)
     .map((part) => {
       const kind = agentActivityKind(part)

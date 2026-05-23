@@ -62,7 +62,7 @@ declare global {
         sendAuthResponse: (
           requestId: string,
           approved: boolean,
-          alwaysAllow?: boolean
+          scope?: 'request' | 'turn' | 'topic' | boolean
         ) => Promise<void>
         onRunCreated: (callback: (run: AgentRun) => void) => () => void
         onRunUpdated: (callback: (run: AgentRun) => void) => () => void
@@ -307,7 +307,7 @@ declare global {
       sendAgentAuthResponse: (
         requestId: string,
         approved: boolean,
-        alwaysAllow?: boolean
+        scope?: 'request' | 'turn' | 'topic' | boolean
       ) => Promise<void>
       onTopicUpdated: (
         callback: (data: {

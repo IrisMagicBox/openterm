@@ -47,7 +47,7 @@ export function shouldAskToolPermission(
   if (settings.permissionMode === 'full_access') return false
   if (settings.permissionMode !== 'auto_review') return true
 
-  if (input.permission === 'websearch') return false
+  if (input.permission === 'websearch' || input.permission === 'webfetch') return false
   if (input.permission === 'manage_port_forward') return true
   if (input.permission === 'write_file') return true
   if (input.riskLevel === 'critical') return true

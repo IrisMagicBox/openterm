@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import type { TerminalSession, Topic } from '../../../shared/types'
+import type { PermissionApprovalScope, TerminalSession, Topic } from '../../../shared/types'
 
 interface PendingAuth {
   requestId: string
@@ -8,6 +8,13 @@ interface PendingAuth {
   riskLevel?: string
   reason?: string
   metadata?: Record<string, unknown>
+}
+
+const RISK_RANK: Record<string, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  critical: 3
 }
 
 interface UseAgentSessionsResult {
@@ -21,7 +28,7 @@ interface UseAgentSessionsResult {
   handleRenameTerminal: (id: string, name: string) => Promise<void>
   handleToggleTerminalPin: (id: string, isPinned: boolean) => Promise<void>
   handleToggleAgentTerminalPaused: (id: string, paused: boolean) => Promise<void>
-  handleResolveAuth: (approved: boolean, alwaysAllow?: boolean) => Promise<void>
+  handleResolveAuth: (approved: boolean, scope?: PermissionApprovalScope) => Promise<void>
 }
 
 export function enqueuePendingAuth(queue: PendingAuth[], request: PendingAuth): PendingAuth[] {
@@ -31,6 +38,74 @@ export function enqueuePendingAuth(queue: PendingAuth[], request: PendingAuth): 
 
 export function removePendingAuth(queue: PendingAuth[], requestId: string): PendingAuth[] {
   return queue.filter((item) => item.requestId !== requestId)
+}
+
+function pendingAuthIdentity(request: PendingAuth): {
+  permission?: string
+  topicId?: string
+  runId?: string
+  turnId?: string
+  riskLevel?: string
+} {
+  return {
+    permission:
+      typeof request.metadata?.permission === 'string' ? request.metadata.permission : undefined,
+    topicId: typeof request.metadata?.topicId === 'string' ? request.metadata.topicId : undefined,
+    runId: typeof request.metadata?.runId === 'string' ? request.metadata.runId : undefined,
+    turnId: typeof request.metadata?.turnId === 'string' ? request.metadata.turnId : undefined,
+    riskLevel: request.riskLevel
+  }
+}
+
+function pendingAuthMatchesScope(
+  source: PendingAuth,
+  candidate: PendingAuth,
+  scope: PermissionApprovalScope
+): boolean {
+  if (source.requestId === candidate.requestId) return true
+  if (scope === 'request') return false
+
+  const sourceIdentity = pendingAuthIdentity(source)
+  const candidateIdentity = pendingAuthIdentity(candidate)
+  if (!sourceIdentity.permission || sourceIdentity.permission !== candidateIdentity.permission) {
+    return false
+  }
+
+  const sourceRiskRank = sourceIdentity.riskLevel ? RISK_RANK[sourceIdentity.riskLevel] : undefined
+  const candidateRiskRank = candidateIdentity.riskLevel
+    ? RISK_RANK[candidateIdentity.riskLevel]
+    : undefined
+  if (
+    typeof sourceRiskRank === 'number' &&
+    typeof candidateRiskRank === 'number' &&
+    candidateRiskRank > sourceRiskRank
+  ) {
+    return false
+  }
+
+  if (scope === 'topic') {
+    return Boolean(
+      sourceIdentity.topicId && candidateIdentity.topicId === sourceIdentity.topicId
+    )
+  }
+
+  return Boolean(
+    sourceIdentity.runId &&
+      sourceIdentity.turnId &&
+      candidateIdentity.runId === sourceIdentity.runId &&
+      candidateIdentity.turnId === sourceIdentity.turnId
+  )
+}
+
+export function removeResolvedPendingAuth(
+  queue: PendingAuth[],
+  requestId: string,
+  approved: boolean,
+  scope: PermissionApprovalScope
+): PendingAuth[] {
+  const source = queue.find((item) => item.requestId === requestId)
+  if (!source || !approved) return removePendingAuth(queue, requestId)
+  return queue.filter((item) => !pendingAuthMatchesScope(source, item, scope))
 }
 
 function normalizeSessionForState(session: TerminalSession): TerminalSession {
@@ -258,10 +333,13 @@ export function useAgentSessions({
   )
 
   const handleResolveAuth = useCallback(
-    async (approved: boolean, alwaysAllow = false) => {
+    async (approved: boolean, scope?: PermissionApprovalScope) => {
       if (pendingAuth) {
-        await window.api.sendAgentAuthResponse(pendingAuth.requestId, approved, alwaysAllow)
-        setPendingAuthQueue((queue) => removePendingAuth(queue, pendingAuth.requestId))
+        const approvalScope: PermissionApprovalScope = scope ?? (approved ? 'turn' : 'request')
+        await window.api.sendAgentAuthResponse(pendingAuth.requestId, approved, approvalScope)
+        setPendingAuthQueue((queue) =>
+          removeResolvedPendingAuth(queue, pendingAuth.requestId, approved, approvalScope)
+        )
       }
     },
     [pendingAuth]

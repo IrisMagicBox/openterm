@@ -1,7 +1,12 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Clock, PanelRight, Plus } from 'lucide-react'
 import { TopicHub } from '../TopicHub'
-import { Host, Topic, TerminalSession } from '../../../../shared/types'
+import type {
+  Host,
+  PermissionApprovalScope,
+  TerminalSession,
+  Topic
+} from '../../../../shared/types'
 import { AgentRunDetailDrawer } from '../AgentRunDetailDrawer'
 import { AgentStepStream } from '../AgentStepStream'
 import { AgentLiveStream } from '../AgentLiveStream'
@@ -95,7 +100,7 @@ interface ChatPanelProps {
   onToggleTerminalPin: (id: string, pinned: boolean) => Promise<void>
   onUpdateModel: (topicId: string, providerId: string, modelId: string) => Promise<void>
   pendingAuth?: PendingAuth | null
-  onResolveAuth?: (approved: boolean, alwaysAllow?: boolean) => void | Promise<void>
+  onResolveAuth?: (approved: boolean, scope?: PermissionApprovalScope) => void | Promise<void>
 }
 
 export function ChatPanel({

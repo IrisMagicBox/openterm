@@ -66,4 +66,25 @@ describe('ToolContextFactory', () => {
       metadata: { toolName: 'write_file', path: '/tmp/a' }
     })
   })
+
+  it('attaches the assistant turn id to permission metadata', async () => {
+    const ask = vi.fn(async () => ({ approved: true, alwaysAllow: false }))
+    const factory = new ToolContextFactory({
+      context: makeContext(),
+      runId: 'run-1',
+      config,
+      permissionEngine: { ask } as never
+    })
+
+    const context = factory.create('part-1', 'step-1', 'webfetch', 'run-1:2')
+    await context.requestAuthorization('https://example.com', 'medium', 'testing')
+
+    expect(ask).toHaveBeenCalledWith({
+      permission: 'webfetch',
+      pattern: 'https://example.com',
+      riskLevel: 'medium',
+      reason: 'testing',
+      metadata: { toolName: 'webfetch', turnId: 'run-1:2' }
+    })
+  })
 })

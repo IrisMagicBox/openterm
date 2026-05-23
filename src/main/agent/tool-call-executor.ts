@@ -34,6 +34,7 @@ export class ToolCallExecutor {
   private readonly contextFactory: ToolContextFactory
   private readonly parts = new AgentPartProjection()
   private readonly pendingVerifications = new Map<string, PendingVerification>()
+  private currentTurnId?: string
 
   constructor(private readonly options: AgentProcessorOptions) {
     this.legacyEvents = new LegacyAgentEventAdapter(options.run, options.context)
@@ -69,6 +70,10 @@ export class ToolCallExecutor {
     for (const item of items) {
       this.pendingVerifications.set(item.id, { ...item })
     }
+  }
+
+  setTurnContext(turnCount: number): void {
+    this.currentTurnId = `${this.options.run.id}:${turnCount}`
   }
 
   getVerificationObservation(): string {
@@ -187,7 +192,12 @@ export class ToolCallExecutor {
     })
 
     try {
-      const context = this.contextFactory.create(part.id, legacyStep.id, call.function.name)
+      const context = this.contextFactory.create(
+        part.id,
+        legacyStep.id,
+        call.function.name,
+        this.currentTurnId
+      )
       if (this.options.context.abort?.aborted) {
         throw new Error('Run cancelled')
       }

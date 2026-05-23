@@ -86,6 +86,7 @@ export type AgentPartStatus =
   | 'blocked'
 
 export type ApprovalRiskLevel = 'low' | 'medium' | 'high' | 'critical'
+export type PermissionApprovalScope = 'request' | 'turn' | 'topic'
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired'
 

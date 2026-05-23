@@ -6,6 +6,7 @@ import { AgentApplicationService } from './agent/agent-application-service'
 import { AgentIpcController } from './agent/agent-ipc-controller'
 import { AgentSessionManager } from './agent/agent-session-manager'
 import { ApprovalBroker } from './agent/approval-broker'
+import type { PermissionApprovalScope } from './agent/permission-scope'
 import type {
   AgentSession,
   CloseTerminalSessionFn,
@@ -129,8 +130,12 @@ export class AgentService implements IAgentService {
     this.application.unregisterRunController(runId, controller)
   }
 
-  handleAuthResponse(requestId: string, approved: boolean, alwaysAllow = false): Promise<void> {
-    return this.approvals.handleAuthResponse(requestId, approved, alwaysAllow)
+  handleAuthResponse(
+    requestId: string,
+    approved: boolean,
+    scope: PermissionApprovalScope | boolean = false
+  ): Promise<void> {
+    return this.approvals.handleAuthResponse(requestId, approved, scope)
   }
 
   setPaused(id: string, paused: boolean): Promise<void> {

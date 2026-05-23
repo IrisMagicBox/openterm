@@ -3,6 +3,7 @@ import {
   Code2,
   Eye,
   FileText,
+  Globe,
   ListChecks,
   PencilLine,
   Search,
@@ -36,6 +37,7 @@ export function AgentActivityIcon({
   if (kind === 'edit') return <PencilLine size={size} className={className} />
   if (kind === 'command') return <TerminalSquare size={size} className={className} />
   if (toolName === 'websearch') return <Search size={size} className={className} />
+  if (toolName === 'webfetch') return <Globe size={size} className={className} />
   if (toolName === 'read_file' || toolName === 'write_file') {
     return <FileText size={size} className={className} />
   }

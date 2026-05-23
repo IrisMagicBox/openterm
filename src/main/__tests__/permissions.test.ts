@@ -33,6 +33,13 @@ describe('permission mode decisions', () => {
         riskCategory: 'network'
       })
     ).toBe(false)
+    expect(
+      shouldAskToolPermission(settings('auto_review'), {
+        permission: 'webfetch',
+        riskLevel: 'medium',
+        riskCategory: 'network'
+      })
+    ).toBe(false)
   })
 
   it('keeps mutating operations interactive in auto-review mode', () => {

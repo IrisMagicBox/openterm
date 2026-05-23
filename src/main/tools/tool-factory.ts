@@ -2,6 +2,7 @@
 import { z } from 'zod'
 import type { Message } from '../../shared/types'
 import type { TerminalSessionRole } from '../../shared/types'
+import type { AuthResponse } from '../AgentRunner'
 import { truncateOutput as truncateToDisk } from './truncation'
 
 export namespace Tool {
@@ -37,7 +38,7 @@ export namespace Tool {
       riskLevel: 'low' | 'medium' | 'high' | 'critical',
       reason: string,
       metadata?: Record<string, unknown>
-    ) => Promise<{ approved: boolean; alwaysAllow: boolean }>
+    ) => Promise<AuthResponse>
     notifyStep: (message: Message) => void
     metadata: (input: { title?: string; metadata?: Record<string, unknown> }) => void
     ask: (request: PermissionRequest) => Promise<void>
@@ -70,6 +71,7 @@ export namespace Tool {
       ask: (request: import('../agent/agent-permission-engine').AgentPermissionRequest) => Promise<{
         approved: boolean
         alwaysAllow: boolean
+        scope?: AuthResponse['scope']
       }>
     }
     parts?: {

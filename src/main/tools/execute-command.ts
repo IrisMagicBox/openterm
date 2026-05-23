@@ -5,7 +5,7 @@ import { resolveHostId } from '../utils/host-resolver'
 import { commandExecutor } from '../terminal'
 import { PolicyEngine } from '../PolicyEngine'
 import { approvalDB, permissionDB, commandPatternDB, taskStepDB } from '../db'
-import { COMMAND_TIMEOUT_MS, TRUST_APPROVAL_THRESHOLD } from '../constants'
+import { COMMAND_TIMEOUT_MS } from '../constants'
 import { truncateOutput } from './truncation'
 import { shellQuote } from './shell-quote'
 import { ShellAnalyzer } from '../utils/shell-analyzer'
@@ -25,23 +25,17 @@ function liveOutputPreview(output: string): { output: string; truncated: boolean
   }
 }
 
-function recordPatternApproval(hostId: string, commandPattern: string, alwaysAllow: boolean): void {
+function recordPatternApproval(hostId: string, commandPattern: string): void {
   const existing = commandPatternDB.getPatternByHostAndPattern(hostId, commandPattern)
   if (existing) {
-    if (alwaysAllow) {
-      for (let i = 0; i < TRUST_APPROVAL_THRESHOLD; i++) {
-        commandPatternDB.incrementApprovalCount(existing.id)
-      }
-    } else {
-      commandPatternDB.incrementApprovalCount(existing.id)
-    }
+    commandPatternDB.incrementApprovalCount(existing.id)
   } else {
     commandPatternDB.createCommandPattern({
       hostId,
       commandPattern,
-      approvalCount: alwaysAllow ? TRUST_APPROVAL_THRESHOLD : 1,
+      approvalCount: 1,
       rejectionCount: 0,
-      trustLevel: alwaysAllow ? 'trusted' : 'untrusted',
+      trustLevel: 'untrusted',
       lastSeen: Date.now()
     })
   }
@@ -146,7 +140,7 @@ export default define('execute_command', {
         return { output: 'Error: User rejected command authorization' }
       }
 
-      recordPatternApproval(host.id, commandPattern, authResult.alwaysAllow)
+      recordPatternApproval(host.id, commandPattern)
 
       if (!ctx.runId) {
         approvalDB.createApproval({

@@ -37,10 +37,14 @@ export function parseAgentPartCommand(part: AgentPart): string {
   if (part.toolName === 'websearch' && typeof part.metadata?.displayQuery === 'string') {
     return sanitizeAgentText(part.metadata.displayQuery)
   }
+  if (part.toolName === 'webfetch' && typeof part.metadata?.url === 'string') {
+    return sanitizeAgentText(part.metadata.url)
+  }
   if (!part.input) return ''
   const parsed = parseJson(part.input)
   if (!parsed) return sanitizeAgentText(part.input)
   if (typeof parsed.command === 'string') return sanitizeAgentText(parsed.command)
+  if (typeof parsed.url === 'string') return sanitizeAgentText(parsed.url)
   if (typeof parsed.path === 'string') return sanitizeAgentText(parsed.path)
   if (typeof parsed.action === 'string') return sanitizeAgentText(parsed.action)
   if (!hasObjectEntries(parsed)) return ''

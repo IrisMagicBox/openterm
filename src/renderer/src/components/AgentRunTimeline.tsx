@@ -10,6 +10,7 @@ import {
 import type { JSX } from 'react'
 import type { AgentPart } from '../../../shared/types'
 import { AgentActivityDetail } from './AgentActivityDetail'
+import { AgentPermissionBadge } from './AgentPermissionBadge'
 import { AgentTaskList } from './AgentTaskList'
 import {
   agentActivityLines,
@@ -26,6 +27,7 @@ import {
   isAssistantTextPart,
   latestLiveAssistantTextPart
 } from '../lib/agent-process-parts'
+import { permissionPartsByParent } from '../lib/agent-permission-parts'
 import { cn } from '../lib/utils'
 import { stripInternalToolCallMarkup } from '../../../shared/internal-tool-call-markup'
 import { AssistantMessageBody } from './AssistantMessageBody'
@@ -108,6 +110,7 @@ export function AgentRunTimeline({ taskId, runId }: AgentRunTimelineProps): JSX.
 
   const visibleParts = useMemo(() => agentRawProcessParts(parts), [parts])
   const summaryParts = useMemo(() => agentSummaryParts(parts), [parts])
+  const permissionsByParent = useMemo(() => permissionPartsByParent(parts), [parts])
   const liveAssistantPart = useMemo(() => latestLiveAssistantTextPart(parts), [parts])
   const liveAssistantContent = liveAssistantPart
     ? stripInternalToolCallMarkup(liveAssistantPart.output ?? '')
@@ -168,6 +171,7 @@ export function AgentRunTimeline({ taskId, runId }: AgentRunTimelineProps): JSX.
               const fullDetail = line?.fullDetail || detail
               const canExpandPart = !textContent && shouldShowAgentActivityDetail(line)
               const isPartExpanded = expandedPartIds.has(part.id)
+              const permissionParts = permissionsByParent.get(part.id)
               return (
                 <div
                   key={part.id}
@@ -204,6 +208,7 @@ export function AgentRunTimeline({ taskId, runId }: AgentRunTimelineProps): JSX.
                     {detail && (
                       <span className="min-w-0 flex-1 truncate font-mono text-xs">{detail}</span>
                     )}
+                    <AgentPermissionBadge permissions={permissionParts} />
                     </div>
                   )}
                   {canExpandPart && isPartExpanded && (

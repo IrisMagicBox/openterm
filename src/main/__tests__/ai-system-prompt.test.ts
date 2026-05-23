@@ -13,4 +13,10 @@ describe('SYSTEM_PROMPT source', () => {
     expect(source).toContain('当前判断、证据缺口或下一步决策')
     expect(source).not.toContain('正在做什么/学到了什么/下一步')
   })
+
+  it('guides normal web reading through websearch and webfetch instead of curl', () => {
+    expect(source).toContain('优先使用 \\`websearch\\`')
+    expect(source).toContain('具体页面时使用 \\`webfetch\\`')
+    expect(source).toContain('不要用 \\`execute_command\\`/\\`curl\\` 做普通网页阅读')
+  })
 })

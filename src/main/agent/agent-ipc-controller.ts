@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import type { AgentService } from '../agent'
 import type { TerminalSessionDeletedBy } from '../../shared/types'
+import type { PermissionApprovalScope } from './permission-scope'
 
 export class AgentIpcController {
   constructor(private readonly service: AgentService) {}
@@ -29,8 +30,8 @@ export class AgentIpcController {
     ipcMain.removeHandler('agent:auth-response')
     ipcMain.handle(
       'agent:auth-response',
-      (_, requestId: string, approved: boolean, alwaysAllow?: boolean) =>
-        this.service.handleAuthResponse(requestId, approved, alwaysAllow)
+      (_, requestId: string, approved: boolean, scope?: PermissionApprovalScope | boolean) =>
+        this.service.handleAuthResponse(requestId, approved, scope)
     )
 
     ipcMain.removeHandler('agent:get-sessions')

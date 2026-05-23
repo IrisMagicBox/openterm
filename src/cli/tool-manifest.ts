@@ -271,6 +271,13 @@ export const CLI_TOOL_MANIFEST: CliToolManifestItem[] = [
     summary: 'Search the web without requiring an API key.'
   },
   {
+    id: 'webfetch',
+    category: 'web',
+    mode: 'read',
+    requiresAppRuntime: false,
+    summary: 'Fetch and extract readable page content from an exact URL.'
+  },
+  {
     id: 'read_notes',
     category: 'notes',
     mode: 'read',

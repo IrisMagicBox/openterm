@@ -16,7 +16,7 @@ export class ToolContextFactory {
 
   private readonly parts = new AgentPartProjection()
 
-  create(partId: string, stepId: string, toolName: string): Tool.Context {
+  create(partId: string, stepId: string, toolName: string, turnId?: string): Tool.Context {
     const { context, runId, config, permissionEngine } = this.options
     return {
       ...context,
@@ -32,14 +32,14 @@ export class ToolContextFactory {
           pattern: command,
           riskLevel,
           reason,
-          metadata: { ...metadata, toolName }
+          metadata: { ...metadata, toolName, turnId }
         }),
       ask: async (request) => {
         await permissionEngine.ask({
           permission: request.permission,
           pattern: request.pattern,
           reason: `Permission required: ${request.permission} for pattern "${request.pattern}"`,
-          metadata: request.metadata
+          metadata: { ...request.metadata, turnId }
         })
       },
       updatePartMetadata: (metadata) => {
@@ -51,7 +51,11 @@ export class ToolContextFactory {
         ensureSession: context.ensureSession
       },
       permission: {
-        ask: (request) => permissionEngine.ask(request)
+        ask: (request) =>
+          permissionEngine.ask({
+            ...request,
+            metadata: { ...request.metadata, turnId }
+          })
       },
       parts: {
         updateMetadata: (metadata) => this.parts.appendPartMetadata(partId, metadata),

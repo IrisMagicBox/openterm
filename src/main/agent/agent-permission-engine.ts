@@ -7,6 +7,7 @@ import type { AgentPart, ApprovalRiskLevel, PolicyRiskCategory } from '../../sha
 import { getErrorMessage } from '../../shared/errors'
 import { shouldAskToolPermission } from '../permissions'
 import { AgentPartProjection } from './agent-part-projection'
+import { normalizeApprovalScope } from './permission-scope'
 
 export interface AgentPermissionRequest {
   permission: string
@@ -110,15 +111,13 @@ export class AgentPermissionEngine {
 
       this.recordApproval(request, riskLevel, response.approved)
       approvalRecorded = true
-      if (response.approved && response.alwaysAllow) {
-        this.rememberAlwaysAllow(request.permission, riskLevel)
-      }
-
       if (response.approved) {
+        const scope = normalizeApprovalScope(response.scope ?? response.alwaysAllow)
         this.parts.completePermissionPart(part.id, {
           output: 'Permission approved',
           approved: true,
-          alwaysAllow: response.alwaysAllow
+          alwaysAllow: response.alwaysAllow,
+          metadata: { scope }
         })
       } else {
         this.parts.failPermissionPart(part.id, {
@@ -181,29 +180,6 @@ export class AgentPermissionEngine {
       AgentPermissionEngine.RISK_LEVELS[riskLevel] <=
       AgentPermissionEngine.RISK_LEVELS[rule.maxAutoApproveRisk]
     )
-  }
-
-  private rememberAlwaysAllow(permission: string, riskLevel: ApprovalRiskLevel): void {
-    const existing = this.config.permissions.find((rule) => rule.tool === permission)
-    const allowRule: PermissionRule = existing ?? { tool: permission }
-    allowRule.action = 'allow'
-    allowRule.allowed = true
-    allowRule.scope = 'always'
-    allowRule.maxAutoApproveRisk = this.widerRisk(allowRule.maxAutoApproveRisk, riskLevel)
-
-    if (!existing) {
-      this.config.permissions.unshift(allowRule)
-    }
-  }
-
-  private widerRisk(
-    current: PermissionRule['maxAutoApproveRisk'],
-    next: ApprovalRiskLevel
-  ): ApprovalRiskLevel {
-    if (!current) return next
-    return AgentPermissionEngine.RISK_LEVELS[current] >= AgentPermissionEngine.RISK_LEVELS[next]
-      ? current
-      : next
   }
 
   private rejectFeedback(

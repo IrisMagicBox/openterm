@@ -49,6 +49,7 @@ function metadataString(part: AgentPart, key: string): string {
 }
 
 function hasProcessContent(part: AgentPart): boolean {
+  if (part.type === 'permission') return false
   if (part.status === 'pending' || part.status === 'running' || part.status === 'blocked') {
     return true
   }
