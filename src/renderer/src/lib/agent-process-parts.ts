@@ -11,6 +11,7 @@ function hasLaterActivity(part: AgentPart, parts: AgentPart[]): boolean {
     (candidate) =>
       (candidate.orderIndex > part.orderIndex ||
         (candidate.orderIndex === part.orderIndex && candidate.createdAt > part.createdAt)) &&
+      shouldShowAgentLivePart(candidate) &&
       candidate.type !== 'text' &&
       candidate.type !== 'reasoning' &&
       candidate.type !== 'usage'

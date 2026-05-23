@@ -29,6 +29,7 @@ describe('agent live stream visibility', () => {
   it('hides internal usage and error parts from the live chat bubble', () => {
     expect(shouldShowAgentLivePart(part({ type: 'usage' }))).toBe(false)
     expect(shouldShowAgentLivePart(part({ type: 'error', status: 'error' }))).toBe(false)
+    expect(shouldShowAgentLivePart(part({ type: 'permission', status: 'completed' }))).toBe(false)
   })
 
   it('keeps real tool progress and failures visible', () => {
