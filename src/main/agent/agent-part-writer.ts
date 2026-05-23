@@ -127,10 +127,7 @@ export class AgentPartWriter {
     const status = options.status ?? 'cancelled'
     const openParts = this.store
       .getParts(runId)
-      .filter(
-        (part) =>
-          part.status === 'pending' || part.status === 'running' || part.status === 'blocked'
-      )
+      .filter((part) => part.status === 'pending' || part.status === 'running')
 
     const updated: AgentPart[] = []
     for (const part of openParts) {
@@ -162,5 +159,3 @@ export class AgentPartWriter {
     return this.store.getPart(partId)
   }
 }
-
-export const agentPartWriter = new AgentPartWriter()

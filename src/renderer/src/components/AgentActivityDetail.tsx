@@ -24,6 +24,20 @@ function markdownToneClass(tone: AgentActivityDetailSection['tone']): string {
   return 'border-workspace-border bg-workspace/85 text-workspace-foreground'
 }
 
+function defaultOpenIds(sections: AgentActivityDetailSection[]): Set<string> {
+  return new Set(
+    sections
+      .filter((section) => section.defaultOpen || sections.length === 1)
+      .map((section) => section.id)
+  )
+}
+
+function sectionOpenStateKey(sections: AgentActivityDetailSection[]): string {
+  return sections
+    .map((section) => `${section.id}:${section.defaultOpen ? 'open' : 'closed'}`)
+    .join('\n')
+}
+
 export function AgentActivityDetail({
   line,
   fallback,
@@ -32,20 +46,15 @@ export function AgentActivityDetail({
   const sections = line?.sections ?? []
   const fallbackRef = useRef<HTMLPreElement>(null)
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
-  const initialOpenIds = useMemo(
-    () =>
-      new Set(
-        sections
-          .filter((section) => section.defaultOpen || sections.length === 1)
-          .map((section) => section.id)
-      ),
-    [sections]
-  )
-  const [openIds, setOpenIds] = useState(initialOpenIds)
+  const openStateKey = useMemo(() => sectionOpenStateKey(sections), [sections])
+  const lastOpenStateKeyRef = useRef(openStateKey)
+  const [openIds, setOpenIds] = useState(() => defaultOpenIds(sections))
 
   useEffect(() => {
-    setOpenIds(initialOpenIds)
-  }, [initialOpenIds])
+    if (lastOpenStateKeyRef.current === openStateKey) return
+    lastOpenStateKeyRef.current = openStateKey
+    setOpenIds(defaultOpenIds(sections))
+  }, [openStateKey, sections])
 
   useEffect(() => {
     if (!isLive) return

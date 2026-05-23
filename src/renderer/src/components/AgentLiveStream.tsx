@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import type { AgentPart } from '../../../shared/types'
 import { stripInternalToolCallMarkup } from '../../../shared/internal-tool-call-markup'
-import { MarkdownRenderer } from './MarkdownRenderer'
+import { AssistantMessageBody } from './AssistantMessageBody'
 import { AgentTaskList } from './AgentTaskList'
 import { AgentActivityDetail } from './AgentActivityDetail'
 import { agentPartSessionId } from '../lib/terminal-stage'
@@ -30,9 +30,9 @@ import {
 import { AgentActivityIcon } from '../lib/agent-activity-icons'
 import { deriveAgentTasks } from '../lib/agent-task-list'
 import {
-  agentProcessParts,
+  agentRawProcessParts,
   isAssistantTextPart,
-  isIntermediateAssistantTextPart,
+  latestLiveAssistantTextPart,
   sortAgentParts
 } from '../lib/agent-process-parts'
 
@@ -86,6 +86,11 @@ function toolOutput(part: AgentPart): string {
   return sanitizeAgentText(metadataString(part, 'liveOutputPreview') || agentPartOutput(part))
 }
 
+export function shouldShowLiveRawOutputFallback(part: AgentPart): boolean {
+  if (isAssistantTextPart(part)) return false
+  return Boolean(toolOutput(part) && (part.status === 'running' || part.metadata?.live === true))
+}
+
 export function AgentLiveStream({
   parts,
   onRevealTerminal,
@@ -101,15 +106,11 @@ export function AgentLiveStream({
     return () => window.clearInterval(id)
   }, [])
 
-  const textContent = stripInternalToolCallMarkup(
-    visibleParts
-      .filter(
-        (part) => isAssistantTextPart(part) && !isIntermediateAssistantTextPart(part, visibleParts)
-      )
-      .map((part) => part.output)
-      .join('\n\n')
-  )
-  const activityParts = agentProcessParts(parts)
+  const liveAssistantPart = latestLiveAssistantTextPart(parts)
+  const liveAssistantContent = liveAssistantPart
+    ? stripInternalToolCallMarkup(liveAssistantPart.output ?? '')
+    : ''
+  const activityParts = agentRawProcessParts(parts)
   const activityLines = agentActivityLines(activityParts)
   const summary = agentActivitySummary(activityParts)
   const status = agentActivityStatus(activityParts)
@@ -128,10 +129,10 @@ export function AgentLiveStream({
   }
 
   return (
-    <div className="mx-auto w-full max-w-[860px]">
-      <div>
-        {activityParts.length > 0 && (
-          <div className="mb-4">
+    <div className="mx-auto w-full max-w-[860px] cursor-auto select-text no-drag">
+      <div className="space-y-4">
+        {activityParts.length > 0 ? (
+          <div>
             <button
               onClick={() => setExpanded((value) => !value)}
               className="flex w-full items-center gap-2 py-1.5 text-left text-sm text-muted-foreground transition hover:text-foreground no-drag"
@@ -148,14 +149,18 @@ export function AgentLiveStream({
                 <div className="space-y-1">
                   {activityParts.map((part, index) => {
                     const line = activityLines[index]
+                    const textContent = isAssistantTextPart(part)
+                      ? stripInternalToolCallMarkup(part.output ?? '')
+                      : ''
                     const output = toolOutput(part)
                     const input = parseAgentPartCommand(part)
                     const isLive = part.status === 'running' || part.metadata?.live === true
+                    const showRawOutputFallback = shouldShowLiveRawOutputFallback(part)
                     const sessionId = agentPartSessionId(part)
                     const isFocused = focusedPartId === part.id
                     const fullDetail = line?.fullDetail || output || input
                     const canExpandPart =
-                      shouldShowAgentActivityDetail(line) || Boolean(output && isLive)
+                      !textContent && (shouldShowAgentActivityDetail(line) || showRawOutputFallback)
                     const isPartExpanded = expandedPartIds.has(part.id)
                     return (
                       <div
@@ -170,57 +175,57 @@ export function AgentLiveStream({
                           isFocused && 'ring-1 ring-accent/25'
                         )}
                       >
-                        <div className="flex min-w-0 items-center gap-2 text-sm">
-                          {canExpandPart ? (
-                            <button
-                              type="button"
-                              onClick={() => togglePart(part.id)}
-                              className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
-                              aria-label={isPartExpanded ? '收起过程详情' : '展开过程详情'}
-                            >
-                              {isPartExpanded ? (
-                                <ChevronDown size={13} />
-                              ) : (
-                                <ChevronRight size={13} />
-                              )}
-                            </button>
-                          ) : (
-                            <span className="h-4 w-4 shrink-0" />
-                          )}
-                          {statusIcon(part)}
-                          <AgentActivityIcon
-                            kind={line?.kind || 'other'}
-                            toolName={part.toolName}
-                            className="shrink-0 text-muted-foreground"
-                          />
-                          <span className="shrink-0 font-medium">{line?.label || '处理'}</span>
-                          {(line?.detail || input) && (
-                            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-                              {line?.detail || input}
+                        {textContent ? (
+                          <AssistantMessageBody content={textContent} className="py-0.5" />
+                        ) : (
+                          <div className="flex min-w-0 items-center gap-2 text-sm">
+                            {canExpandPart ? (
+                              <button
+                                type="button"
+                                onClick={() => togglePart(part.id)}
+                                className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
+                                aria-label={isPartExpanded ? '收起过程详情' : '展开过程详情'}
+                              >
+                                {isPartExpanded ? (
+                                  <ChevronDown size={13} />
+                                ) : (
+                                  <ChevronRight size={13} />
+                                )}
+                              </button>
+                            ) : (
+                              <span className="h-4 w-4 shrink-0" />
+                            )}
+                            {statusIcon(part)}
+                            <AgentActivityIcon
+                              kind={line?.kind || 'other'}
+                              toolName={part.toolName}
+                              className="shrink-0 text-muted-foreground"
+                            />
+                            <span className="shrink-0 font-medium">{line?.label || '处理'}</span>
+                            {(line?.detail || input) && (
+                              <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+                                {line?.detail || input}
+                              </span>
+                            )}
+                            {sessionId && onRevealTerminal && (
+                              <button
+                                onClick={() => onRevealTerminal(sessionId, part.id)}
+                                className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
+                              >
+                                <Eye size={12} />
+                                终端
+                              </button>
+                            )}
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {statusLabel(part)}
                             </span>
-                          )}
-                          {sessionId && onRevealTerminal && (
-                            <button
-                              onClick={() => onRevealTerminal(sessionId, part.id)}
-                              className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
-                            >
-                              <Eye size={12} />
-                              终端
-                            </button>
-                          )}
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {statusLabel(part)}
-                          </span>
-                        </div>
+                          </div>
+                        )}
 
                         {canExpandPart && isPartExpanded && (
-                          <AgentActivityDetail
-                            line={line}
-                            fallback={fullDetail}
-                            isLive={isLive}
-                          />
+                          <AgentActivityDetail line={line} fallback={fullDetail} isLive={isLive} />
                         )}
-                        {output && isLive && !isPartExpanded && (
+                        {showRawOutputFallback && !isPartExpanded && (
                           <AgentActivityDetail fallback={output} isLive={isLive} />
                         )}
                       </div>
@@ -230,18 +235,13 @@ export function AgentLiveStream({
               </div>
             )}
           </div>
-        )}
-
-        {textContent ? (
-          <div className="text-[var(--chat-text-size)] leading-[var(--chat-line-height)] text-foreground">
-            <MarkdownRenderer content={textContent} />
-          </div>
-        ) : (
+        ) : !liveAssistantContent ? (
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <Loader2 size={15} className="animate-spin" />
-            正在组织回复
+            <span>等待模型输出</span>
           </div>
-        )}
+        ) : null}
+        {liveAssistantContent && <AssistantMessageBody content={liveAssistantContent} />}
       </div>
     </div>
   )

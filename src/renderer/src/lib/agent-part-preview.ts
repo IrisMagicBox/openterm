@@ -20,10 +20,17 @@ export function sanitizeAgentText(value: string): string {
 
 function parseJson(value: string): Record<string, unknown> | undefined {
   try {
-    return JSON.parse(value) as Record<string, unknown>
+    const parsed = JSON.parse(value) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined
   } catch {
     return undefined
   }
+}
+
+function hasObjectEntries(value: Record<string, unknown>): boolean {
+  return Object.keys(value).length > 0
 }
 
 export function parseAgentPartCommand(part: AgentPart): string {
@@ -36,6 +43,7 @@ export function parseAgentPartCommand(part: AgentPart): string {
   if (typeof parsed.command === 'string') return sanitizeAgentText(parsed.command)
   if (typeof parsed.path === 'string') return sanitizeAgentText(parsed.path)
   if (typeof parsed.action === 'string') return sanitizeAgentText(parsed.action)
+  if (!hasObjectEntries(parsed)) return ''
   return sanitizeAgentText(JSON.stringify(parsed))
 }
 
@@ -49,6 +57,7 @@ export function agentPartPreview(part: AgentPart, limit = 120): string {
     const exit = typeof parsed.exitCode === 'number' ? `Exit ${parsed.exitCode}: ` : ''
     return truncate(`${exit}${sanitizeAgentText(parsed.content)}`, limit)
   }
+  if (parsed && !hasObjectEntries(parsed)) return ''
 
   return truncate(sanitizeAgentText(raw), limit)
 }

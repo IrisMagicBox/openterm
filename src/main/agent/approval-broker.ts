@@ -1,6 +1,7 @@
 import type { WebContents } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
 import type { AuthResponse } from '../AgentRunner'
+import { logger } from '../logger'
 
 export const APPROVAL_TIMEOUT_MS = 24 * 60 * 60 * 1000
 
@@ -66,11 +67,19 @@ export class ApprovalBroker {
     alwaysAllow = false
   ): Promise<void> {
     const pending = this.pendingRequests.get(requestId)
-    if (pending) {
-      clearTimeout(pending.timer)
-      pending.resolve({ approved, alwaysAllow })
-      this.pendingRequests.delete(requestId)
+    if (!pending) {
+      logger.warn('ApprovalBroker', 'Received auth response for unknown request', {
+        requestId,
+        approved,
+        alwaysAllow,
+        pendingCount: this.pendingRequests.size
+      })
+      return
     }
+
+    clearTimeout(pending.timer)
+    pending.resolve({ approved, alwaysAllow })
+    this.pendingRequests.delete(requestId)
   }
 
   rejectRuns(runIds: string[], reason: string): void {

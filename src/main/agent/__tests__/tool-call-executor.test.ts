@@ -259,4 +259,46 @@ describe('ToolCallExecutor schema validation', () => {
       vi.useRealTimers()
     }
   })
+
+  it('persists formatted tool observations for checkpoint recovery', async () => {
+    const registry = new ToolRegistry()
+    registry.register(
+      define('execute_command', {
+        description: 'Read command test tool',
+        parameters: z.object({ hostId: z.string(), command: z.string() }),
+        execute: async (args) => ({
+          output: JSON.stringify({
+            content: 'hello',
+            exitCode: 0,
+            durationMs: 1,
+            isTruncated: false,
+            sessionId: 's1'
+          }),
+          metadata: {
+            hostId: args.hostId,
+            command: args.command,
+            riskCategory: 'read',
+            exitCode: 0
+          }
+        })
+      })
+    )
+    await registry.initializeTools('build')
+
+    const executor = new ToolCallExecutor(makeOptions(registry))
+    const observations = await executor.executeToolCalls([
+      toolCall({ hostId: 'local', command: 'echo hello' }, 'execute_command')
+    ])
+
+    expect(observations[0].content).toContain('hello')
+    expect(mocks.agentRunStore.updatePart).toHaveBeenCalledWith(
+      'part-1',
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          observation: expect.stringContaining('hello')
+        })
+      })
+    )
+  })
+
 })

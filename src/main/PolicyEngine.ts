@@ -96,6 +96,34 @@ export class PolicyEngine {
 
   private static PACKAGE_COMMANDS = new Set(['apt', 'yum', 'dnf', 'pacman'])
 
+  private static READ_ONLY_COMMANDS = new Set([
+    'cat',
+    'df',
+    'du',
+    'find',
+    'grep',
+    'head',
+    'journalctl',
+    'less',
+    'ls',
+    'more',
+    'ps',
+    'stat',
+    'tail',
+    'wc'
+  ])
+
+  private static KUBECTL_READ_ONLY_VERBS = new Set([
+    'api-resources',
+    'api-versions',
+    'describe',
+    'explain',
+    'get',
+    'logs',
+    'top',
+    'version'
+  ])
+
   private static READ_ONLY_SYSTEM_PATTERNS = [
     /^systemctl\s+(status|is-active|is-enabled|list-|show)\b/i,
     /^service\s+\S+\s+status\b/i,
@@ -133,6 +161,90 @@ export class PolicyEngine {
     normalized = normalized.replace(/\b\d+\b/g, '{n}')
 
     return normalized
+  }
+
+  private static unwrapSudoSegment(segment: {
+    raw: string
+    command: string
+    args: string[]
+  }): { command: string; args: string[]; raw: string } {
+    if (segment.command.toLowerCase() !== 'sudo') {
+      return {
+        command: segment.command.toLowerCase(),
+        args: segment.args,
+        raw: segment.raw.toLowerCase()
+      }
+    }
+
+    const tokens = [segment.command, ...segment.args]
+    let index = 1
+    while (index < tokens.length) {
+      const token = tokens[index].toLowerCase()
+      if (token === '--') {
+        index += 1
+        break
+      }
+      if (token === '-u' || token === '--user' || token === '-g' || token === '--group') {
+        index += 2
+        continue
+      }
+      if (token.startsWith('-u') || token.startsWith('-g')) {
+        index += 1
+        continue
+      }
+      if (token.startsWith('-')) {
+        index += 1
+        continue
+      }
+      break
+    }
+
+    const command = tokens[index]?.toLowerCase() || 'sudo'
+    const args = tokens.slice(index + 1)
+    const raw = tokens.slice(index).join(' ').toLowerCase() || segment.raw.toLowerCase()
+    return { command, args, raw }
+  }
+
+  private static matchesCommand(command: string, raw: string, pattern: string): boolean {
+    const lowerPattern = pattern.toLowerCase()
+    if (lowerPattern.includes(' ')) {
+      return raw === lowerPattern || raw.startsWith(`${lowerPattern} `)
+    }
+    return command === lowerPattern
+  }
+
+  private static hasWriteIntent(raw: string): boolean {
+    return (
+      /(^|[^0-9])>>?\s*(?!&|\/dev\/null\b|\/dev\/stderr\b|\/dev\/stdout\b)\S+/i.test(raw) ||
+      /\bfind\b[\s\S]*\s-delete\b/i.test(raw) ||
+      /\bfind\b[\s\S]*\s-exec\s+(rm|mv|cp|chmod|chown|sh|bash)\b/i.test(raw) ||
+      /\bxargs\s+(rm|mv|cp|chmod|chown)\b/i.test(raw) ||
+      /\btee\b/i.test(raw)
+    )
+  }
+
+  private static isReadOnlySegment(segment: {
+    raw: string
+    command: string
+    args: string[]
+  }): boolean {
+    if (this.hasWriteIntent(segment.raw)) return false
+
+    if (this.READ_ONLY_SYSTEM_PATTERNS.some((pattern) => pattern.test(segment.raw))) {
+      return true
+    }
+
+    const effective = this.unwrapSudoSegment(segment)
+    if (this.READ_ONLY_COMMANDS.has(effective.command)) {
+      return true
+    }
+
+    if (effective.command === 'kubectl') {
+      const verb = effective.args.find((arg) => !arg.startsWith('-'))?.toLowerCase()
+      return !!verb && this.KUBECTL_READ_ONLY_VERBS.has(verb)
+    }
+
+    return false
   }
 
   static evaluate(command: string): PolicyResult {
@@ -203,9 +315,14 @@ export class PolicyEngine {
       }
 
       // 3. Command classification
+      const effective = this.unwrapSudoSegment(segment)
+      const effectiveCommand = effective.command
+      const effectiveRaw = effective.raw
+      const isReadOnly = this.isReadOnlySegment(segment)
+
       // Modification commands
       const foundModify = this.MODIFY_COMMANDS.find(
-        (cmd) => lowerCmd === cmd || lowerRaw.startsWith(cmd + ' ')
+        (cmd) => this.matchesCommand(effectiveCommand, effectiveRaw, cmd)
       )
       if (foundModify) {
         const isCriticalPath = this.DANGEROUS_PATHS.some((path) => lowerRaw.includes(path))
@@ -232,8 +349,13 @@ export class PolicyEngine {
       }
 
       // System administration
-      const foundSystem = this.SYSTEM_COMMANDS.find((cmd) => lowerRaw.includes(cmd))
-      if (foundSystem && !this.READ_ONLY_SYSTEM_PATTERNS.some((pattern) => pattern.test(segment.raw))) {
+      const foundSystem =
+        lowerCmd === 'sudo' && !isReadOnly
+          ? 'sudo'
+          : this.SYSTEM_COMMANDS.find((cmd) =>
+              cmd === 'sudo' ? false : this.matchesCommand(effectiveCommand, effectiveRaw, cmd)
+            )
+      if (foundSystem && !isReadOnly) {
         const riskCategory: PolicyRiskCategory = this.PACKAGE_COMMANDS.has(foundSystem)
           ? 'package'
           : 'privilege'
@@ -248,7 +370,7 @@ export class PolicyEngine {
 
       // Network commands
       const foundNetwork = this.NETWORK_COMMANDS.find(
-        (cmd) => lowerCmd === cmd || lowerRaw.startsWith(cmd + ' ')
+        (cmd) => this.matchesCommand(effectiveCommand, effectiveRaw, cmd)
       )
       if (foundNetwork) {
         const writesNetworkArtifact =
@@ -277,7 +399,7 @@ export class PolicyEngine {
         'nano',
         'ls'
       ]
-      if (sensitiveReadCommands.includes(lowerCmd)) {
+      if (sensitiveReadCommands.includes(effectiveCommand)) {
         const foundDangerousPath = this.DANGEROUS_PATHS.find((path) => lowerRaw.includes(path))
         if (foundDangerousPath) {
           results.push({

@@ -6,6 +6,7 @@ import { approvalDB, permissionDB } from '../db'
 import type { AgentPart, ApprovalRiskLevel, PolicyRiskCategory } from '../../shared/types'
 import { getErrorMessage } from '../../shared/errors'
 import { shouldAskToolPermission } from '../permissions'
+import { AgentPartProjection } from './agent-part-projection'
 
 export interface AgentPermissionRequest {
   permission: string
@@ -26,7 +27,8 @@ export class AgentPermissionEngine {
 
   constructor(
     private readonly config: AgentConfig,
-    private readonly context: AgentContext
+    private readonly context: AgentContext,
+    private readonly parts = new AgentPartProjection()
   ) {}
 
   isToolAllowed(toolName: string): boolean {
@@ -56,13 +58,11 @@ export class AgentPermissionEngine {
     ) {
       const response = { approved: true, alwaysAllow: false }
       this.recordApproval(request, riskLevel, true)
-      agentRunStore.updatePart(part.id, {
-        status: 'completed',
+      this.parts.completePermissionPart(part.id, {
         output: 'Permission auto-approved by global permission mode',
-        endedAt: Date.now(),
+        approved: true,
+        alwaysAllow: false,
         metadata: {
-          approved: true,
-          alwaysAllow: false,
           ruleAction: action,
           globalModeApproved: true
         }
@@ -72,13 +72,11 @@ export class AgentPermissionEngine {
 
     if (action === 'allow' && this.isWithinMaxRisk(rule, riskLevel)) {
       const response = { approved: true, alwaysAllow: rule?.scope === 'always' }
-      agentRunStore.updatePart(part.id, {
-        status: 'completed',
+      this.parts.completePermissionPart(part.id, {
         output: 'Permission auto-approved by ruleset',
-        endedAt: Date.now(),
+        approved: true,
+        alwaysAllow: response.alwaysAllow,
         metadata: {
-          approved: true,
-          alwaysAllow: response.alwaysAllow,
           ruleAction: action,
           scope: rule?.scope ?? 'once'
         }
@@ -89,10 +87,8 @@ export class AgentPermissionEngine {
     if (action === 'deny' || (action === 'allow' && !this.isWithinMaxRisk(rule, riskLevel))) {
       const feedback = this.rejectFeedback(request, rule, riskLevel)
       this.recordApproval(request, riskLevel, false)
-      agentRunStore.updatePart(part.id, {
-        status: 'error',
+      this.parts.failPermissionPart(part.id, {
         error: feedback,
-        endedAt: Date.now(),
         metadata: { approved: false, ruleAction: 'deny', feedback }
       })
       throw new Error(feedback)
@@ -118,13 +114,18 @@ export class AgentPermissionEngine {
         this.rememberAlwaysAllow(request.permission, riskLevel)
       }
 
-      agentRunStore.updatePart(part.id, {
-        status: response.approved ? 'completed' : 'error',
-        output: response.approved ? 'Permission approved' : undefined,
-        error: response.approved ? undefined : 'Permission denied',
-        endedAt: Date.now(),
-        metadata: { approved: response.approved, alwaysAllow: response.alwaysAllow }
-      })
+      if (response.approved) {
+        this.parts.completePermissionPart(part.id, {
+          output: 'Permission approved',
+          approved: true,
+          alwaysAllow: response.alwaysAllow
+        })
+      } else {
+        this.parts.failPermissionPart(part.id, {
+          error: 'Permission denied',
+          metadata: { approved: false, alwaysAllow: response.alwaysAllow }
+        })
+      }
 
       if (!response.approved) {
         throw new Error(this.rejectFeedback(request, rule, riskLevel))
@@ -136,10 +137,8 @@ export class AgentPermissionEngine {
       const feedback = getErrorMessage(error)
       if (!approvalRecorded) {
         this.recordApproval(request, riskLevel, false)
-        agentRunStore.updatePart(part.id, {
-          status: 'error',
+        this.parts.failPermissionPart(part.id, {
           error: feedback,
-          endedAt: Date.now(),
           metadata: { approved: false, feedback }
         })
       }
@@ -152,19 +151,14 @@ export class AgentPermissionEngine {
     request: AgentPermissionRequest,
     riskLevel: ApprovalRiskLevel
   ): AgentPart {
-    return agentRunStore.createPart({
+    return this.parts.createPermissionPart({
       runId: this.context.runId!,
       parentPartId: this.context.partId,
-      type: 'permission',
-      status: 'blocked',
-      input: request.pattern,
-      metadata: {
-        permission: request.permission,
-        riskLevel,
-        reason: request.reason,
-        ...(request.metadata ?? {})
-      },
-      startedAt: Date.now()
+      pattern: request.pattern,
+      permission: request.permission,
+      riskLevel,
+      reason: request.reason,
+      metadata: request.metadata
     })
   }
 

@@ -70,6 +70,9 @@ function textValue(value: unknown): string {
 function compactJsonValue(value: unknown): string {
   if (typeof value === 'string') return value
   if (value === undefined || value === null) return ''
+  if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) {
+    return ''
+  }
   try {
     return JSON.stringify(value)
   } catch {
@@ -81,7 +84,7 @@ function fullPartDetail(part: AgentPart): string {
   const command = parseAgentPartCommand(part)
   const output = agentPartOutput(part)
   const liveOutputPreview = sanitizeAgentText(textValue(part.metadata?.liveOutputPreview))
-  const input = sanitizeAgentText(part.input || '')
+  const input = prettyInput(part)
   if (part.type === 'text' || part.type === 'reasoning') return output || input
   return output || liveOutputPreview || command || input
 }
@@ -90,6 +93,7 @@ function prettyInput(part: AgentPart): string {
   const raw = sanitizeAgentText(part.input || '')
   const parsed = parseJsonValue(part.input)
   if (parsed && typeof parsed === 'object') {
+    if (!Array.isArray(parsed) && Object.keys(parsed).length === 0) return ''
     try {
       return JSON.stringify(parsed, null, 2)
     } catch {

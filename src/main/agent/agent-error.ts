@@ -75,7 +75,11 @@ export function normalizeAgentError(error: unknown): NormalizedAgentError {
     return { kind: 'provider', message, retryable: false, statusCode: status, cause: error }
   }
 
-  if (/ECONNRESET|ETIMEDOUT|ENOTFOUND|network|socket/i.test(message)) {
+  if (
+    /ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|network|socket|fetch failed|terminated|connection|TLS|UND_ERR/i.test(
+      message
+    )
+  ) {
     return { kind: 'server_error', message, retryable: true, cause: error }
   }
 

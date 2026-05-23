@@ -206,6 +206,17 @@ export function ChatPanel({
     return null
   }, [activeParts, activeSteps])
   const activeRunId = trackedActiveRunId || derivedActiveRunId
+  const latestMessageIdByRunId = useMemo(() => {
+    const latest = new Map<string, string>()
+    for (const message of messages) {
+      if (message.runId && message.metadata?.taskId) latest.set(message.runId, message.id)
+    }
+    return latest
+  }, [messages])
+  const visibleActiveParts = useMemo(
+    () => (activeRunId ? activeParts.filter((part) => part.runId === activeRunId) : activeParts),
+    [activeParts, activeRunId]
+  )
   const { commandPaletteOpen, commandPaletteValue, setCommandPaletteOpen, setCommandPaletteValue } =
     useCommandPalette()
   const realHosts = hosts.filter((h) => topic.hostIds.includes(h.id))
@@ -217,10 +228,10 @@ export function ChatPanel({
   )
   const visibleSessions = useMemo(() => topicSessions.filter((s) => s.visible), [topicSessions])
   const terminalPreviews = useTerminalPreviews(visibleSessions)
-  const terminalStage = useTerminalStageState(visibleSessions, activeParts)
+  const terminalStage = useTerminalStageState(visibleSessions, visibleActiveParts)
   const terminalActivities = useMemo(
-    () => deriveTerminalActivities(visibleSessions, activeParts, terminalPreviews),
-    [activeParts, terminalPreviews, visibleSessions]
+    () => deriveTerminalActivities(visibleSessions, visibleActiveParts, terminalPreviews),
+    [terminalPreviews, visibleActiveParts, visibleSessions]
   )
   const filteredHosts = topicHosts.filter(
     (h) =>
@@ -230,7 +241,7 @@ export function ChatPanel({
     const node = scrollRef.current
     if (!node || !shouldFollowScrollRef.current) return
     node.scrollTop = node.scrollHeight
-  }, [messages, thinking, activeSteps, activeParts])
+  }, [messages, thinking, activeSteps, visibleActiveParts])
   useEffect(() => {
     shouldFollowScrollRef.current = true
   }, [topic.id])
@@ -422,10 +433,17 @@ export function ChatPanel({
     await sendMessage(c)
   }
   const handlePauseRun = async (): Promise<void> => {
-    if (!activeRunId || pausingRun) return
+    let runId =
+      activeRunId ||
+      [...activeParts].reverse().find((part) => part.runId)?.runId ||
+      [...activeSteps].reverse().find((step) => step.runId)?.runId
+    if (!runId) {
+      runId = (await window.api.getActiveAgentRun(topic.id))?.id
+    }
+    if (!runId || pausingRun) return
     setPausingRun(true)
     try {
-      await window.api.cancelAgentRun(activeRunId)
+      await window.api.cancelAgentRun(runId)
     } finally {
       setPausingRun(false)
     }
@@ -537,25 +555,33 @@ export function ChatPanel({
                   onMentionHost={(alias) => setInputValue(`@${alias} `)}
                 />
               )}
-              {messages.map((msg) => (
-                <MessageBubble
-                  key={msg.id}
-                  message={msg}
-                  expandedThoughts={expandedThoughts}
-                  onToggleThought={toggleThought}
-                />
-              ))}
-              {thinking && activeParts.length > 0 && (
+              {messages.map((msg) => {
+                const showRunTimeline =
+                  !!msg.metadata?.taskId &&
+                  (!msg.runId ||
+                    ((!thinking || msg.runId !== activeRunId) &&
+                      latestMessageIdByRunId.get(msg.runId) === msg.id))
+                return (
+                  <MessageBubble
+                    key={msg.id}
+                    message={msg}
+                    expandedThoughts={expandedThoughts}
+                    onToggleThought={toggleThought}
+                    showRunTimeline={showRunTimeline}
+                  />
+                )
+              })}
+              {thinking && visibleActiveParts.length > 0 && (
                 <AgentLiveStream
-                  parts={activeParts}
+                  parts={visibleActiveParts}
                   onRevealTerminal={terminalStage.revealTerminal}
                   focusedPartId={terminalStage.focusedPartId}
                 />
               )}
-              {thinking && activeParts.length === 0 && activeSteps.length > 0 && (
+              {thinking && visibleActiveParts.length === 0 && activeSteps.length > 0 && (
                 <AgentStepStream steps={activeSteps} />
               )}
-              {thinking && activeParts.length === 0 && activeSteps.length === 0 && (
+              {thinking && visibleActiveParts.length === 0 && activeSteps.length === 0 && (
                 <ThinkingIndicator animationKey={animationKey} />
               )}
             </div>
@@ -568,7 +594,7 @@ export function ChatPanel({
               onSend={handleSend}
               thinking={!!thinking}
               onPause={handlePauseRun}
-              canPause={!!thinking && !!activeRunId && !pausingRun}
+              canPause={!!thinking && !pausingRun}
               pausing={pausingRun}
               modelSelector={
                 <ModelSelector

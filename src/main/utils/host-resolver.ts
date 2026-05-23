@@ -2,11 +2,23 @@ import type { Host } from '../../shared/types'
 import { hostDB } from '../db'
 
 export function resolveHostId(hostId: string): Host | undefined {
-  const normalizedId = hostId.startsWith('@') ? hostId.slice(1) : hostId
+  const normalizedId = normalizeHostId(hostId)
   const hosts = hostDB.getHosts()
-  return hosts.find((h) => h.id === normalizedId || h.alias === normalizedId)
+  return hosts.find(
+    (h) =>
+      h.id === normalizedId ||
+      h.alias === normalizedId ||
+      h.ip === normalizedId ||
+      `${h.username}@${h.ip}` === normalizedId ||
+      `${h.ip}:${h.port}` === normalizedId ||
+      `${h.username}@${h.ip}:${h.port}` === normalizedId
+  )
 }
 
 export function normalizeHostId(hostId: string): string {
-  return hostId.startsWith('@') ? hostId.slice(1) : hostId
+  let normalized = hostId.trim()
+  if (normalized.startsWith('@')) normalized = normalized.slice(1)
+  normalized = normalized.replace(/^ssh:\/\//i, '')
+  normalized = normalized.replace(/\/+$/, '')
+  return normalized
 }

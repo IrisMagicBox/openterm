@@ -173,6 +173,10 @@ const llmSlice = createSlice({
       .addCase(loadModelsFromDB.fulfilled, (state, action) => {
         state.models = action.payload
       })
+      .addCase(loadModelSettingsFromDB.fulfilled, (state, action) => {
+        state.defaultProviderId = action.payload.defaultProviderId ?? null
+        state.defaultModelId = action.payload.defaultModelId ?? null
+      })
   }
 })
 
@@ -226,6 +230,10 @@ export const loadProvidersFromDB = createAsyncThunk('llm/loadProviders', async (
 export const loadModelsFromDB = createAsyncThunk('llm/loadModels', async () => {
   const models = await window.api.getModels()
   return mergeModelsWithPresets(models)
+})
+
+export const loadModelSettingsFromDB = createAsyncThunk('llm/loadModelSettings', async () => {
+  return window.api.getModelSettings()
 })
 
 export default llmSlice.reducer

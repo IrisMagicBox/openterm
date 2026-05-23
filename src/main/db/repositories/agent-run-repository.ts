@@ -24,6 +24,19 @@ export class AgentRunRepository extends BaseRepository<AgentRunRow> {
     return rows.map(mapAgentRunRow)
   }
 
+  getActiveRunByTopic(topicId: string): AgentRun | undefined {
+    const row = this.stmt(
+      `
+      SELECT *
+      FROM agent_runs
+      WHERE topicId = ? AND status IN ('running', 'waiting_approval', 'retrying', 'compacting')
+      ORDER BY updatedAt DESC, createdAt DESC
+      LIMIT 1
+    `
+    ).get(topicId) as AgentRunRow | undefined
+    return row ? mapAgentRunRow(row) : undefined
+  }
+
   getChildRuns(parentRunId: string): AgentRun[] {
     const rows = this.stmt(
       'SELECT * FROM agent_runs WHERE parentRunId = ? ORDER BY createdAt ASC'

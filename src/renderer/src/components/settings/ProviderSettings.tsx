@@ -11,7 +11,8 @@ import {
   Plus,
   Trash2,
   Play,
-  RotateCw
+  RotateCw,
+  Star
 } from 'lucide-react'
 import type { Provider, Model } from '../../../../shared/types'
 import { PROVIDER_URLS, inferModelCapabilities } from '../../config/providers'
@@ -36,6 +37,9 @@ interface ProviderSettingsProps {
   ) => Promise<{ ok: boolean; message: string }>
   onAddModel?: (model: Omit<Model, 'createdAt'>) => Promise<Model> | void
   onRemoveModel?: (providerId: string, modelId: string) => Promise<void> | void
+  onSetDefaultModel?: (providerId: string, modelId: string) => Promise<void> | void
+  defaultProviderId?: string | null
+  defaultModelId?: string | null
 }
 
 function describeProviderTestMessage(message: string): string {
@@ -61,7 +65,10 @@ export function ProviderSettings({
   onSave,
   onTestConnection,
   onAddModel,
-  onRemoveModel
+  onRemoveModel,
+  onSetDefaultModel,
+  defaultProviderId,
+  defaultModelId
 }: ProviderSettingsProps): React.ReactElement {
   const [formData, setFormData] = useState<Partial<Provider>>({})
   const [showApiKey, setShowApiKey] = useState(false)
@@ -74,6 +81,7 @@ export function ProviderSettings({
   const [modelError, setModelError] = useState('')
   const [isFetchingModels, setIsFetchingModels] = useState(false)
   const [testingModelId, setTestingModelId] = useState<string | null>(null)
+  const [settingDefaultModelId, setSettingDefaultModelId] = useState<string | null>(null)
 
   useEffect(() => {
     if (provider) {
@@ -386,6 +394,8 @@ export function ProviderSettings({
             ) : (
               models.map((model) => {
                 const apiModelId = model.providerModelId || model.id
+                const isDefaultModel =
+                  model.providerId === defaultProviderId && model.id === defaultModelId
                 return (
                   <Surface
                     key={model.id}
@@ -400,7 +410,43 @@ export function ProviderSettings({
                         {apiModelId}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div
+                      className={`flex items-center gap-1 transition-opacity ${
+                        isDefaultModel ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      }`}
+                    >
+                      {isDefaultModel ? (
+                        <Badge variant="accent" className="px-1.5 py-0.5 text-[10px]">
+                          默认
+                        </Badge>
+                      ) : (
+                        onSetDefaultModel && (
+                          <button
+                            onClick={async () => {
+                              setSettingDefaultModelId(model.id)
+                              setModelError('')
+                              try {
+                                await onSetDefaultModel(model.providerId, model.id)
+                              } catch (error) {
+                                setModelError(
+                                  error instanceof Error ? error.message : '设置默认模型失败'
+                                )
+                              } finally {
+                                setSettingDefaultModelId(null)
+                              }
+                            }}
+                            disabled={!!settingDefaultModelId}
+                            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent-soft hover:text-accent disabled:opacity-50"
+                            title="设为默认模型"
+                          >
+                            {settingDefaultModelId === model.id ? (
+                              <RotateCw size={13} className="animate-spin" />
+                            ) : (
+                              <Star size={13} />
+                            )}
+                          </button>
+                        )
+                      )}
                       <button
                         onClick={() => handleTestConnection(apiModelId)}
                         disabled={!!testingModelId}

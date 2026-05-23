@@ -134,6 +134,7 @@ const api: Record<string, unknown> = {
     ipcRenderer.invoke('agent:message', topicId, content),
   getAgentSessions: (topicId: string) => ipcRenderer.invoke('agent:get-sessions', topicId),
   getAgentRun: (runId: string) => ipcRenderer.invoke('agent:get-run', runId),
+  getActiveAgentRun: (topicId: string) => ipcRenderer.invoke('agent:get-active-run', topicId),
   getAgentRunsByTask: (taskId: string) => ipcRenderer.invoke('agent:get-runs-by-task', taskId),
   getAgentRunParts: (runId: string) => ipcRenderer.invoke('agent:get-run-parts', runId),
   getAgentTaskParts: (taskId: string) => ipcRenderer.invoke('agent:get-task-parts', taskId),
@@ -254,21 +255,6 @@ const api: Record<string, unknown> = {
     ipcRenderer.on('agent:tool-result', listener)
     return () => ipcRenderer.removeListener('agent:tool-result', listener)
   },
-  onAgentDoomLoop: (
-    callback: (data: {
-      topicId: string
-      taskId: string
-      toolName: string
-      callCount: number
-    }) => void
-  ) => {
-    const listener = (
-      _event: IpcRendererEvent,
-      data: { topicId: string; taskId: string; toolName: string; callCount: number }
-    ) => callback(data)
-    ipcRenderer.on('agent:doom-loop', listener)
-    return () => ipcRenderer.removeListener('agent:doom-loop', listener)
-  },
   onAgentTaskComplete: (
     callback: (data: {
       topicId: string
@@ -381,6 +367,8 @@ const api: Record<string, unknown> = {
     ipcRenderer.on('debug:log', listener)
     return () => ipcRenderer.removeListener('debug:log', listener)
   },
+  reportRendererDiagnostic: (data: Record<string, unknown>) =>
+    ipcRenderer.send('renderer:diagnostic', data),
 
   sftpConnect: (hostId: string) => ipcRenderer.invoke('sftp:connect', hostId),
   sftpList: (sessionId: string, path: string) => ipcRenderer.invoke('sftp:list', sessionId, path),
@@ -474,6 +462,7 @@ flatApi.agent = {
     typedIpc.invoke('agent:message', topicId, content),
   getSessions: (topicId: string) => typedIpc.invoke('agent:get-sessions', topicId),
   getRun: (runId: string) => typedIpc.invoke('agent:get-run', runId),
+  getActiveRun: (topicId: string) => typedIpc.invoke('agent:get-active-run', topicId),
   getRunsByTask: (taskId: string) => typedIpc.invoke('agent:get-runs-by-task', taskId),
   getRunParts: (runId: string) => typedIpc.invoke('agent:get-run-parts', runId),
   getTaskParts: (taskId: string) => typedIpc.invoke('agent:get-task-parts', taskId),

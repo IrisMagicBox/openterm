@@ -97,7 +97,10 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
     createProvider,
     createModel,
     deleteModel,
-    getModelsByProvider
+    getModelsByProvider,
+    defaultProviderId,
+    defaultModelId,
+    setDefaultProviderModel
   } = useProvider()
 
   const { loading: permissionsLoading, setPermissionMode, permissionMode } = usePermissions()
@@ -265,6 +268,9 @@ export function SettingsPage({ onBack }: SettingsPageProps): React.ReactElement 
                   onTestConnection={handleTestConnection}
                   onAddModel={createModel}
                   onRemoveModel={deleteModel}
+                  onSetDefaultModel={setDefaultProviderModel}
+                  defaultProviderId={defaultProviderId}
+                  defaultModelId={defaultModelId}
                 />
               </div>
             </>

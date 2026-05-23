@@ -132,6 +132,7 @@ export interface AgentThinkingPayload {
   topicId: string
   thinking: boolean
   taskId?: string
+  runId?: string
 }
 
 export interface TopicUpdatedPayload {
@@ -253,6 +254,7 @@ export interface IpcInvokeChannels {
   'agent:message': { payload: [topicId: string, content: string]; result: Message }
   'agent:get-sessions': { payload: [topicId: string]; result: TerminalSession[] }
   'agent:get-run': { payload: [runId: string]; result: AgentRun | undefined }
+  'agent:get-active-run': { payload: [topicId: string]; result: AgentRun | undefined }
   'agent:get-runs-by-task': { payload: [taskId: string]; result: AgentRun[] }
   'agent:get-run-parts': { payload: [runId: string]; result: AgentPart[] }
   'agent:get-task-parts': { payload: [taskId: string]; result: AgentPart[] }
@@ -340,6 +342,7 @@ export interface IpcSendChannels {
   'local:input': { payload: [id: string, data: string] }
   'local:resize': { payload: [id: string, cols: number, rows: number] }
   'local:attach': { payload: [id: string] }
+  'renderer:diagnostic': { payload: [data: Record<string, unknown>] }
 }
 
 type SshDataChannel = `ssh:data:${string}`
@@ -381,11 +384,13 @@ interface IpcPushChannelsStatic {
   'agent:tool-result': {
     payload: { topicId: string; taskId: string; toolName: string; output: string; error?: boolean }
   }
-  'agent:doom-loop': {
-    payload: { topicId: string; taskId: string; toolName: string; callCount: number }
-  }
   'agent:task-complete': {
-    payload: { topicId: string; taskId: string; status: 'completed' | 'failed'; summary: string }
+    payload: {
+      topicId: string
+      taskId: string
+      status: 'completed' | 'failed' | 'cancelled'
+      summary: string
+    }
   }
   'agent:session-created': { payload: TerminalSession }
   'agent:session-closed': { payload: { id: string } }

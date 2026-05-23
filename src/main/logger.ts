@@ -12,6 +12,22 @@ interface LogEntry {
 
 type LogListener = (entry: LogEntry) => void
 
+function safeStringify(value: unknown): string {
+  const seen = new WeakSet<object>()
+
+  try {
+    return JSON.stringify(value, (_, item) => {
+      if (typeof item === 'bigint') return item.toString()
+      if (typeof item !== 'object' || item === null) return item
+      if (seen.has(item)) return '[Circular]'
+      seen.add(item)
+      return item
+    })
+  } catch (error) {
+    return `[Unserializable: ${error instanceof Error ? error.message : String(error)}]`
+  }
+}
+
 class Logger {
   private webContents?: WebContents
   private listeners = new Set<LogListener>()
@@ -30,15 +46,23 @@ class Logger {
     }
 
     const timeStr = new Date(entry.timestamp).toLocaleTimeString()
-    const dataStr = data ? ` | ${JSON.stringify(data)}` : ''
+    const dataStr = data !== undefined ? ` | ${safeStringify(data)}` : ''
     console.log(`[${timeStr}] [${level}] [${category}] ${message}${dataStr}`)
 
-    if (this.webContents) {
-      this.webContents.send('debug:log', entry)
+    if (this.webContents && !this.webContents.isDestroyed()) {
+      try {
+        this.webContents.send('debug:log', entry)
+      } catch {
+        // Renderer diagnostics must never destabilize the main process.
+      }
     }
 
     for (const listener of this.listeners) {
-      listener(entry)
+      try {
+        listener(entry)
+      } catch {
+        // Logging listeners are best-effort observers.
+      }
     }
   }
 

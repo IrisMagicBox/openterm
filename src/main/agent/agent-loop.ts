@@ -1,4 +1,3 @@
-import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions/completions'
 import type { Message } from '../../shared/types'
 import { MemoryManager } from '../MemoryManager'
 import { commandExecutor } from '../terminal'
@@ -8,13 +7,15 @@ import { ContextAssembler, type AssembledContext } from './context-assembler'
 import type { AgentProcessorOptions } from './agent-processor-types'
 import { CompactionCoordinator } from './compaction-coordinator'
 import { LegacyAgentEventAdapter } from './legacy-agent-event-adapter'
-import { ProviderStreamCollector } from './provider-stream-collector'
+import { ProviderStreamCollector, ProviderStreamError } from './provider-stream-collector'
 import { RunLifecycleService } from './run-lifecycle-service'
 import { ToolCallExecutor } from './tool-call-executor'
 import { agentRunStore } from './agent-run-store'
 import { agentCheckpointStore } from './agent-checkpoint'
 import type { CompactionMode } from './compaction'
 import { CONTEXT_RESERVE_TOKENS, CONTEXT_WINDOW_TOKENS } from '../constants'
+import { AgentRunState } from './agent-run-state'
+import { ToolCallLedger } from './tool-call-ledger'
 
 export class AgentLoop {
   private readonly streamCollector: ProviderStreamCollector
@@ -42,32 +43,80 @@ export class AgentLoop {
 
     this.toolExecutor.reset()
 
-    let turnMessages: ChatCompletionMessageParam[] = []
-    let workingHistory = history
+    let state = new AgentRunState({ workingHistory: history })
     let startTurn = 1
-    let lastCompactionMode: CompactionMode | undefined
     let lastCompactionReport:
       | { mode: CompactionMode; beforeTokens: number; afterTokens: number }
       | undefined
+    let emptyAssistantResponseCount = 0
 
     const checkpoint = this.options.resumeFromCheckpoint
       ? agentCheckpointStore.get(run.id)
       : undefined
     if (checkpoint) {
-      workingHistory = checkpoint.workingHistory
-      turnMessages = checkpoint.turnMessages
-      this.toolExecutor.restorePendingVerifications(checkpoint.pendingVerifications)
-      startTurn = checkpoint.turnCount
-      lastCompactionMode = checkpoint.lastCompactionMode
+      state = new AgentRunState(checkpoint.state)
+      this.toolExecutor.restorePendingVerifications(state.pendingVerifications)
+      startTurn = state.turnCount
     } else if (!this.options.resumeFromCheckpoint) {
       this.lifecycle.createUserPart(run, lastUserMsg)
     }
 
+    const persistedParts = agentRunStore.getParts(run.id)
+    const recoveredAssistantEvents = state.hydrateLatestAssistantTurnFromParts(persistedParts)
+    const recoveredToolResults = state.reconcileToolResultsFromParts(persistedParts)
+    if (recoveredAssistantEvents > 0 || recoveredToolResults > 0) {
+      this.saveCheckpoint(state)
+    }
+
+    const latestAssistantTurn = state.getLatestAssistantTurn()
+    if (latestAssistantTurn) {
+      startTurn = Math.max(
+        startTurn,
+        latestAssistantTurn.completed ? latestAssistantTurn.turn + 1 : latestAssistantTurn.turn
+      )
+    }
+    state.turnCount = startTurn
+
     for (let turnCount = startTurn; turnCount <= maxTurns; turnCount++) {
+      if (this.options.context.abort?.aborted) {
+        return this.finishAborted(state, turnCount)
+      }
+
       const terminalContext = commandExecutor.buildTerminalContext(context.topicId)
+      const pendingAssistantTurn = state.getPendingAssistantTurn()
+      const pendingTurn = turnCount === pendingAssistantTurn?.turn ? pendingAssistantTurn : undefined
+
+      if (pendingTurn && pendingTurn.toolCalls.length > 0) {
+        const executedObservations = await this.toolExecutor.executeToolCalls(pendingTurn.toolCalls)
+        if (this.options.context.abort?.aborted) {
+          return this.finishAborted(state, turnCount)
+        }
+        const observationsByCallId = new Map(
+          executedObservations.map((observation) => [observation.tool_call_id, observation])
+        )
+        for (const call of pendingTurn.toolCalls) {
+          const observation = observationsByCallId.get(call.id)
+          if (!observation) continue
+          state.replaceToolCallSnapshot(observation.tool_call_id, observation.call, observation.args)
+          const signature = ToolCallLedger.signatureFor(observation.toolName, observation.args)
+          state.appendToolResult({
+            turn: turnCount,
+            toolCallId: observation.tool_call_id,
+            toolName: observation.toolName,
+            signature,
+            content: observation.content,
+            observation: observation.content
+          })
+        }
+        state.setPendingVerifications(this.toolExecutor.getPendingVerificationSnapshot())
+        this.saveCheckpoint(state)
+        state.turnCount = turnCount + 1
+        this.saveCheckpoint(state)
+        continue
+      }
+
       const assembled = this.assembleContext(
-        workingHistory,
-        turnMessages,
+        state,
         terminalContext,
         extraContext
       )
@@ -75,20 +124,20 @@ export class AgentLoop {
 
       let currentMessages = assembled.messages
       if (assembled.budget.isOverflow) {
-        const compacted = await this.compaction.compactHistory(workingHistory, turnMessages)
+        const compacted = await this.compaction.compactHistory(
+          state.toRuntimeMessages(run.id, run.topicId, run.taskId)
+        )
         if (compacted) {
-          workingHistory = compacted.workingHistory
-          turnMessages = compacted.turnMessages
-          lastCompactionMode = compacted.mode
+          state.setCompactedHistory(compacted.workingHistory, compacted.mode)
           lastCompactionReport = {
             mode: compacted.mode,
             beforeTokens: compacted.beforeTokens,
             afterTokens: compacted.afterTokens
           }
-          this.saveCheckpoint(turnCount, workingHistory, turnMessages, lastCompactionMode)
+          state.turnCount = turnCount
+          this.saveCheckpoint(state)
           const compactedContext = this.assembleContext(
-            workingHistory,
-            turnMessages,
+            state,
             terminalContext,
             extraContext
           )
@@ -97,64 +146,74 @@ export class AgentLoop {
         }
       }
 
-      this.saveCheckpoint(turnCount, workingHistory, turnMessages, lastCompactionMode)
+      state.turnCount = turnCount
+      this.saveCheckpoint(state)
       this.legacyEvents.thinking()
       this.legacyEvents.status(turnCount > 1 ? 'verifying' : 'thinking')
 
       const allowFinalTurnTools = this.toolExecutor.hasPendingVerification()
-      const streamResult = await this.streamCollector.streamWithRetry(
-        currentMessages,
-        this.toolExecutor.getTools(turnCount, maxTurns, allowFinalTurnTools),
-        turnCount === maxTurns && !allowFinalTurnTools ? 'none' : 'auto'
-      )
+      const streamResult = await (async () => {
+        try {
+          return await this.streamCollector.streamWithRetry(
+            currentMessages,
+            this.toolExecutor.getTools(turnCount, maxTurns, allowFinalTurnTools),
+            turnCount === maxTurns && !allowFinalTurnTools ? 'none' : 'auto'
+          )
+        } catch (error) {
+          if (error instanceof ProviderStreamError) {
+            state.appendError(turnCount, error.message)
+            this.saveCheckpoint(state)
+            return this.lifecycle.failProviderInterrupted(
+              error.message,
+              error.partial,
+              error.kind === 'abort' ? 'aborted' : 'provider_error',
+              error.kind === 'abort' ? 'abort' : 'provider'
+            )
+          }
+          throw error
+        }
+      })()
+
+      if ('role' in streamResult) {
+        return streamResult
+      }
 
       this.streamCollector.recordUsage(streamResult.usage)
 
-      if (streamResult.toolCalls.length > 0 && turnCount === maxTurns && !allowFinalTurnTools) {
-        const attemptedTools = streamResult.toolCalls
-          .map((call) => call.function.name)
-          .filter(Boolean)
-          .join(', ')
-        const screenSummary = await commandExecutor.buildTerminalScreenSummary(context.topicId)
-        return this.lifecycle.failRuntimeBlocked(
-          [
-            `未完成：已达到最大推理轮次 (${maxTurns}步)，模型仍尝试调用工具${attemptedTools ? `：${attemptedTools}` : ''}。`,
-            '为避免工具调用标记泄漏或无限循环，runtime 没有继续执行这些工具。'
-          ].join('\n'),
-          ['最后终端屏幕摘要：', screenSummary].join('\n'),
-          streamResult.assistantPartId
-        )
-      }
-
-      turnMessages.push({
-        role: 'assistant',
+      state.appendAssistantResponse({
+        turn: turnCount,
         content: streamResult.content,
-        tool_calls: streamResult.toolCalls
+        toolCalls: streamResult.toolCalls,
+        assistantPartId: streamResult.assistantPartId
       })
 
       if (streamResult.toolCalls.length === 0) {
-        if (this.toolExecutor.hasPendingVerification()) {
-          if (turnCount >= maxTurns) {
-            return this.lifecycle.failMaxTurns(maxTurns)
+        if (!streamResult.content.trim()) {
+          emptyAssistantResponseCount += 1
+          if (emptyAssistantResponseCount === 1 && turnCount < maxTurns) {
+            state.appendRuntimeObservation(
+              turnCount,
+              '[Runtime observation] 上一轮模型没有输出正文，也没有请求工具。请基于已有观察继续推进：如果还需要信息，请调用合适工具；如果已经有足够证据，请给出简洁最终回答。'
+            )
+            state.turnCount = turnCount + 1
+            this.saveCheckpoint(state)
+            continue
           }
 
-          turnMessages.push({
-            role: 'user',
-            content: this.toolExecutor.getVerificationObservation()
-          })
-          this.saveCheckpoint(turnCount + 1, workingHistory, turnMessages, lastCompactionMode)
-          continue
-        }
-
-        if (!streamResult.content.trim()) {
-          const screenSummary = await commandExecutor.buildTerminalScreenSummary(context.topicId)
+          const errorContent =
+            '未完成：模型连续没有返回可用正文，也没有请求工具。已保留上方已完成的过程记录，请继续补充指令。'
+          state.appendError(turnCount, errorContent)
+          this.saveCheckpoint(state)
           return this.lifecycle.failRuntimeBlocked(
-            '未完成：模型没有返回可用的最终回答。',
-            ['最后终端屏幕摘要：', screenSummary].join('\n'),
+            errorContent,
+            undefined,
             streamResult.assistantPartId
           )
         }
 
+        emptyAssistantResponseCount = 0
+        state.appendFinal(turnCount, streamResult.content)
+        this.saveCheckpoint(state)
         return this.lifecycle.finish(
           run,
           streamResult.content,
@@ -164,48 +223,73 @@ export class AgentLoop {
         )
       }
 
-      const observations = await this.toolExecutor.executeToolCalls(streamResult.toolCalls)
-      for (const observation of observations) {
-        turnMessages.push(observation)
+      emptyAssistantResponseCount = 0
+      const parsedCalls = streamResult.toolCalls.map((call) => ({
+        call,
+        args: this.safeParseToolArgs(call.function.arguments)
+      }))
+      const attempts = state.ledger.registerAttempts(parsedCalls, turnCount)
+      const executedObservations = await this.toolExecutor.executeToolCalls(attempts)
+      if (this.options.context.abort?.aborted) {
+        return this.finishAborted(state, turnCount)
       }
+      const observationsByCallId = new Map(
+        executedObservations.map((observation) => [observation.tool_call_id, observation])
+      )
+
+      const observations = streamResult.toolCalls
+        .map((call) => observationsByCallId.get(call.id))
+        .filter((observation): observation is NonNullable<typeof observation> => !!observation)
+
+      for (const observation of observations) {
+        state.replaceToolCallSnapshot(observation.tool_call_id, observation.call, observation.args)
+        const signature = ToolCallLedger.signatureFor(observation.toolName, observation.args)
+        state.appendToolResult({
+          turn: turnCount,
+          toolCallId: observation.tool_call_id,
+          toolName: observation.toolName,
+          signature,
+          content: observation.content,
+          observation: observation.content
+        })
+      }
+      state.setPendingVerifications(this.toolExecutor.getPendingVerificationSnapshot())
+      this.saveCheckpoint(state)
 
       const postToolContext = this.assembleContext(
-        workingHistory,
-        turnMessages,
+        state,
         terminalContext,
         extraContext
       )
       const autoCompacted = await this.compaction.maybeAutoCompact(
-        workingHistory,
-        turnMessages,
+        state.toRuntimeMessages(run.id, run.topicId, run.taskId),
         postToolContext.budget
       )
       if (autoCompacted) {
-        workingHistory = autoCompacted.workingHistory
-        turnMessages = autoCompacted.turnMessages
-        lastCompactionMode = autoCompacted.mode
+        state.setCompactedHistory(autoCompacted.workingHistory, autoCompacted.mode)
         lastCompactionReport = {
           mode: autoCompacted.mode,
           beforeTokens: autoCompacted.beforeTokens,
           afterTokens: autoCompacted.afterTokens
         }
         const compactedContext = this.assembleContext(
-          workingHistory,
-          turnMessages,
+          state,
           terminalContext,
           extraContext
         )
         this.recordContextReport(compactedContext, turnCount, true, lastCompactionReport)
       }
-      this.saveCheckpoint(turnCount + 1, workingHistory, turnMessages, lastCompactionMode)
+      state.turnCount = turnCount + 1
+      this.saveCheckpoint(state)
     }
 
+    state.appendError(maxTurns, `任务达到多轮推理上限 (${maxTurns}步)，未能完全解决。`)
+    this.saveCheckpoint(state)
     return this.lifecycle.failMaxTurns(maxTurns)
   }
 
   private assembleContext(
-    workingHistory: Message[],
-    turnMessages: ChatCompletionMessageParam[],
+    state: AgentRunState,
     terminalContext: string,
     extraContext: string
   ): AssembledContext {
@@ -219,8 +303,8 @@ export class AgentLoop {
       .setSystemPrompt(this.options.config.systemPrompt ?? SYSTEM_PROMPT)
       .addLayer('terminal_context', terminalContext, 80)
       .addLayer('memory_recall', extraContext, 60)
-      .setHistory(workingHistory)
-      .setTurnMessages(turnMessages)
+      .setHistory(state.workingHistory)
+      .setTurnMessages(state.toModelMessages())
       .assemble()
   }
 
@@ -244,18 +328,26 @@ export class AgentLoop {
     })
   }
 
-  private saveCheckpoint(
-    turnCount: number,
-    workingHistory: Message[],
-    turnMessages: ChatCompletionMessageParam[],
-    lastCompactionMode?: CompactionMode
-  ): void {
+  private saveCheckpoint(state: AgentRunState): void {
     agentCheckpointStore.save(this.options.run.id, {
-      turnCount,
-      workingHistory,
-      turnMessages,
-      pendingVerifications: this.toolExecutor.getPendingVerificationSnapshot(),
-      lastCompactionMode
+      state: state.snapshot()
     })
+  }
+
+  private finishAborted(state: AgentRunState, turnCount: number): Message {
+    state.reconcileToolResultsFromParts(agentRunStore.getParts(this.options.run.id))
+    state.appendError(turnCount, 'aborted')
+    this.saveCheckpoint(state)
+    return this.lifecycle.failProviderInterrupted('aborted', undefined, 'aborted', 'abort')
+  }
+
+  private safeParseToolArgs(raw: string): Record<string, unknown> {
+    try {
+      const parsed = JSON.parse(raw || '{}') as unknown
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+      return parsed as Record<string, unknown>
+    } catch {
+      return {}
+    }
   }
 }

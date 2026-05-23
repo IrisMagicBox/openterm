@@ -248,6 +248,8 @@ export interface ModelSettingsRow {
   apiKey: string
   baseURL: string
   model: string
+  defaultProviderId: string | null
+  defaultModelId: string | null
   terminalCompletionMode?: string | null
   updatedAt: number
 }

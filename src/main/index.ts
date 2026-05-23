@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, nativeImage } from 'electron'
+import { app, shell, BrowserWindow, nativeImage, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -28,6 +28,7 @@ import { registerAllIPC } from './ipc'
 const APP_ID = 'com.eddic.openterm'
 const APP_NAME = 'OpenTerm'
 const MAC_WINDOW_VIBRANCY = 'sidebar' as const
+const RENDERER_DIAGNOSTIC_LIMIT = 4000
 
 app.setName(APP_NAME)
 
@@ -47,6 +48,107 @@ function setMacDockIcon(): void {
 }
 
 setMacDockIcon()
+
+function truncateDiagnosticText(value: unknown, limit = RENDERER_DIAGNOSTIC_LIMIT): string {
+  const text = typeof value === 'string' ? value : String(value ?? '')
+  return text.length > limit ? `${text.slice(0, limit)}... [truncated ${text.length - limit}]` : text
+}
+
+function sanitizeRendererDiagnostic(data: unknown): Record<string, unknown> {
+  if (!data || typeof data !== 'object') {
+    return { value: truncateDiagnosticText(data) }
+  }
+
+  const input = data as Record<string, unknown>
+  return {
+    type: truncateDiagnosticText(input.type, 120),
+    message: truncateDiagnosticText(input.message),
+    stack: truncateDiagnosticText(input.stack),
+    componentStack: truncateDiagnosticText(input.componentStack),
+    filename: truncateDiagnosticText(input.filename, 500),
+    lineno: typeof input.lineno === 'number' ? input.lineno : undefined,
+    colno: typeof input.colno === 'number' ? input.colno : undefined,
+    href: truncateDiagnosticText(input.href, 500),
+    userAgent: truncateDiagnosticText(input.userAgent, 500),
+    extra: input.extra
+  }
+}
+
+function registerRendererDiagnosticsIPC(): void {
+  ipcMain.removeAllListeners('renderer:diagnostic')
+  ipcMain.on('renderer:diagnostic', (_, data: unknown) => {
+    logger.error('Renderer', 'Renderer diagnostic event', sanitizeRendererDiagnostic(data))
+  })
+}
+
+function describeWebContentsURL(window: BrowserWindow): Record<string, unknown> {
+  try {
+    return {
+      id: window.id,
+      url: window.webContents.getURL(),
+      isLoading: window.webContents.isLoading(),
+      isDestroyed: window.webContents.isDestroyed()
+    }
+  } catch (error) {
+    return { id: window.id, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function attachWindowDiagnostics(mainWindow: BrowserWindow): void {
+  mainWindow.on('unresponsive', () => {
+    logger.error('System', 'BrowserWindow became unresponsive', describeWebContentsURL(mainWindow))
+  })
+
+  mainWindow.on('responsive', () => {
+    logger.warn('System', 'BrowserWindow became responsive again', describeWebContentsURL(mainWindow))
+  })
+
+  mainWindow.webContents.on('render-process-gone', (_, details) => {
+    logger.error('System', 'Renderer process gone', {
+      ...describeWebContentsURL(mainWindow),
+      reason: details.reason,
+      exitCode: details.exitCode
+    })
+  })
+
+  mainWindow.webContents.on(
+    'did-fail-load',
+    (_, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      logger.error('System', 'Renderer failed to load', {
+        ...describeWebContentsURL(mainWindow),
+        errorCode,
+        errorDescription,
+        validatedURL,
+        isMainFrame
+      })
+    }
+  )
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    logger.info('System', 'Renderer finished loading', describeWebContentsURL(mainWindow))
+  })
+
+  mainWindow.webContents.on('console-message', (_, level, message, line, sourceId) => {
+    if (level < 2) return
+    logger.warn('RendererConsole', truncateDiagnosticText(message), {
+      level,
+      line,
+      sourceId: truncateDiagnosticText(sourceId, 500)
+    })
+  })
+}
+
+function registerProcessDiagnostics(): void {
+  app.on('child-process-gone', (_, details) => {
+    logger.error('System', 'Electron child process gone', {
+      type: details.type,
+      reason: details.reason,
+      exitCode: details.exitCode,
+      serviceName: details.serviceName,
+      name: details.name
+    })
+  })
+}
 
 function createWindow(): void {
   const macWindowMaterial =
@@ -72,6 +174,8 @@ function createWindow(): void {
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: false }
   })
+
+  attachWindowDiagnostics(mainWindow)
 
   if (process.platform === 'darwin') {
     mainWindow.setBackgroundColor('#00000000')
@@ -114,9 +218,11 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   setMacDockIcon()
+  registerProcessDiagnostics()
 
   initializeDB()
   registerAllIPC()
+  registerRendererDiagnosticsIPC()
   setupSSHHandlers()
   setupAgentHandlers()
   registerLocalTerminalIPC()

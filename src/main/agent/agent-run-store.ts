@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import { agentPartDB, agentRunDB } from '../db'
 import { eventBus } from './event-bus'
-import type { AgentPart, AgentRun, AgentRunStatus, Message } from '../../shared/types'
+import type { AgentPart, AgentRun, AgentRunStatus } from '../../shared/types'
 
 export interface CreateRunInput {
   id?: string
@@ -109,18 +109,6 @@ export class AgentRunStore {
 
   appendMetadata(partId: string, metadata: Record<string, unknown>): AgentPart | undefined {
     return this.updatePart(partId, { metadata })
-  }
-
-  createAssistantMessagePart(run: AgentRun, message: Message): AgentPart {
-    return this.createPart({
-      runId: run.id,
-      messageId: message.id,
-      type: 'text',
-      status: 'completed',
-      role: 'assistant',
-      output: message.content,
-      metadata: { taskId: run.taskId }
-    })
   }
 }
 

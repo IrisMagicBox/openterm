@@ -214,7 +214,14 @@ export interface Message {
     policyReason?: string
     riskLevel?: ApprovalRiskLevel
     memoryRecalled?: boolean
-    agentStatus?: 'thinking' | 'executing' | 'verifying' | 'reflecting' | 'done' | 'error'
+    agentStatus?:
+      | 'thinking'
+      | 'executing'
+      | 'verifying'
+      | 'reflecting'
+      | 'done'
+      | 'error'
+      | 'cancelled'
     taskId?: string
     steps?: TaskStep[]
   }
@@ -326,6 +333,8 @@ export interface ModelSettings {
   apiKey: string
   baseURL: string
   model: string
+  defaultProviderId?: string | null
+  defaultModelId?: string | null
   terminalCompletionMode: TerminalCompletionBackendMode
   updatedAt: number
 }

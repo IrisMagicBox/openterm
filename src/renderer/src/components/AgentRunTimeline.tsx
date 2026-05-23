@@ -20,11 +20,19 @@ import {
 import { deriveAgentTasks } from '../lib/agent-task-list'
 import { AgentActivityIcon } from '../lib/agent-activity-icons'
 import { agentPartPreview } from '../lib/agent-part-preview'
-import { agentProcessParts } from '../lib/agent-process-parts'
+import {
+  agentRawProcessParts,
+  agentSummaryParts,
+  isAssistantTextPart,
+  latestLiveAssistantTextPart
+} from '../lib/agent-process-parts'
 import { cn } from '../lib/utils'
+import { stripInternalToolCallMarkup } from '../../../shared/internal-tool-call-markup'
+import { AssistantMessageBody } from './AssistantMessageBody'
 
 interface AgentRunTimelineProps {
   taskId: string
+  runId?: string
 }
 
 function formatDuration(parts: AgentPart[]): string {
@@ -54,7 +62,7 @@ function statusIcon(part: AgentPart): JSX.Element {
   return <Circle size={13} className="text-muted-foreground" />
 }
 
-export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element | null {
+export function AgentRunTimeline({ taskId, runId }: AgentRunTimelineProps): JSX.Element | null {
   const [parts, setParts] = useState<AgentPart[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(false)
@@ -63,7 +71,9 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
   useEffect(() => {
     const fetchParts = async (): Promise<void> => {
       try {
-        const result = await window.api.getAgentTaskParts(taskId)
+        const result = runId
+          ? await window.api.getAgentRunParts(runId)
+          : await window.api.getAgentTaskParts(taskId)
         setParts(result)
       } finally {
         setLoading(false)
@@ -72,11 +82,19 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
 
     fetchParts()
     const unlistenCreated = window.api.onAgentPartCreated((part) => {
+      if (runId) {
+        if (part.runId === runId) fetchParts()
+        return
+      }
       window.api.getAgentRun(part.runId).then((run) => {
         if (run?.taskId === taskId) fetchParts()
       })
     })
     const unlistenUpdated = window.api.onAgentPartUpdated((part) => {
+      if (runId) {
+        if (part.runId === runId) fetchParts()
+        return
+      }
       window.api.getAgentRun(part.runId).then((run) => {
         if (run?.taskId === taskId) fetchParts()
       })
@@ -86,11 +104,16 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
       unlistenCreated()
       unlistenUpdated()
     }
-  }, [taskId])
+  }, [taskId, runId])
 
-  const visibleParts = useMemo(() => agentProcessParts(parts), [parts])
+  const visibleParts = useMemo(() => agentRawProcessParts(parts), [parts])
+  const summaryParts = useMemo(() => agentSummaryParts(parts), [parts])
+  const liveAssistantPart = useMemo(() => latestLiveAssistantTextPart(parts), [parts])
+  const liveAssistantContent = liveAssistantPart
+    ? stripInternalToolCallMarkup(liveAssistantPart.output ?? '')
+    : ''
 
-  if (loading && visibleParts.length === 0) {
+  if (loading && visibleParts.length === 0 && !liveAssistantContent) {
     return (
       <div className="flex animate-pulse items-center gap-2 py-1.5 text-sm text-muted-foreground">
         <Loader2 size={12} className="animate-spin text-accent" />
@@ -99,10 +122,10 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
     )
   }
 
-  if (visibleParts.length === 0) return null
+  if (visibleParts.length === 0 && !liveAssistantContent) return null
 
   const lines = agentActivityLines(visibleParts)
-  const summary = agentActivitySummary(visibleParts)
+  const summary = agentActivitySummary(summaryParts)
   const status = agentActivityStatus(visibleParts)
   const tasks = deriveAgentTasks(visibleParts)
   const duration = formatDuration(parts)
@@ -119,26 +142,31 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
   }
 
   return (
-    <div>
-      <button
-        onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center gap-2 py-1.5 text-left text-sm text-muted-foreground transition hover:text-foreground no-drag"
-      >
-        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <span className="font-medium">{status}</span>
-        {duration && <span>{duration}</span>}
-        {summary && <span>{summary}</span>}
-      </button>
+    <div className="space-y-4">
+      {visibleParts.length > 0 && (
+        <>
+          <button
+            onClick={() => setExpanded((value) => !value)}
+            className="flex w-full items-center gap-2 py-1.5 text-left text-sm text-muted-foreground transition hover:text-foreground no-drag"
+          >
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <span className="font-medium">{status}</span>
+            {duration && <span>{duration}</span>}
+            {summary && <span>{summary}</span>}
+          </button>
 
-      {expanded && (
+          {expanded && (
         <div className="mt-2 space-y-3 pl-6">
           <AgentTaskList tasks={tasks} />
           <div className="space-y-1">
             {visibleParts.map((part, index) => {
               const line = lines[index]
+              const textContent = isAssistantTextPart(part)
+                ? stripInternalToolCallMarkup(part.output ?? '')
+                : ''
               const detail = line?.detail || agentPartPreview(part, 120)
               const fullDetail = line?.fullDetail || detail
-              const canExpandPart = shouldShowAgentActivityDetail(line)
+              const canExpandPart = !textContent && shouldShowAgentActivityDetail(line)
               const isPartExpanded = expandedPartIds.has(part.id)
               return (
                 <div
@@ -150,7 +178,10 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
                       : 'text-muted-foreground'
                   )}
                 >
-                  <div className="flex min-w-0 items-center gap-2">
+                  {textContent ? (
+                    <AssistantMessageBody content={textContent} className="py-0.5" />
+                  ) : (
+                    <div className="flex min-w-0 items-center gap-2">
                     {canExpandPart ? (
                       <button
                         type="button"
@@ -173,7 +204,8 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
                     {detail && (
                       <span className="min-w-0 flex-1 truncate font-mono text-xs">{detail}</span>
                     )}
-                  </div>
+                    </div>
+                  )}
                   {canExpandPart && isPartExpanded && (
                     <AgentActivityDetail line={line} fallback={fullDetail} />
                   )}
@@ -182,7 +214,10 @@ export function AgentRunTimeline({ taskId }: AgentRunTimelineProps): JSX.Element
             })}
           </div>
         </div>
+          )}
+        </>
       )}
+      {liveAssistantContent && <AssistantMessageBody content={liveAssistantContent} />}
     </div>
   )
 }

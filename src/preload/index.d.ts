@@ -53,6 +53,7 @@ declare global {
         sendMessage: (topicId: string, content: string) => Promise<Message>
         getSessions: (topicId: string) => Promise<TerminalSession[]>
         getRun: (runId: string) => Promise<AgentRun | undefined>
+        getActiveRun: (topicId: string) => Promise<AgentRun | undefined>
         getRunsByTask: (taskId: string) => Promise<AgentRun[]>
         getRunParts: (runId: string) => Promise<AgentPart[]>
         getTaskParts: (taskId: string) => Promise<AgentPart[]>
@@ -68,7 +69,14 @@ declare global {
         onPartCreated: (callback: (part: AgentPart) => void) => () => void
         onPartUpdated: (callback: (part: AgentPart) => void) => () => void
         onStep: (callback: (step: Message) => void) => () => void
-        onThinking: (callback: (data: { topicId: string; thinking: boolean }) => void) => () => void
+        onThinking: (
+          callback: (data: {
+            topicId: string
+            thinking: boolean
+            taskId?: string
+            runId?: string
+          }) => void
+        ) => () => void
         onAuthRequest: (
           callback: (
             requestId: string,
@@ -82,7 +90,7 @@ declare global {
           callback: (data: {
             topicId: string
             taskId: string
-            status: 'completed' | 'failed'
+            status: 'completed' | 'failed' | 'cancelled'
             summary: string
           }) => void
         ) => () => void
@@ -280,6 +288,7 @@ declare global {
       sendMessage: (topicId: string, content: string) => Promise<Message>
       getAgentSessions: (topicId: string) => Promise<TerminalSession[]>
       getAgentRun: (runId: string) => Promise<AgentRun | undefined>
+      getActiveAgentRun: (topicId: string) => Promise<AgentRun | undefined>
       getAgentRunsByTask: (taskId: string) => Promise<AgentRun[]>
       getAgentRunParts: (runId: string) => Promise<AgentPart[]>
       getAgentTaskParts: (taskId: string) => Promise<AgentPart[]>
@@ -317,7 +326,12 @@ declare global {
         callback: (data: { direction: 'in' | 'out' | 'reset' }) => void
       ) => () => void
       onAgentThinking: (
-        callback: (data: { topicId: string; thinking: boolean }) => void
+        callback: (data: {
+          topicId: string
+          thinking: boolean
+          taskId?: string
+          runId?: string
+        }) => void
       ) => () => void
 
       onAgentSessionCreated: (callback: (data: TerminalSession) => void) => () => void
@@ -391,6 +405,7 @@ declare global {
       getPermissions: () => Promise<PermissionSettings>
       savePermissions: (permissions: Pick<PermissionSettings, 'permissionMode'>) => Promise<void>
       onDebugLog: (callback: (entry: DebugLogEntry) => void) => () => void
+      reportRendererDiagnostic: (data: Record<string, unknown>) => void
 
       // Local Terminal APIs
       connectLocal: (topicId: string) => Promise<TerminalSession>

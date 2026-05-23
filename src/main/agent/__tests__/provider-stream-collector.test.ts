@@ -9,6 +9,7 @@ vi.mock('../agent-run-store', () => ({
   }
 }))
 
+import { normalizeAgentError } from '../agent-error'
 import {
   extractTextToolCalls,
   extractXmlToolCalls,
@@ -17,6 +18,13 @@ import {
 } from '../provider-stream-collector'
 
 describe('ProviderStreamCollector tool-call normalization', () => {
+  it('treats terminated network streams as retryable provider errors', () => {
+    const normalized = normalizeAgentError(new Error('terminated'))
+
+    expect(normalized.kind).toBe('server_error')
+    expect(normalized.retryable).toBe(true)
+  })
+
   it('ignores empty streamed tool names and infers execute_command from arguments', () => {
     const args = JSON.stringify({
       hostId: 'host-1',

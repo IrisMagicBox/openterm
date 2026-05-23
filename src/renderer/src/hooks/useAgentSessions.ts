@@ -24,6 +24,15 @@ interface UseAgentSessionsResult {
   handleResolveAuth: (approved: boolean, alwaysAllow?: boolean) => Promise<void>
 }
 
+export function enqueuePendingAuth(queue: PendingAuth[], request: PendingAuth): PendingAuth[] {
+  if (queue.some((item) => item.requestId === request.requestId)) return queue
+  return [...queue, request]
+}
+
+export function removePendingAuth(queue: PendingAuth[], requestId: string): PendingAuth[] {
+  return queue.filter((item) => item.requestId !== requestId)
+}
+
 function normalizeSessionForState(session: TerminalSession): TerminalSession {
   return {
     ...session,
@@ -40,7 +49,8 @@ export function useAgentSessions({
 }): UseAgentSessionsResult {
   const [agentSessions, setAgentSessions] = useState<TerminalSession[]>([])
   const [thinkingTopics, setThinkingTopics] = useState<Set<string>>(new Set())
-  const [pendingAuth, setPendingAuth] = useState<PendingAuth | null>(null)
+  const [pendingAuthQueue, setPendingAuthQueue] = useState<PendingAuth[]>([])
+  const pendingAuth = pendingAuthQueue[0] ?? null
   const agentSessionIds = agentSessions.map((session) => session.id).join(',')
 
   useEffect(() => {
@@ -49,7 +59,9 @@ export function useAgentSessions({
 
     const unlistenAuth = window.api.onAgentAuthRequest(
       (requestId, command, riskLevel, reason, metadata) =>
-        setPendingAuth({ requestId, command, riskLevel, reason, metadata })
+        setPendingAuthQueue((queue) =>
+          enqueuePendingAuth(queue, { requestId, command, riskLevel, reason, metadata })
+        )
     )
 
     const unlistenThinking = window.api.onAgentThinking(({ topicId, thinking }) => {
@@ -249,7 +261,7 @@ export function useAgentSessions({
     async (approved: boolean, alwaysAllow = false) => {
       if (pendingAuth) {
         await window.api.sendAgentAuthResponse(pendingAuth.requestId, approved, alwaysAllow)
-        setPendingAuth(null)
+        setPendingAuthQueue((queue) => removePendingAuth(queue, pendingAuth.requestId))
       }
     },
     [pendingAuth]
@@ -260,7 +272,12 @@ export function useAgentSessions({
     setAgentSessions,
     thinkingTopics,
     pendingAuth,
-    setPendingAuth,
+    setPendingAuth: (value) => {
+      setPendingAuthQueue((queue) => {
+        const nextValue = typeof value === 'function' ? value(queue[0] ?? null) : value
+        return nextValue ? [nextValue, ...queue.slice(1)] : queue.slice(1)
+      })
+    },
     handleCreateTerminal,
     handleCloseTerminal,
     handleRenameTerminal,

@@ -326,6 +326,13 @@ const migrations: Migration[] = [
     run: (db) => {
       addColumnIfMissing(db, 'hosts', 'keyPassphrase', 'TEXT')
     }
+  },
+  {
+    id: '021_default_provider_model',
+    run: (db) => {
+      addColumnIfMissing(db, 'model_settings', 'defaultProviderId', 'TEXT')
+      addColumnIfMissing(db, 'model_settings', 'defaultModelId', 'TEXT')
+    }
   }
 ]
 

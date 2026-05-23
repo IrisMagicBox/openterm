@@ -151,13 +151,16 @@ export const AgentEvents = {
     stepId: z.string().optional(),
     role: z.enum(['user', 'assistant', 'tool']),
     content: z.string(),
-    agentStatus: z.enum(['thinking', 'executing', 'verifying', 'done', 'error']).optional()
+    agentStatus: z
+      .enum(['thinking', 'executing', 'verifying', 'done', 'error', 'cancelled'])
+      .optional()
   }),
 
   Thinking: z.object({
     topicId: z.string(),
     thinking: z.boolean(),
-    taskId: z.string().optional()
+    taskId: z.string().optional(),
+    runId: z.string().optional()
   }),
 
   ToolCall: z.object({
@@ -178,15 +181,8 @@ export const AgentEvents = {
   TaskComplete: z.object({
     topicId: z.string(),
     taskId: z.string(),
-    status: z.enum(['completed', 'failed']),
+    status: z.enum(['completed', 'failed', 'cancelled']),
     summary: z.string()
-  }),
-
-  DoomLoop: z.object({
-    topicId: z.string(),
-    taskId: z.string(),
-    toolName: z.string(),
-    callCount: z.number()
   }),
 
   AutoCompact: z.object({
@@ -279,7 +275,6 @@ export type EventMap = {
   'agent:tool-call': z.infer<typeof AgentEvents.ToolCall>
   'agent:tool-result': z.infer<typeof AgentEvents.ToolResult>
   'agent:task-complete': z.infer<typeof AgentEvents.TaskComplete>
-  'agent:doom-loop': z.infer<typeof AgentEvents.DoomLoop>
   'agent:auto-compact': z.infer<typeof AgentEvents.AutoCompact>
   'agent:usage': z.infer<typeof AgentEvents.Usage>
   'agent:subagent-complete': z.infer<typeof AgentEvents.SubagentComplete>
@@ -306,7 +301,6 @@ const eventSchemas: Record<EventName, z.ZodType> = {
   'agent:tool-call': AgentEvents.ToolCall,
   'agent:tool-result': AgentEvents.ToolResult,
   'agent:task-complete': AgentEvents.TaskComplete,
-  'agent:doom-loop': AgentEvents.DoomLoop,
   'agent:auto-compact': AgentEvents.AutoCompact,
   'agent:usage': AgentEvents.Usage,
   'agent:subagent-complete': AgentEvents.SubagentComplete,

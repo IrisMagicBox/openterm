@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentPart } from '../../../../shared/types'
 import { shouldShowAgentLivePart } from '../agent-live-stream'
+import { shouldShowLiveRawOutputFallback } from '../../components/AgentLiveStream'
 import { agentActivityLines, shouldShowAgentActivityDetail } from '../agent-activity-summary'
-import { agentProcessParts } from '../agent-process-parts'
+import {
+  agentProcessParts,
+  agentRawProcessParts,
+  agentSummaryParts,
+  latestLiveAssistantTextPart
+} from '../agent-process-parts'
 import { deriveAgentTasks } from '../agent-task-list'
 
 function part(overrides: Partial<AgentPart>): AgentPart {
@@ -41,6 +47,29 @@ describe('agent live stream visibility', () => {
     expect(shouldShowAgentLivePart(part({ type: 'text', role: 'user' }))).toBe(false)
   })
 
+  it('does not show raw live fallback for assistant markdown text', () => {
+    expect(
+      shouldShowLiveRawOutputFallback(
+        part({
+          type: 'text',
+          role: 'assistant',
+          status: 'running',
+          output: '### 标题\n\n- 列表'
+        })
+      )
+    ).toBe(false)
+    expect(
+      shouldShowLiveRawOutputFallback(
+        part({
+          type: 'tool',
+          toolName: 'execute_command',
+          status: 'running',
+          output: '{"content":"streaming output","exitCode":0}'
+        })
+      )
+    ).toBe(true)
+  })
+
   it('keeps intermediate assistant text in process but not the final answer part', () => {
     const parts = [
       part({
@@ -74,6 +103,76 @@ describe('agent live stream visibility', () => {
     ]
 
     expect(agentProcessParts(parts).map((item) => item.id)).toEqual(['thinking-1', 'tool-1'])
+  })
+
+  it('keeps intermediate assistant text but not the final answer in the raw process projection', () => {
+    const parts = [
+      part({
+        id: 'thinking-1',
+        type: 'text',
+        role: 'assistant',
+        status: 'completed',
+        output: '我先搜索资料。',
+        orderIndex: 1,
+        createdAt: 1
+      }),
+      part({
+        id: 'tool-1',
+        type: 'tool',
+        toolName: 'websearch',
+        status: 'completed',
+        input: '{"query":"OpenTerm"}',
+        orderIndex: 2,
+        createdAt: 2
+      }),
+      part({
+        id: 'answer-1',
+        type: 'text',
+        role: 'assistant',
+        status: 'completed',
+        messageId: 'msg-1',
+        output: '最终总结。',
+        orderIndex: 3,
+        createdAt: 3
+      })
+    ]
+
+    expect(agentRawProcessParts(parts).map((item) => item.id)).toEqual(['thinking-1', 'tool-1'])
+  })
+
+  it('separates only the latest live assistant text from the raw process projection', () => {
+    const parts = [
+      part({
+        id: 'thinking-1',
+        type: 'text',
+        role: 'assistant',
+        status: 'completed',
+        output: '我先确认配置来源。',
+        orderIndex: 1,
+        createdAt: 1
+      }),
+      part({
+        id: 'tool-1',
+        type: 'tool',
+        toolName: 'execute_command',
+        status: 'completed',
+        input: '{"command":"kubectl get configmap"}',
+        orderIndex: 2,
+        createdAt: 2
+      }),
+      part({
+        id: 'streaming-answer',
+        type: 'text',
+        role: 'assistant',
+        status: 'running',
+        output: '## 配置报告\n\n正在整理结果。',
+        orderIndex: 3,
+        createdAt: 3
+      })
+    ]
+
+    expect(latestLiveAssistantTextPart(parts)?.id).toBe('streaming-answer')
+    expect(agentRawProcessParts(parts).map((item) => item.id)).toEqual(['thinking-1', 'tool-1'])
   })
 
   it('does not invent tasks from ordinary tool activity', () => {
@@ -136,6 +235,14 @@ describe('agent live stream visibility', () => {
   it('renders readable process labels for common agent actions', () => {
     const lines = agentActivityLines([
       part({
+        id: 'hosts-1',
+        type: 'tool',
+        toolName: 'list_hosts',
+        status: 'completed',
+        input: '{}',
+        orderIndex: 0
+      }),
+      part({
         id: 'notes-1',
         type: 'tool',
         toolName: 'read_notes',
@@ -173,6 +280,7 @@ describe('agent live stream visibility', () => {
     ])
 
     expect(lines.map((line) => [line.label, line.detail])).toEqual([
+      ['查看主机', ''],
       ['读取备注', '主机 shelley-test'],
       ['运行命令', 'demo-cli --version'],
       ['搜索网页', 'demo-cli latest version'],
@@ -222,6 +330,102 @@ describe('agent live stream visibility', () => {
     ]
 
     expect(agentProcessParts(parts).map((item) => item.id)).toEqual(['cmd-1'])
+  })
+
+  it('keeps identical completed observations and tool activity in the raw process list', () => {
+    const parts = [
+      part({
+        id: 'thinking-1',
+        type: 'text',
+        role: 'assistant',
+        status: 'completed',
+        output: '我需要查看 nginx 错误日志。',
+        orderIndex: 1
+      }),
+      part({
+        id: 'cmd-1',
+        type: 'tool',
+        toolName: 'execute_command',
+        status: 'completed',
+        input: '{"command":"tail -100 /var/log/nginx/error.log"}',
+        output: '{"content":"no error log","exitCode":0}',
+        orderIndex: 2
+      }),
+      part({
+        id: 'thinking-2',
+        type: 'text',
+        role: 'assistant',
+        status: 'completed',
+        output: '我需要查看 nginx 错误日志。',
+        orderIndex: 3
+      }),
+      part({
+        id: 'cmd-2',
+        type: 'tool',
+        toolName: 'execute_command',
+        status: 'completed',
+        input: '{"command":"tail -100 /var/log/nginx/error.log"}',
+        output: '{"content":"no error log","exitCode":0}',
+        orderIndex: 4
+      }),
+      part({
+        id: 'cmd-running',
+        type: 'tool',
+        toolName: 'execute_command',
+        status: 'running',
+        input: '{"command":"tail -100 /var/log/nginx/error.log"}',
+        orderIndex: 5
+      })
+    ]
+
+    expect(agentProcessParts(parts).map((item) => item.id)).toEqual([
+      'thinking-1',
+      'cmd-1',
+      'thinking-2',
+      'cmd-2',
+      'cmd-running'
+    ])
+  })
+
+  it('deduplicates identical completed observations only in the summary projection', () => {
+    const parts = [
+      part({
+        id: 'thinking-1',
+        type: 'text',
+        role: 'assistant',
+        status: 'completed',
+        output: '我需要查看 nginx 错误日志。',
+        orderIndex: 1
+      }),
+      part({
+        id: 'cmd-1',
+        type: 'tool',
+        toolName: 'execute_command',
+        status: 'completed',
+        input: '{"command":"tail -100 /var/log/nginx/error.log"}',
+        output: '{"content":"no error log","exitCode":0}',
+        orderIndex: 2
+      }),
+      part({
+        id: 'thinking-2',
+        type: 'text',
+        role: 'assistant',
+        status: 'completed',
+        output: '我需要查看 nginx 错误日志。',
+        orderIndex: 3
+      }),
+      part({
+        id: 'cmd-2',
+        type: 'tool',
+        toolName: 'execute_command',
+        status: 'completed',
+        input: '{"command":"tail -100 /var/log/nginx/error.log"}',
+        output: '{"content":"no error log","exitCode":0}',
+        orderIndex: 4
+      })
+    ]
+
+    expect(agentSummaryParts(parts).map((item) => item.id)).toEqual(['thinking-1', 'cmd-1'])
   })
 
   it('only offers expanded activity detail when it adds information', () => {

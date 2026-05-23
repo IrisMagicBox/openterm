@@ -15,7 +15,8 @@ export class LegacyAgentEventAdapter {
     eventBus.publish('agent:thinking', {
       topicId: this.run.topicId,
       thinking: true,
-      taskId: this.run.taskId
+      taskId: this.run.taskId,
+      runId: this.run.id
     })
   }
 
@@ -34,7 +35,7 @@ export class LegacyAgentEventAdapter {
     })
   }
 
-  taskComplete(status: 'completed' | 'failed', summary: string): void {
+  taskComplete(status: 'completed' | 'failed' | 'cancelled', summary: string): void {
     eventBus.publish('agent:task-complete', {
       topicId: this.run.topicId,
       taskId: this.run.taskId,

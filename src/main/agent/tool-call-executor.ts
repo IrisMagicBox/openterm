@@ -1,6 +1,5 @@
 import type {
   ChatCompletionMessageFunctionToolCall,
-  ChatCompletionMessageParam,
   ChatCompletionTool
 } from 'openai/resources/chat/completions/completions'
 import { v4 as uuidv4 } from 'uuid'
@@ -9,7 +8,6 @@ import type { AgentPart, PolicyRiskCategory, TaskStep, ToolResult } from '../../
 import { taskStepDB } from '../db'
 import { MemoryManager } from '../MemoryManager'
 import { executeGrouped } from './session-scheduler'
-import { DoomLoopDetector, DOOM_LOOP_THRESHOLD } from './doom-loop'
 import { fromCommandResult, formatObservation } from '../tools/observation'
 import { ToolContextFactory } from '../tools/tool-context-factory'
 import { getSearchTimeContext, normalizeCurrentNewsQuery } from '../tools/websearch'
@@ -18,17 +16,24 @@ import { eventBus } from './event-bus'
 import { LegacyAgentEventAdapter } from './legacy-agent-event-adapter'
 import type { AgentProcessorOptions } from './agent-processor-types'
 import type { SessionUsage } from './provider-adapter'
-import { AgentPartWriter } from './agent-part-writer'
+import { AgentPartProjection } from './agent-part-projection'
 import type { PendingVerificationCheckpoint } from './agent-checkpoint'
+import type { ToolCallAttempt } from './tool-call-ledger'
+
+export interface ToolCallExecutionObservation {
+  role: 'tool'
+  tool_call_id: string
+  content: string
+  toolName: string
+  args: Record<string, unknown>
+  call: ChatCompletionMessageFunctionToolCall
+}
 
 export class ToolCallExecutor {
-  private readonly doomLoop = new DoomLoopDetector()
   private readonly legacyEvents: LegacyAgentEventAdapter
   private readonly contextFactory: ToolContextFactory
-  private readonly parts = new AgentPartWriter()
+  private readonly parts = new AgentPartProjection()
   private readonly pendingVerifications = new Map<string, PendingVerification>()
-  private lastWaitActivityKey: string | null = null
-  private repeatedWaitActivityCount = 0
 
   constructor(private readonly options: AgentProcessorOptions) {
     this.legacyEvents = new LegacyAgentEventAdapter(options.run, options.context)
@@ -41,10 +46,7 @@ export class ToolCallExecutor {
   }
 
   reset(): void {
-    this.doomLoop.reset()
     this.pendingVerifications.clear()
-    this.lastWaitActivityKey = null
-    this.repeatedWaitActivityCount = 0
   }
 
   getTools(turnCount: number, maxTurns: number, allowFinalTurnTools = false): ChatCompletionTool[] {
@@ -84,18 +86,26 @@ export class ToolCallExecutor {
   }
 
   async executeToolCalls(
-    toolCalls: ChatCompletionMessageFunctionToolCall[]
-  ): Promise<ChatCompletionMessageParam[]> {
+    toolCalls: ChatCompletionMessageFunctionToolCall[] | ToolCallAttempt[]
+  ): Promise<ToolCallExecutionObservation[]> {
     const safeCalls: ChatCompletionMessageFunctionToolCall[] = []
-    const observations: ChatCompletionMessageParam[] = []
+    const safeCallArgs = new Map<string, Record<string, unknown>>()
+    const safeCallPartIds = new Map<string, string>()
+    const observations: ToolCallExecutionObservation[] = []
+    if (this.options.context.abort?.aborted) return observations
 
-    for (const call of toolCalls) {
+    for (const item of toolCalls) {
+      if (this.options.context.abort?.aborted) break
+      const call = this.asToolCall(item)
       this.repairToolCallName(call)
       this.normalizeVisibleToolArguments(call)
       const part = this.ensureToolPart(call)
-      const parsed = this.parseToolArguments(call, part)
+      this.annotateAttemptDiagnostics(item, part)
+      const parsed = this.isToolCallAttempt(item)
+        ? { ok: true as const, args: item.args }
+        : this.parseToolArguments(call, part)
       if (!parsed.ok) {
-        observations.push({ role: 'tool', tool_call_id: call.id, content: parsed.error })
+        observations.push(this.makeObservation(call, {}, parsed.error))
         continue
       }
 
@@ -104,68 +114,55 @@ export class ToolCallExecutor {
           typeof parsed.args.error === 'string'
             ? `Error: ${parsed.args.error}`
             : `Error: Unknown tool "${String(parsed.args.tool ?? 'unknown')}".`
-        this.parts.updatePart(part.id, { status: 'error', error, endedAt: Date.now() })
-        observations.push({ role: 'tool', tool_call_id: call.id, content: error })
+        this.parts.failToolCallPart(part.id, { error })
+        observations.push(this.makeObservation(call, parsed.args, error))
         continue
       }
 
       if (!this.options.permissionEngine.isToolAllowed(call.function.name)) {
         const error = `Error: Tool "${call.function.name}" is not allowed for agent "${this.options.config.name}".`
-        this.parts.updatePart(part.id, { status: 'error', error, endedAt: Date.now() })
-        observations.push({ role: 'tool', tool_call_id: call.id, content: error })
+        this.parts.failToolCallPart(part.id, { error })
+        observations.push(this.makeObservation(call, parsed.args, error))
         continue
       }
 
       const validation = this.validateToolArguments(call, parsed.args, part)
       if (!validation.ok) {
-        observations.push({ role: 'tool', tool_call_id: call.id, content: validation.error })
-        continue
-      }
-
-      const repeatedWaitObservation = this.checkRepeatedWaitActivity(call, validation.args, part)
-      if (repeatedWaitObservation) {
-        observations.push({
-          role: 'tool',
-          tool_call_id: call.id,
-          content: repeatedWaitObservation
-        })
-        continue
-      }
-
-      if (this.doomLoop.check(call.function.name, validation.args)) {
-        const error = `Doom loop detected: the tool '${call.function.name}' has been called with identical arguments ${DOOM_LOOP_THRESHOLD} times consecutively. Try a different approach or arguments.`
-        this.parts.updatePart(part.id, { status: 'error', error, endedAt: Date.now() })
-        eventBus.publish('agent:doom-loop', {
-          topicId: this.options.run.topicId,
-          taskId: this.options.run.taskId,
-          toolName: call.function.name,
-          callCount: DOOM_LOOP_THRESHOLD
-        })
-        observations.push({ role: 'tool', tool_call_id: call.id, content: error })
+        observations.push(this.makeObservation(call, parsed.args, validation.error))
         continue
       }
 
       safeCalls.push(call)
+      safeCallArgs.set(call.id, validation.args)
+      safeCallPartIds.set(call.id, part.id)
     }
 
     if (safeCalls.length === 0) return observations
 
     this.legacyEvents.status('executing')
-    const results = await executeGrouped(safeCalls, (call) => this.executeTool(call))
+    const results = await executeGrouped(
+      safeCalls,
+      (call) => this.executeTool(call),
+      this.options.context.abort
+    )
+    if (this.options.context.abort?.aborted) return observations
     for (const call of safeCalls) {
       const result = results.get(call.id)
       if (!result) continue
-      observations.push({
-        role: 'tool',
-        tool_call_id: call.id,
-        content: await this.formatObservation(call, result)
-      })
+      const observation = await this.formatObservation(call, result)
+      const partId = safeCallPartIds.get(call.id)
+      if (partId) this.parts.annotateToolObservation(partId, observation)
+      const args = safeCallArgs.get(call.id)
+      observations.push(this.makeObservation(call, args ?? {}, observation))
     }
 
     return observations
   }
 
   private async executeTool(call: ChatCompletionMessageFunctionToolCall): Promise<ToolResult> {
+    if (this.options.context.abort?.aborted) {
+      return { toolCallId: call.id, content: 'Error: Run cancelled' }
+    }
     this.repairToolCallName(call)
     this.normalizeVisibleToolArguments(call)
     const part = this.ensureToolPart(call)
@@ -178,11 +175,9 @@ export class ToolCallExecutor {
     this.options.context.stepId = legacyStep.id
     this.options.context.partId = part.id
 
-    this.parts.updatePart(part.id, {
-      status: 'running',
-      input: call.function.arguments,
-      startedAt: Date.now(),
-      metadata: { legacyStepId: legacyStep.id }
+    this.parts.startToolCallPart(part.id, {
+      rawArguments: call.function.arguments,
+      legacyStepId: legacyStep.id
     })
     eventBus.publish('agent:tool-call', {
       topicId: this.options.run.topicId,
@@ -193,6 +188,9 @@ export class ToolCallExecutor {
 
     try {
       const context = this.contextFactory.create(part.id, legacyStep.id, call.function.name)
+      if (this.options.context.abort?.aborted) {
+        throw new Error('Run cancelled')
+      }
       const result = await this.options.toolRegistry.execute(
         call.function.name,
         validation.args,
@@ -207,12 +205,7 @@ export class ToolCallExecutor {
         endedAt: Date.now(),
         metadata
       })
-      this.parts.updatePart(part.id, {
-        status: 'completed',
-        output,
-        endedAt: Date.now(),
-        metadata
-      })
+      this.parts.completeToolCallPart(part.id, { output, metadata })
       eventBus.publish('agent:tool-result', {
         topicId: this.options.run.topicId,
         taskId: this.options.run.taskId,
@@ -236,11 +229,15 @@ export class ToolCallExecutor {
           verificationIdsCleared: verificationUpdate.clearedIds,
           verificationIdsIgnored: verificationUpdate.ignoredIds
         })
-        this.parts.updatePart(part.id, { metadata })
+        this.parts.updateToolCallPart(part.id, { metadata })
         taskStepDB.updateStep(legacyStep.id, { metadata })
       }
 
-      return { toolCallId: call.id, content: output, metadata }
+      return {
+        toolCallId: call.id,
+        content: output,
+        metadata: { ...metadata, observation: output }
+      }
     } catch (error) {
       const message = `Error: ${getErrorMessage(error)}`
       taskStepDB.updateStep(legacyStep.id, {
@@ -248,11 +245,7 @@ export class ToolCallExecutor {
         rawOutput: message,
         endedAt: Date.now()
       })
-      this.parts.updatePart(part.id, {
-        status: 'error',
-        error: message,
-        endedAt: Date.now()
-      })
+      this.parts.failToolCallPart(part.id, { error: message })
       eventBus.publish('agent:tool-result', {
         topicId: this.options.run.topicId,
         taskId: this.options.run.taskId,
@@ -260,7 +253,7 @@ export class ToolCallExecutor {
         output: message.slice(0, 500),
         error: true
       })
-      return { toolCallId: call.id, content: message }
+      return { toolCallId: call.id, content: message, metadata: { observation: message } }
     }
   }
 
@@ -295,61 +288,12 @@ export class ToolCallExecutor {
     }
   }
 
-  private checkRepeatedWaitActivity(
-    call: ChatCompletionMessageFunctionToolCall,
-    args: Record<string, unknown>,
-    part: AgentPart
-  ): string | undefined {
-    if (call.function.name === 'send_terminal_keys' || call.function.name === 'manage_terminal') {
-      this.lastWaitActivityKey = null
-      this.repeatedWaitActivityCount = 0
-      return undefined
-    }
-
-    if (call.function.name !== 'wait_terminal_activity') {
-      this.lastWaitActivityKey = null
-      this.repeatedWaitActivityCount = 0
-      return undefined
-    }
-
-    const key = [
-      this.stringValue(args.sessionId) ?? 'unknown-session',
-      this.stringValue(args.stopText) ?? '',
-      this.stringValue(args.stopRegex) ?? ''
-    ].join('|')
-
-    if (this.lastWaitActivityKey === key) {
-      this.repeatedWaitActivityCount += 1
-    } else {
-      this.lastWaitActivityKey = key
-      this.repeatedWaitActivityCount = 1
-    }
-
-    if (this.repeatedWaitActivityCount < 3) return undefined
-
-    const message = [
-      '[Runtime observation] 已连续多次等待同一个终端活动，但没有新的输入动作。',
-      '不要继续盲目调用 wait_terminal_activity。请基于最近一次终端屏幕和变化摘要总结当前结果；如果仍无法确认完成，请说明仍在运行/等待用户输入/需要用户接管。'
-    ].join('\n')
-    this.parts.updatePart(part.id, {
-      status: 'blocked',
-      output: message,
-      endedAt: Date.now(),
-      metadata: {
-        repeatedWaitActivity: true,
-        waitKey: key,
-        count: this.repeatedWaitActivityCount
-      }
-    })
-    return message
-  }
-
   private ensureToolPart(call: ChatCompletionMessageFunctionToolCall): AgentPart {
     const existing = agentRunStore
       .getParts(this.options.run.id)
       .find((part) => part.toolCallId === call.id)
     if (existing) return existing
-    return this.parts.createToolPart({
+    return this.parts.createToolCallPart({
       runId: this.options.run.id,
       toolName: call.function.name,
       toolCallId: call.id,
@@ -365,7 +309,7 @@ export class ToolCallExecutor {
       return { ok: true, args: JSON.parse(call.function.arguments || '{}') }
     } catch (error) {
       const message = `Error: Tool "${call.function.name}" received invalid JSON arguments: ${getErrorMessage(error)}`
-      this.parts.updatePart(part.id, { status: 'error', error: message, endedAt: Date.now() })
+      this.parts.failToolCallPart(part.id, { error: message })
       return { ok: false, error: message }
     }
   }
@@ -379,10 +323,8 @@ export class ToolCallExecutor {
     if (validation.ok) return validation
 
     const message = JSON.stringify(validation.error, null, 2)
-    this.parts.updatePart(part.id, {
-      status: 'error',
+    this.parts.failToolCallPart(part.id, {
       error: message,
-      endedAt: Date.now(),
       metadata: { schemaValidationError: validation.error }
     })
     return { ok: false, error: message }
@@ -582,6 +524,55 @@ export class ToolCallExecutor {
     } catch {
       return undefined
     }
+  }
+
+  private makeObservation(
+    call: ChatCompletionMessageFunctionToolCall,
+    args: Record<string, unknown>,
+    content: string
+  ): ToolCallExecutionObservation {
+    return {
+      role: 'tool',
+      tool_call_id: call.id,
+      content,
+      toolName: call.function.name,
+      args,
+      call: {
+        id: call.id,
+        type: call.type,
+        function: {
+          name: call.function.name,
+          arguments: call.function.arguments
+        }
+      }
+    }
+  }
+
+  private isToolCallAttempt(value: unknown): value is ToolCallAttempt {
+    return !!value && typeof value === 'object' && 'call' in value && 'args' in value
+  }
+
+  private asToolCall(
+    value: ChatCompletionMessageFunctionToolCall | ToolCallAttempt
+  ): ChatCompletionMessageFunctionToolCall {
+    return this.isToolCallAttempt(value) ? value.call : value
+  }
+
+  private annotateAttemptDiagnostics(
+    value: ChatCompletionMessageFunctionToolCall | ToolCallAttempt,
+    part: AgentPart
+  ): void {
+    if (!this.isToolCallAttempt(value)) return
+    if (value.count <= 1) return
+    this.parts.updateToolCallPart(part.id, {
+      metadata: {
+        repeatedToolCallDiagnostic: true,
+        repeatedToolCallSignature: value.signature,
+        repeatedToolCallCount: value.count,
+        repeatedToolCallOutputRepeated: value.entry.lastOutputRepeated === true,
+        repeatedToolCallLastStatus: value.entry.lastStatus
+      }
+    })
   }
 }
 

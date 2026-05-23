@@ -6,6 +6,9 @@ export function registerAgentRunIPC(): void {
   ipcMain.removeHandler('agent:get-run')
   ipcMain.handle('agent:get-run', (_, runId: string) => agentRunDB.getRun(runId))
 
+  ipcMain.removeHandler('agent:get-active-run')
+  ipcMain.handle('agent:get-active-run', (_, topicId: string) => agentRunDB.getActiveRunByTopic(topicId))
+
   ipcMain.removeHandler('agent:get-runs-by-task')
   ipcMain.handle('agent:get-runs-by-task', (_, taskId: string) => agentRunDB.getRunsByTask(taskId))
 

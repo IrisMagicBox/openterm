@@ -1,7 +1,7 @@
 /**
  * Integration tests for AgentRunner's subsystem integration.
  *
- * These tests verify that DoomLoopDetector, AgentConfig permissions,
+ * These tests verify that AgentConfig permissions,
  * EventBus, ContextAssembler, and StructuredObservation are properly
  * wired into the AgentRunner flow — without requiring a live LLM.
  */
@@ -185,6 +185,10 @@ describe('AgentRunner Integration', () => {
       expect(config.systemPrompt).toBeDefined()
       expect(config.systemPrompt).toContain('探索代理')
       expect(config.systemPrompt).toContain('只读')
+      expect(config.systemPrompt).toContain('可见工作过程')
+      expect(config.systemPrompt).toContain('基于证据推进调查')
+      expect(config.systemPrompt).toContain('当前判断、证据缺口或下一步决策')
+      expect(config.systemPrompt).not.toContain('可公开进展')
     })
 
     it('verify agent has a specialized Chinese system prompt', () => {

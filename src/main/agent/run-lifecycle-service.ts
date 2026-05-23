@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { AgentRun, AgentRunStopReason, Message } from '../../shared/types'
+import { stripInternalToolCallMarkup } from '../../shared/internal-tool-call-markup'
 import { messageDB, taskDB } from '../db'
 import { logger } from '../logger'
 import { MemoryManager } from '../MemoryManager'
@@ -7,8 +8,9 @@ import { TASK_SUMMARY_MAX_LENGTH } from '../constants'
 import type { AgentProcessorOptions } from './agent-processor-types'
 import { agentRunStore } from './agent-run-store'
 import { LegacyAgentEventAdapter } from './legacy-agent-event-adapter'
-import { AgentPartWriter } from './agent-part-writer'
+import { AgentPartProjection } from './agent-part-projection'
 import { agentCheckpointStore } from './agent-checkpoint'
+import type { PartialStreamState } from './provider-stream-collector'
 
 function extractProviderErrorContent(content: string): string | undefined {
   try {
@@ -38,7 +40,7 @@ function extractProviderErrorContent(content: string): string | undefined {
 
 export class RunLifecycleService {
   private readonly legacyEvents: LegacyAgentEventAdapter
-  private readonly parts = new AgentPartWriter()
+  private readonly parts = new AgentPartProjection()
 
   constructor(private readonly options: AgentProcessorOptions) {
     this.legacyEvents = new LegacyAgentEventAdapter(options.run, options.context)
@@ -47,7 +49,7 @@ export class RunLifecycleService {
   failMaxTurns(maxTurns: number): Message {
     const { run } = this.options
     const failedSummary = `任务达到多轮推理上限 (${maxTurns}步)，未能完全解决。`
-    this.parts.finishOpenParts(run.id, {
+    this.parts.closeOpenParts(run.id, {
       status: 'error',
       reason: failedSummary,
       metadata: { stopReason: 'max_turns' }
@@ -70,10 +72,9 @@ export class RunLifecycleService {
       metadata: { taskId: run.taskId, agentStatus: 'error' }
     }
     if (this.options.persistFinalMessage) messageDB.createMessage(timeoutMsg)
-    this.parts.createTextPart({
+    this.parts.createAssistantTextPart({
       runId: run.id,
       messageId: timeoutMsg.id,
-      role: 'assistant',
       status: 'completed',
       output: timeoutMsg.content,
       metadata: { taskId: run.taskId, stopReason: 'max_turns' },
@@ -95,7 +96,7 @@ export class RunLifecycleService {
     const failedSummary = summary || 'Agent runtime 未能完成任务。'
     const finalContent = [failedSummary, details ? `\n${details}` : ''].join('').trim()
 
-    this.parts.finishOpenParts(run.id, {
+    this.parts.closeOpenParts(run.id, {
       status: 'error',
       reason: failedSummary,
       metadata: { stopReason }
@@ -133,10 +134,9 @@ export class RunLifecycleService {
         endedAt: Date.now()
       })
     } else {
-      this.parts.createErrorPart({
+      this.parts.createAssistantErrorPart({
         runId: run.id,
         messageId: msg.id,
-        role: 'assistant',
         output: msg.content,
         error: failedSummary,
         metadata: { taskId: run.taskId, stopReason },
@@ -146,6 +146,83 @@ export class RunLifecycleService {
     }
     this.options.context.notifyStep(msg)
     this.legacyEvents.taskComplete('failed', finalContent.slice(0, TASK_SUMMARY_MAX_LENGTH))
+    return msg
+  }
+
+  failProviderInterrupted(
+    errorMessage: string,
+    partial?: PartialStreamState,
+    stopReason: AgentRunStopReason = 'provider_error',
+    kind?: 'abort' | 'provider'
+  ): Message {
+    const { run } = this.options
+    const partialContent = stripInternalToolCallMarkup(partial?.content ?? '').trim()
+    const failedSummary =
+      kind === 'abort' ? '运行已取消' : `模型响应中断：${errorMessage || '网络连接不稳定'}`
+    const finalContent = partialContent
+    const timestamp = Date.now()
+
+    this.parts.closeOpenParts(run.id, {
+      status: kind === 'abort' ? 'cancelled' : 'error',
+      reason: failedSummary,
+      metadata: { stopReason, interrupted: true }
+    })
+    const runStatus = kind === 'abort' ? 'cancelled' : 'failed'
+    agentRunStore.updateRun(run.id, {
+      status: runStatus,
+      error: failedSummary,
+      usage: this.usageWithStopReason(stopReason),
+      completedAt: Date.now()
+    })
+    if (this.options.updateTaskStatus) {
+      taskDB.updateTask(run.taskId, {
+        status: kind === 'abort' ? 'cancelled' : 'failed',
+        summary: (finalContent || failedSummary).slice(0, TASK_SUMMARY_MAX_LENGTH)
+      })
+    }
+
+    const msg: Message = {
+      id: uuidv4(),
+      topicId: run.topicId,
+      runId: run.id,
+      role: 'assistant',
+      content: finalContent,
+      timestamp,
+      metadata: {
+        taskId: run.taskId,
+        agentStatus: kind === 'abort' ? 'cancelled' : 'error'
+      }
+    }
+
+    if (this.options.persistFinalMessage) messageDB.createMessage(msg)
+
+    if (partial?.textPartId) {
+      this.parts.updatePart(partial.textPartId, {
+        messageId: msg.id,
+        status: kind === 'abort' ? 'cancelled' : 'error',
+        role: 'assistant',
+        output: partialContent || msg.content,
+        error: failedSummary,
+        metadata: { taskId: run.taskId, stopReason, interrupted: true },
+        endedAt: timestamp
+      })
+    } else {
+      this.parts.createAssistantTextPart({
+        runId: run.id,
+        messageId: msg.id,
+        status: kind === 'abort' ? 'cancelled' : 'error',
+        output: msg.content,
+        metadata: { taskId: run.taskId, stopReason, interrupted: true },
+        startedAt: timestamp,
+        endedAt: timestamp
+      })
+    }
+
+    this.options.context.notifyStep(msg)
+    this.legacyEvents.taskComplete(
+      kind === 'abort' ? 'cancelled' : 'failed',
+      (finalContent || failedSummary).slice(0, TASK_SUMMARY_MAX_LENGTH)
+    )
     return msg
   }
 
@@ -197,10 +274,9 @@ export class RunLifecycleService {
         endedAt: Date.now()
       })
     } else {
-      this.parts.createTextPart({
+      this.parts.createAssistantTextPart({
         runId: run.id,
         messageId: msg.id,
-        role: 'assistant',
         status: 'completed',
         output: msg.content,
         metadata: { taskId: run.taskId, stopReason },
@@ -208,7 +284,7 @@ export class RunLifecycleService {
         endedAt: msg.timestamp
       })
     }
-    this.parts.finishOpenParts(run.id, {
+    this.parts.closeOpenParts(run.id, {
       status: providerError ? 'error' : 'completed',
       reason: providerError ?? 'Run completed',
       metadata: { stopReason }
@@ -230,14 +306,11 @@ export class RunLifecycleService {
 
   createUserPart(run: AgentRun, userMessage?: Message): void {
     if (!userMessage) return
-    this.parts.createTextPart({
+    this.parts.createUserMessagePart({
       runId: run.id,
       messageId: userMessage.id,
-      status: 'completed',
-      role: 'user',
-      output: userMessage.content,
-      startedAt: userMessage.timestamp,
-      endedAt: userMessage.timestamp
+      content: userMessage.content,
+      timestamp: userMessage.timestamp
     })
   }
 

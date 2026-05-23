@@ -1,8 +1,8 @@
 import type { Tool } from './tool-factory'
 import type { AgentContext } from '../AgentRunner'
-import { agentRunStore } from '../agent/agent-run-store'
 import type { AgentPermissionEngine } from '../agent/agent-permission-engine'
 import type { AgentConfig } from '../agent/agent-config'
+import { AgentPartProjection } from '../agent/agent-part-projection'
 
 export interface ToolContextFactoryOptions {
   context: AgentContext
@@ -13,6 +13,8 @@ export interface ToolContextFactoryOptions {
 
 export class ToolContextFactory {
   constructor(private readonly options: ToolContextFactoryOptions) {}
+
+  private readonly parts = new AgentPartProjection()
 
   create(partId: string, stepId: string, toolName: string): Tool.Context {
     const { context, runId, config, permissionEngine } = this.options
@@ -41,15 +43,10 @@ export class ToolContextFactory {
         })
       },
       updatePartMetadata: (metadata) => {
-        agentRunStore.appendMetadata(partId, metadata)
+        this.parts.appendPartMetadata(partId, metadata)
       },
-      updatePart: (updates) => agentRunStore.updatePart(partId, updates),
-      createChildPart: (input) =>
-        agentRunStore.createPart({
-          runId,
-          parentPartId: partId,
-          ...input
-        }),
+      updatePart: (updates) => this.parts.updatePart(partId, updates),
+      createChildPart: (input) => this.parts.createChildPart(runId, partId, input),
       terminal: {
         ensureSession: context.ensureSession
       },
@@ -57,14 +54,9 @@ export class ToolContextFactory {
         ask: (request) => permissionEngine.ask(request)
       },
       parts: {
-        updateMetadata: (metadata) => agentRunStore.appendMetadata(partId, metadata),
-        update: (updates) => agentRunStore.updatePart(partId, updates),
-        createChild: (input) =>
-          agentRunStore.createPart({
-            runId,
-            parentPartId: partId,
-            ...input
-          })
+        updateMetadata: (metadata) => this.parts.appendPartMetadata(partId, metadata),
+        update: (updates) => this.parts.updatePart(partId, updates),
+        createChild: (input) => this.parts.createChildPart(runId, partId, input)
       },
       events: {
         notifyStep: context.notifyStep

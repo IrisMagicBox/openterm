@@ -7,12 +7,14 @@ import { AgentRunner, type AgentContext, type IAgentService } from '../AgentRunn
 import { resolveProviderSelection } from '../ai'
 import { logger } from '../logger'
 import { agentRunStore } from './agent-run-store'
+import { AgentPartProjection } from './agent-part-projection'
 import type { AgentSessionManager } from './agent-session-manager'
 import type { ApprovalBroker } from './approval-broker'
 
 export class AgentApplicationService {
   private webContents?: WebContents
   private activeRunControllers: Map<string, AbortController> = new Map()
+  private readonly parts = new AgentPartProjection()
 
   constructor(
     private readonly sessions: AgentSessionManager,
@@ -78,7 +80,7 @@ export class AgentApplicationService {
       this.webContents?.send('topic:updated', { topicId, title })
     }
 
-    this.webContents?.send('agent:thinking', { topicId, thinking: true })
+    this.webContents?.send('agent:thinking', { topicId, thinking: true, taskId: task.id, runId })
 
     try {
       if (!this.webContents) throw new Error('WebContents not initialized')
@@ -87,29 +89,76 @@ export class AgentApplicationService {
       const messages = await messageDB.getMessages(topicId)
       return await runner.run(messages)
     } catch (error: unknown) {
-      logger.error('AgentApplicationService', `Error processing message: ${getErrorMessage(error)}`)
+      const message = getErrorMessage(error)
+      logger.error('AgentApplicationService', `Error processing message: ${message}`)
+      const failedSummary = `抱歉，处理您的请求时出现错误：${message}`
       const errorMsg: Message = {
         id: uuidv4(),
         topicId,
+        runId,
         role: 'assistant',
-        content: `抱歉，处理您的请求时出现错误: ${getErrorMessage(error)}`,
-        timestamp: Date.now()
+        content: failedSummary,
+        timestamp: Date.now(),
+        metadata: { taskId: task.id, agentStatus: 'error' }
+      }
+      taskDB.updateTask(task.id, {
+        status: 'failed',
+        summary: errorMsg.content
+      })
+      this.parts.closeOpenParts(runId, {
+        status: 'error',
+        reason: failedSummary,
+        metadata: { stopReason: 'provider_error' }
+      })
+      const run = agentRunStore.getRun(runId)
+      if (run && !run.completedAt) {
+        agentRunStore.completeRun(runId, {
+          error: failedSummary,
+          usage: { stopReason: 'provider_error' }
+        })
       }
       messageDB.createMessage(errorMsg)
+      this.parts.createAssistantTextPart({
+        runId,
+        messageId: errorMsg.id,
+        status: 'error',
+        output: errorMsg.content,
+        metadata: { taskId: task.id, stopReason: 'provider_error' },
+        startedAt: errorMsg.timestamp,
+        endedAt: errorMsg.timestamp
+      })
       this.webContents?.send('agent:message', errorMsg)
       return errorMsg
     } finally {
       this.unregisterRunController(runId, abortController)
-      this.webContents?.send('agent:thinking', { topicId, thinking: false })
+      this.webContents?.send('agent:thinking', {
+        topicId,
+        thinking: false,
+        taskId: task.id,
+        runId
+      })
     }
   }
 
   async cancelRun(runId: string): Promise<AgentRun | undefined> {
+    const run = agentRunDB.getRun(runId)
     const controller = this.activeRunControllers.get(runId)
     controller?.abort()
     this.approvals.rejectRuns(this.collectRunTreeIds(runId), 'Run was cancelled')
     agentRunStore.cancelRunTree(runId, 'User cancelled run')
-    return agentRunDB.getRun(runId)
+    const cancelledRun = agentRunDB.getRun(runId)
+    if (cancelledRun) {
+      this.webContents?.send('agent:run-updated', cancelledRun)
+    }
+    if (run) {
+      this.webContents?.send('agent:thinking', {
+        topicId: run.topicId,
+        thinking: false,
+        taskId: run.taskId,
+        runId
+      })
+    }
+    return cancelledRun
   }
 
   async resumeRun(runId: string): Promise<Message> {
@@ -120,6 +169,12 @@ export class AgentApplicationService {
     const abortController = new AbortController()
     this.registerRunController(runId, abortController)
     agentRunStore.updateRun(runId, { status: 'running', error: undefined, completedAt: undefined })
+    this.webContents?.send('agent:thinking', {
+      topicId: run.topicId,
+      thinking: true,
+      taskId: run.taskId,
+      runId
+    })
 
     try {
       const context = this.createContext(run.topicId, run.taskId, runId, abortController.signal, {
@@ -150,6 +205,12 @@ export class AgentApplicationService {
       return await runner.run(messages)
     } finally {
       this.unregisterRunController(runId, abortController)
+      this.webContents?.send('agent:thinking', {
+        topicId: run.topicId,
+        thinking: false,
+        taskId: run.taskId,
+        runId
+      })
     }
   }
 

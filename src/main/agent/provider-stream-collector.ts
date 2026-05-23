@@ -5,14 +5,16 @@ import type {
   ChatCompletionTool
 } from 'openai/resources/chat/completions/completions'
 import type { AgentPart } from '../../shared/types'
+import { stripInternalToolCallMarkup } from '../../shared/internal-tool-call-markup'
 import { logger } from '../logger'
 import { AGENT_TEMPERATURE } from '../constants'
 import { agentRunStore } from './agent-run-store'
 import { normalizeAgentError, retryDelayMs } from './agent-error'
+import type { AgentErrorKind } from './agent-error'
 import { eventBus } from './event-bus'
 import type { AgentProcessorOptions, StreamResult, ToolChoice } from './agent-processor-types'
 import type { TokenUsage } from './provider-adapter'
-import { AgentPartWriter } from './agent-part-writer'
+import { AgentPartProjection } from './agent-part-projection'
 
 interface StreamedToolCall {
   index: number
@@ -20,6 +22,24 @@ interface StreamedToolCall {
   name: string
   arguments: string
   partId: string
+}
+
+export interface PartialStreamState {
+  textPartId?: string
+  content: string
+}
+
+export class ProviderStreamError extends Error {
+  constructor(
+    message: string,
+    readonly cause: unknown,
+    readonly partial: PartialStreamState,
+    readonly kind: AgentErrorKind,
+    readonly retryable: boolean
+  ) {
+    super(message)
+    this.name = 'ProviderStreamError'
+  }
 }
 
 export interface ExtractedXmlToolCalls {
@@ -236,9 +256,14 @@ export function extractTextToolCalls(
 }
 
 export class ProviderStreamCollector {
-  private readonly parts = new AgentPartWriter()
+  private readonly parts = new AgentPartProjection()
+  private lastPartial: PartialStreamState | undefined
 
   constructor(private readonly options: AgentProcessorOptions) {}
+
+  getLastPartial(): PartialStreamState | undefined {
+    return this.lastPartial
+  }
 
   async streamWithRetry(
     messages: ChatCompletionMessageParam[],
@@ -256,19 +281,21 @@ export class ProviderStreamCollector {
         return result
       } catch (error) {
         const normalized = normalizeAgentError(error)
-        const part = this.parts.createErrorPart({
-          runId: this.options.run.id,
-          error: normalized.message,
-          metadata: { kind: normalized.kind, retryable: normalized.retryable, attempt },
-          role: 'assistant'
-        })
-        if (normalized.retryable && attempt < maxAttempts) {
+        const part =
+          normalized.kind === 'abort'
+            ? undefined
+            : this.parts.createAssistantErrorPart({
+                runId: this.options.run.id,
+                error: normalized.message,
+                metadata: { kind: normalized.kind, retryable: normalized.retryable, attempt }
+              })
+        if (part && normalized.retryable && attempt < maxAttempts) {
           this.parts.updatePart(part.id, { status: 'completed' })
         }
 
         if (!normalized.retryable || attempt >= maxAttempts) {
           if (normalized.kind === 'abort') {
-            this.parts.finishOpenParts(this.options.run.id, {
+            this.parts.closeOpenParts(this.options.run.id, {
               status: 'cancelled',
               reason: normalized.message,
               metadata: { stopReason: 'aborted' }
@@ -280,7 +307,7 @@ export class ProviderStreamCollector {
               completedAt: Date.now()
             })
           } else {
-            this.parts.finishOpenParts(this.options.run.id, {
+            this.parts.closeOpenParts(this.options.run.id, {
               status: 'error',
               reason: normalized.message,
               metadata: { stopReason: 'provider_error' }
@@ -295,7 +322,7 @@ export class ProviderStreamCollector {
 
         logger.warn('ProviderStreamCollector', `Retrying provider call after ${normalized.kind}`, {
           runId: this.options.run.id,
-          partId: part.id,
+          partId: part?.id,
           attempt
         })
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt)))
@@ -307,7 +334,7 @@ export class ProviderStreamCollector {
 
   recordUsage(usage: TokenUsage): void {
     if (usage.totalTokens <= 0) return
-    this.parts.createUsagePart({
+    this.parts.recordUsage({
       runId: this.options.run.id,
       metadata: { ...usage }
     })
@@ -333,54 +360,99 @@ export class ProviderStreamCollector {
     let finishReason: string | null = null
     let usage: TokenUsage = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0 }
 
-    for await (const chunk of this.options.provider.stream({
-      messages,
-      tools,
-      toolChoice,
-      temperature: this.options.config.temperature ?? AGENT_TEMPERATURE,
-      abortSignal: this.options.context.abort
-    })) {
-      if (chunk.content) {
-        content += chunk.content
-        if (!textPart) {
-          textPart = this.parts.createTextPart({
-            runId: this.options.run.id,
-            role: 'assistant',
-            output: content
-          })
-        } else {
-          this.parts.updatePart(textPart.id, { output: content })
-        }
-      }
-
-      if (chunk.toolCalls) {
-        for (const delta of chunk.toolCalls) {
-          const existing = toolBuilders.get(delta.index)
-          const id = nonEmptyString(delta.id) ?? existing?.id ?? `call_${uuidv4()}`
-          const args = (existing?.arguments ?? '') + (delta.function?.arguments ?? '')
-          const name = resolveStreamedToolName(delta.function?.name, existing?.name, args)
-          let partId = existing?.partId
-          if (!partId) {
-            const part = this.parts.createToolPart({
+    try {
+      for await (const chunk of this.options.provider.stream({
+        messages,
+        tools,
+        toolChoice,
+        temperature: this.options.config.temperature ?? AGENT_TEMPERATURE,
+        abortSignal: this.options.context.abort
+      })) {
+        if (chunk.content) {
+          content += chunk.content
+          if (!textPart) {
+            textPart = this.parts.createAssistantTextPart({
               runId: this.options.run.id,
-              toolName: name,
-              toolCallId: id,
-              input: args
+              output: content
             })
-            partId = part.id
           } else {
-            this.parts.updatePart(partId, {
-              toolName: name,
-              toolCallId: id,
-              input: args
-            })
+            this.parts.updatePart(textPart.id, { output: content })
           }
-          toolBuilders.set(delta.index, { index: delta.index, id, name, arguments: args, partId })
+          this.lastPartial = { textPartId: textPart.id, content }
         }
+
+        if (chunk.toolCalls) {
+          for (const delta of chunk.toolCalls) {
+            const existing = toolBuilders.get(delta.index)
+            const id = nonEmptyString(delta.id) ?? existing?.id ?? `call_${uuidv4()}`
+            const args = (existing?.arguments ?? '') + (delta.function?.arguments ?? '')
+            const name = resolveStreamedToolName(delta.function?.name, existing?.name, args)
+            let partId = existing?.partId
+            if (!partId) {
+              const part = this.parts.createToolCallPart({
+                runId: this.options.run.id,
+                toolName: name,
+                toolCallId: id,
+                input: args
+              })
+              partId = part.id
+            } else {
+              this.parts.updatePart(partId, {
+                toolName: name,
+                toolCallId: id,
+                input: args
+              })
+            }
+            toolBuilders.set(delta.index, { index: delta.index, id, name, arguments: args, partId })
+          }
+        }
+
+        if (chunk.usage) usage = chunk.usage
+        if (chunk.finishReason) finishReason = chunk.finishReason
+      }
+    } catch (error) {
+      const normalized = normalizeAgentError(error)
+      const reason = `Provider stream interrupted: ${normalized.message}`
+      const endedAt = Date.now()
+      const cleanedPartial = stripInternalToolCallMarkup(content)
+
+      if (textPart) {
+        this.parts.updatePart(textPart.id, {
+          status: 'error',
+          output: cleanedPartial || content,
+          error: normalized.message,
+          endedAt,
+          metadata: {
+            interrupted: true,
+            kind: normalized.kind,
+            retryable: normalized.retryable
+          }
+        })
       }
 
-      if (chunk.usage) usage = chunk.usage
-      if (chunk.finishReason) finishReason = chunk.finishReason
+      for (const builder of toolBuilders.values()) {
+        this.parts.updatePart(builder.partId, {
+          status: 'error',
+          error: reason,
+          endedAt,
+          metadata: {
+            interrupted: true,
+            kind: normalized.kind,
+            retryable: normalized.retryable
+          }
+        })
+      }
+
+      this.lastPartial = textPart
+        ? { textPartId: textPart.id, content: cleanedPartial || content }
+        : undefined
+      throw new ProviderStreamError(
+        normalized.message,
+        error,
+        this.lastPartial ?? { content: '' },
+        normalized.kind,
+        normalized.retryable
+      )
     }
 
     const registeredToolNames = this.getRegisteredToolNames()
@@ -390,6 +462,7 @@ export class ProviderStreamCollector {
     content = extractedText.content
 
     if (textPart) {
+      this.lastPartial = { textPartId: textPart.id, content }
       this.parts.updatePart(textPart.id, {
         status: 'completed',
         output: content,

@@ -28,6 +28,27 @@ function isActiveRun(run: AgentRun): boolean {
   return ['running', 'waiting_approval', 'retrying', 'compacting'].includes(run.status)
 }
 
+function isContinueIntent(content: string): boolean {
+  return /^(继续|继续吧|继续执行|接着来|接着做|resume|continue)$/i.test(content.trim())
+}
+
+export function isTerminalAgentStep(step: Message): boolean {
+  return (
+    step.role === 'assistant' &&
+    (step.metadata?.agentStatus === 'done' ||
+      step.metadata?.agentStatus === 'error' ||
+      step.metadata?.agentStatus === 'cancelled')
+  )
+}
+
+function findResumableRunId(messages: Message[]): string | undefined {
+  const lastAssistant = [...messages]
+    .reverse()
+    .find((message) => message.role === 'assistant' && message.runId)
+  if (lastAssistant?.metadata?.agentStatus !== 'error') return undefined
+  return lastAssistant.runId
+}
+
 export function useChatMessages(topicId: string, thinking?: boolean): UseChatMessagesResult {
   const [messages, setMessages] = useState<Message[]>([])
   const [activeSteps, setActiveSteps] = useState<Message[]>([])
@@ -80,7 +101,18 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
 
     const unlistenStep = window.api.onAgentStep((step) => {
       if (step.topicId === topicId) {
-        if (step.metadata?.agentStatus && !step.content) {
+        if (isTerminalAgentStep(step)) {
+          setActiveSteps([])
+          if (step.runId) {
+            setActiveParts((prev) => prev.filter((part) => part.runId !== step.runId))
+            setActiveRunId((current) => (current === step.runId ? null : current))
+          }
+          setMessages((prev) => {
+            const exists = prev.find((m) => m.id === step.id)
+            if (exists) return prev.map((m) => (m.id === step.id ? step : m))
+            return [...prev, step]
+          })
+        } else if (step.metadata?.agentStatus && !step.content) {
           setActiveSteps((prev) => [...prev, step])
         } else if (step.content && step.role === 'assistant') {
           setActiveSteps([])
@@ -108,8 +140,20 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
     const unlistenPartUpdated = window.api.onAgentPartUpdated((part) => {
       void upsertPart(part)
     })
+    const unlistenThinking = window.api.onAgentThinking((state) => {
+      if (state.topicId !== topicId || !state.runId) return
+      if (state.thinking) {
+        setActiveRunId(state.runId)
+      } else {
+        setActiveRunId((current) => (current === state.runId ? null : current))
+      }
+    })
     const unlistenRunCreated = window.api.onAgentRunCreated((run) => {
       if (run.topicId !== topicId || !isActiveRun(run)) return
+      if (!run.parentRunId) {
+        setActiveSteps([])
+        setActiveParts([])
+      }
       setActiveRunId(run.id)
     })
     const unlistenRunUpdated = window.api.onAgentRunUpdated((run) => {
@@ -126,6 +170,7 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
       unlistenStep()
       unlistenPartCreated()
       unlistenPartUpdated()
+      unlistenThinking()
       unlistenRunCreated()
       unlistenRunUpdated()
     }
@@ -163,6 +208,9 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
         content,
         timestamp: Date.now()
       }
+      setActiveSteps([])
+      setActiveParts([])
+      setActiveRunId(null)
       setMessages((prev) => [...prev, userMsg])
 
       try {
@@ -176,6 +224,20 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
     [appendAgentResponse, appendSendError, topicId]
   )
 
+  const resumeInterruptedRun = useCallback(async (runId: string): Promise<void> => {
+    setActiveSteps([])
+    setActiveParts([])
+    setActiveRunId(runId)
+
+    try {
+      const response = await window.api.resumeAgentRun(runId)
+      appendAgentResponse(response)
+    } catch (err) {
+      console.error('Agent resume error:', err)
+      appendSendError(topicId)
+    }
+  }, [appendAgentResponse, appendSendError, topicId])
+
   const sendMessage = useCallback(
     async (content: string) => {
       if (!content.trim()) return
@@ -185,9 +247,15 @@ export function useChatMessages(topicId: string, thinking?: boolean): UseChatMes
         return
       }
 
+      const resumableRunId = isContinueIntent(content) ? findResumableRunId(messages) : undefined
+      if (resumableRunId) {
+        await resumeInterruptedRun(resumableRunId)
+        return
+      }
+
       await dispatchMessage(content)
     },
-    [dispatchMessage, thinking]
+    [dispatchMessage, messages, resumeInterruptedRun, thinking]
   )
 
   useEffect(() => {

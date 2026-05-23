@@ -13,6 +13,7 @@ import {
   setDefaultProvider,
   setDefaultModel,
   updateSystemProvider,
+  loadModelSettingsFromDB,
   loadProvidersFromDB,
   loadModelsFromDB
 } from '../store/llm'
@@ -36,6 +37,7 @@ export function useProvider() {
   useEffect(() => {
     dispatch(loadProvidersFromDB())
     dispatch(loadModelsFromDB())
+    dispatch(loadModelSettingsFromDB())
   }, [dispatch])
 
   const enabledProviders = useMemo(() => providers.filter((p) => p.enabled), [providers])
@@ -177,15 +179,29 @@ export function useProvider() {
   )
 
   const setDefaultProviderById = useCallback(
-    (id: string | null) => {
+    async (id: string | null) => {
+      await window.api.saveModelSettings({ defaultProviderId: id })
       dispatch(setDefaultProvider(id))
     },
     [dispatch]
   )
 
   const setDefaultModelById = useCallback(
-    (id: string | null) => {
+    async (id: string | null) => {
+      await window.api.saveModelSettings({ defaultModelId: id })
       dispatch(setDefaultModel(id))
+    },
+    [dispatch]
+  )
+
+  const setDefaultProviderModel = useCallback(
+    async (providerId: string | null, modelId: string | null) => {
+      await window.api.saveModelSettings({
+        defaultProviderId: providerId,
+        defaultModelId: modelId
+      })
+      dispatch(setDefaultProvider(providerId))
+      dispatch(setDefaultModel(modelId))
     },
     [dispatch]
   )
@@ -217,6 +233,7 @@ export function useProvider() {
     deleteModel,
     setDefaultProvider: setDefaultProviderById,
     setDefaultModel: setDefaultModelById,
+    setDefaultProviderModel,
     isProviderSystem
   }
 }

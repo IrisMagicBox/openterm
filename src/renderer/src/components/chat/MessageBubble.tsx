@@ -4,33 +4,46 @@ import {
   Terminal as TerminalIcon,
   CheckCircle2,
   Zap,
-  Loader2
+  Loader2,
+  AlertTriangle
 } from 'lucide-react'
 import { Message, Host } from '../../../../shared/types'
 import { stripInternalToolCallMarkup } from '../../../../shared/internal-tool-call-markup'
 import logo from '../../assets/logo.png'
 import { AgentRunTimeline } from '../AgentRunTimeline'
-import { MarkdownRenderer } from '../MarkdownRenderer'
+import { AssistantMessageBody } from '../AssistantMessageBody'
 import { Badge } from '../ui'
 
 interface MessageBubbleProps {
   message: Message
   expandedThoughts: Record<string, boolean>
   onToggleThought: (msgId: string) => void
+  showRunTimeline?: boolean
 }
 
 export function MessageBubble({
   message,
   expandedThoughts,
-  onToggleThought
+  onToggleThought,
+  showRunTimeline
 }: MessageBubbleProps): React.ReactElement {
   const msg = message
   const isExpanded = !!expandedThoughts[msg.id]
   const hasRunTimeline = !!msg.metadata?.taskId
+  const isError = msg.metadata?.agentStatus === 'error'
+  const isCancelled = msg.metadata?.agentStatus === 'cancelled'
+  const shouldShowRunTimeline = showRunTimeline ?? hasRunTimeline
   const assistantContent =
     msg.role === 'assistant' || msg.role === 'system'
-      ? stripInternalToolCallMarkup(msg.content)
+      ? stripLegacyNetworkInterruptionNotice(stripInternalToolCallMarkup(msg.content))
       : msg.content
+  const hasAssistantBody =
+    shouldShowRunTimeline ||
+    Boolean(assistantContent) ||
+    Boolean(msg.toolCalls?.length) ||
+    Boolean(msg.thought) ||
+    Boolean(msg.metadata?.memoryRecalled) ||
+    Boolean(msg.metadata?.isVerifying)
 
   if (msg.role === 'user') {
     return (
@@ -69,20 +82,29 @@ export function MessageBubble({
     )
   }
 
+  if ((isError || isCancelled) && !hasAssistantBody) return <></>
+
   return (
     <div className="mx-auto w-full max-w-[860px] cursor-auto select-text no-drag">
-      {(msg.role === 'system' || !hasRunTimeline) && (
+      {(msg.role === 'system' || !hasRunTimeline || isError) && (
         <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
           <span className="shrink-0 font-medium">
-            {msg.role === 'system' ? '系统' : '已处理'} {formatMessageClock(msg.timestamp)}
+            {msg.role === 'system'
+              ? '系统'
+              : isCancelled
+                ? '已取消'
+                : isError
+                  ? '处理中断'
+                  : '已处理'}{' '}
+            {formatMessageClock(msg.timestamp)}
           </span>
           <div className="h-px flex-1 bg-border/80" />
         </div>
       )}
 
       <div className="space-y-4 text-[var(--chat-text-size)] leading-[var(--chat-line-height)] text-foreground">
-        {hasRunTimeline && msg.metadata?.taskId && (
-          <AgentRunTimeline taskId={msg.metadata.taskId} />
+        {shouldShowRunTimeline && msg.metadata?.taskId && (
+          <AgentRunTimeline taskId={msg.metadata.taskId} runId={msg.runId} />
         )}
 
         <div className="space-y-3">
@@ -96,7 +118,17 @@ export function MessageBubble({
               <CheckCircle2 size={10} /> 已验证
             </Badge>
           )}
-          {assistantContent && <MarkdownRenderer content={assistantContent} />}
+          {isError && (
+            <Badge variant="danger" className="mb-1 w-fit">
+              <AlertTriangle size={10} /> 已保留进度
+            </Badge>
+          )}
+          {isCancelled && (
+            <Badge variant="neutral" className="mb-1 w-fit">
+              已取消
+            </Badge>
+          )}
+          <AssistantMessageBody content={assistantContent} />
         </div>
 
         {msg.toolCalls && msg.toolCalls.length > 0 && (
@@ -149,7 +181,7 @@ export function ThinkingIndicator({ animationKey }: { animationKey: number }): R
     <div key={`thinking-${animationKey}`} className="mx-auto w-full max-w-[860px]">
       <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
         <Loader2 size={15} className="animate-spin" />
-        <span>正在处理</span>
+        <span>等待模型输出</span>
       </div>
     </div>
   )
@@ -196,4 +228,13 @@ function formatMessageClock(timestamp: number): string {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+function stripLegacyNetworkInterruptionNotice(content: string): string {
+  return content
+    .replace(
+      /(?:^|\n{2,})[ \t]*本次响应因网络连接中断而停止，(?:未收到可展示的模型正文。已保留上方执行记录。|以上是中断前已收到的内容。)错误：[\s\S]*$/u,
+      ''
+    )
+    .trim()
 }
