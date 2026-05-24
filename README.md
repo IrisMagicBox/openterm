@@ -12,6 +12,7 @@
   </p>
 
   <p>
+    <a href="https://github.com/IrisMagicBox/openterm/releases/latest">Download</a> |
     <a href="docs/README.en.md">English</a> |
     <a href="docs/README.zh-CN.md">中文</a> |
     <a href="docs/README.en.md">Documents</a> |
@@ -53,6 +54,10 @@ This demo shows the Agent co-driving a terminal workflow: it observes the worksp
 https://github.com/user-attachments/assets/7f0d3f04-5f7c-4062-9a1a-3e102b5a5a29
 
 [Watch the demo video](docs/assets/readme/demo.mp4)
+
+## Download
+
+Download the latest macOS build from [GitHub Releases](https://github.com/IrisMagicBox/openterm/releases/latest).
 
 ## Highlights
 
