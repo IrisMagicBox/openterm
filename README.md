@@ -46,6 +46,14 @@ Many developers already have a large collection of CLI tools on their machines: 
 
 OpenTerm is built for that workflow. The Agent can operate across multiple terminal sessions, observe command output, help configure tools, debug failures, and continue work in a shared co-driving terminal. You stay in control, and you can pause, take over, or use OpenTerm as a traditional terminal whenever you want.
 
+## Demo
+
+This demo shows the Agent co-driving a terminal workflow: it observes the workspace, runs commands, reacts to output, and keeps the process visible while you stay in control.
+
+<video src="docs/assets/readme/demo.mp4" controls muted playsinline width="100%">
+  Watch the OpenTerm Agent demo: docs/assets/readme/demo.mp4
+</video>
+
 ## Highlights
 
 - **Multi-terminal workspace**: Manage local and remote terminal sessions in one place.
