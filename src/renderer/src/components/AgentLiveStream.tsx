@@ -88,6 +88,12 @@ function toolOutput(part: AgentPart): string {
   return sanitizeAgentText(metadataString(part, 'liveOutputPreview') || agentPartOutput(part))
 }
 
+function activityPreview(value: string, limit = 120): string {
+  const compact = sanitizeAgentText(value).replace(/\s+/g, ' ').trim()
+  if (compact.length <= limit) return compact
+  return `${compact.slice(0, Math.max(0, limit - 3))}...`
+}
+
 export function shouldShowLiveRawOutputFallback(part: AgentPart): boolean {
   if (isAssistantTextPart(part)) return false
   return Boolean(toolOutput(part) && (part.status === 'running' || part.metadata?.live === true))
@@ -162,9 +168,11 @@ export function AgentLiveStream({
                     const sessionId = agentPartSessionId(part)
                     const isFocused = focusedPartId === part.id
                     const permissionParts = permissionsByParent.get(part.id)
-                    const fullDetail = line?.fullDetail || output || input
+                    const fullDetail = line?.fullDetail || textContent || output || input
+                    const canExpandText = Boolean(textContent && shouldShowAgentActivityDetail(line))
                     const canExpandPart =
-                      !textContent && (shouldShowAgentActivityDetail(line) || showRawOutputFallback)
+                      canExpandText ||
+                      (!textContent && (shouldShowAgentActivityDetail(line) || showRawOutputFallback))
                     const isPartExpanded = expandedPartIds.has(part.id)
                     return (
                       <div
@@ -179,53 +187,49 @@ export function AgentLiveStream({
                           isFocused && 'ring-1 ring-accent/25'
                         )}
                       >
-                        {textContent ? (
-                          <AssistantMessageBody content={textContent} className="py-0.5" />
-                        ) : (
-                          <div className="flex min-w-0 items-center gap-2 text-sm">
-                            {canExpandPart ? (
-                              <button
-                                type="button"
-                                onClick={() => togglePart(part.id)}
-                                className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
-                                aria-label={isPartExpanded ? '收起过程详情' : '展开过程详情'}
-                              >
-                                {isPartExpanded ? (
-                                  <ChevronDown size={13} />
-                                ) : (
-                                  <ChevronRight size={13} />
-                                )}
-                              </button>
-                            ) : (
-                              <span className="h-4 w-4 shrink-0" />
-                            )}
-                            {statusIcon(part)}
-                            <AgentActivityIcon
-                              kind={line?.kind || 'other'}
-                              toolName={part.toolName}
-                              className="shrink-0 text-muted-foreground"
-                            />
-                            <span className="shrink-0 font-medium">{line?.label || '处理'}</span>
-                            {(line?.detail || input) && (
-                              <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-                                {line?.detail || input}
-                              </span>
-                            )}
-                            <AgentPermissionBadge permissions={permissionParts} />
-                            {sessionId && onRevealTerminal && (
-                              <button
-                                onClick={() => onRevealTerminal(sessionId, part.id)}
-                                className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
-                              >
-                                <Eye size={12} />
-                                终端
-                              </button>
-                            )}
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                              {statusLabel(part)}
+                        <div className="flex min-w-0 items-center gap-2 text-sm">
+                          {canExpandPart ? (
+                            <button
+                              type="button"
+                              onClick={() => togglePart(part.id)}
+                              className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
+                              aria-label={isPartExpanded ? '收起过程详情' : '展开过程详情'}
+                            >
+                              {isPartExpanded ? (
+                                <ChevronDown size={13} />
+                              ) : (
+                                <ChevronRight size={13} />
+                              )}
+                            </button>
+                          ) : (
+                            <span className="h-4 w-4 shrink-0" />
+                          )}
+                          {statusIcon(part)}
+                          <AgentActivityIcon
+                            kind={line?.kind || 'other'}
+                            toolName={part.toolName}
+                            className="shrink-0 text-muted-foreground"
+                          />
+                          <span className="shrink-0 font-medium">{line?.label || '处理'}</span>
+                          {(textContent || line?.detail || input) && (
+                            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                              {textContent ? activityPreview(textContent) : line?.detail || input}
                             </span>
-                          </div>
-                        )}
+                          )}
+                          <AgentPermissionBadge permissions={permissionParts} />
+                          {sessionId && onRevealTerminal && (
+                            <button
+                              onClick={() => onRevealTerminal(sessionId, part.id)}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition hover:bg-black/[0.04] hover:text-foreground"
+                            >
+                              <Eye size={12} />
+                              终端
+                            </button>
+                          )}
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {statusLabel(part)}
+                          </span>
+                        </div>
 
                         {canExpandPart && isPartExpanded && (
                           <AgentActivityDetail line={line} fallback={fullDetail} isLive={isLive} />

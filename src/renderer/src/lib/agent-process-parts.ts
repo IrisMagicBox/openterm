@@ -18,6 +18,18 @@ function hasLaterActivity(part: AgentPart, parts: AgentPart[]): boolean {
   )
 }
 
+function hasLiveToolCall(part: AgentPart, parts: AgentPart[]): boolean {
+  if (!isAssistantTextPart(part)) return false
+  return parts.some(
+    (candidate) =>
+      candidate.type === 'tool' &&
+      candidate.status === 'pending' &&
+      shouldShowAgentLivePart(candidate) &&
+      (candidate.orderIndex > part.orderIndex ||
+        (candidate.orderIndex === part.orderIndex && candidate.createdAt >= part.createdAt))
+  )
+}
+
 export function isAssistantTextPart(part: AgentPart): boolean {
   return part.type === 'text' && part.role === 'assistant' && !!part.output
 }
@@ -34,6 +46,7 @@ export function latestLiveAssistantTextPart(parts: AgentPart[]): AgentPart | und
       (part) =>
         isAssistantTextPart(part) &&
         !isFinalAssistantTextPart(part) &&
+        !hasLiveToolCall(part, sorted) &&
         (part.status === 'running' || !hasLaterActivity(part, sorted))
     )
 }

@@ -116,10 +116,10 @@ function detailSections(part: AgentPart): AgentActivityDetailSection[] {
     if (observation) {
       sections.push({
         id: `${part.id}:observation`,
-        label: '自我观察',
+        label: '模型输出',
         content: observation,
         tone: 'observation',
-        defaultOpen: true
+        defaultOpen: false
       })
     }
     return sections
@@ -307,7 +307,7 @@ export function agentActivityKind(part: AgentPart): AgentActivityKind {
 
 export function agentActivityVerb(part: AgentPart): string {
   const kind = agentActivityKind(part)
-  if (kind === 'think') return '观察'
+  if (kind === 'think') return '输出'
   if (kind === 'plan') return '规划'
   if (kind === 'command') return '运行'
   if (kind === 'edit') return '编辑'
@@ -339,7 +339,7 @@ export function agentActivitySummary(parts: AgentPart[]): string {
     >
   )
   const fragments: string[] = []
-  if (counts.think > 0) fragments.push(`观察 ${counts.think} 次`)
+  if (counts.think > 0) fragments.push(`模型输出 ${counts.think} 次`)
   if (counts.plan > 0) fragments.push(`规划 ${counts.plan} 次`)
   if (counts.explore > 0) fragments.push(`探索 ${counts.explore} 项`)
   if (counts.edit > 0) fragments.push(`编辑 ${counts.edit} 项`)
@@ -371,7 +371,7 @@ export function agentActivityLines(
         label:
           readable?.label ||
           (kind === 'think'
-            ? '观察'
+            ? '模型输出'
             : kind === 'plan'
               ? '更新规划'
               : `${agentActivityVerb(part)} ${toolDisplayName(part)}`),

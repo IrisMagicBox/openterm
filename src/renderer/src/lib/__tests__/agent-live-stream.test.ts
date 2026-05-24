@@ -154,6 +154,45 @@ describe('agent live stream visibility', () => {
         createdAt: 1
       }),
       part({
+        id: 'streaming-answer',
+        type: 'text',
+        role: 'assistant',
+        status: 'running',
+        output: '## 配置报告\n\n正在整理结果。',
+        orderIndex: 2,
+        createdAt: 2
+      }),
+      part({
+        id: 'tool-1',
+        type: 'tool',
+        toolName: 'execute_command',
+        status: 'pending',
+        input: '{"command":"kubectl get configmap"}',
+        orderIndex: 3,
+        createdAt: 3
+      })
+    ]
+
+    expect(latestLiveAssistantTextPart(parts)).toBeUndefined()
+    expect(agentRawProcessParts(parts).map((item) => item.id)).toEqual([
+      'thinking-1',
+      'streaming-answer',
+      'tool-1'
+    ])
+  })
+
+  it('keeps the latest live assistant text as the main stream until a tool call appears', () => {
+    const parts = [
+      part({
+        id: 'thinking-1',
+        type: 'text',
+        role: 'assistant',
+        status: 'completed',
+        output: '我先确认配置来源。',
+        orderIndex: 1,
+        createdAt: 1
+      }),
+      part({
         id: 'tool-1',
         type: 'tool',
         toolName: 'execute_command',
@@ -522,16 +561,16 @@ describe('agent live stream visibility', () => {
     ])
 
     expect(observationLine).toMatchObject({
-      label: '观察',
+      label: '模型输出',
       detail: '我已经确认需要先查看系统版本。'
     })
     expect(observationLine.sections).toEqual([
       {
         id: 'observation-1:observation',
-        label: '自我观察',
+        label: '模型输出',
         content: '我已经确认需要先查看系统版本。',
         tone: 'observation',
-        defaultOpen: true
+        defaultOpen: false
       }
     ])
     expect(commandLine.sections.map((section) => [section.label, section.tone])).toEqual([

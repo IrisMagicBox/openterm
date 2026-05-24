@@ -31,6 +31,7 @@ import { permissionPartsByParent } from '../lib/agent-permission-parts'
 import { cn } from '../lib/utils'
 import { stripInternalToolCallMarkup } from '../../../shared/internal-tool-call-markup'
 import { AssistantMessageBody } from './AssistantMessageBody'
+import { sanitizeAgentText } from '../lib/agent-part-preview'
 
 interface AgentRunTimelineProps {
   taskId: string
@@ -62,6 +63,12 @@ function statusIcon(part: AgentPart): JSX.Element {
   }
   if (part.status === 'error') return <XCircle size={13} className="text-danger" />
   return <Circle size={13} className="text-muted-foreground" />
+}
+
+function activityPreview(value: string, limit = 120): string {
+  const compact = sanitizeAgentText(value).replace(/\s+/g, ' ').trim()
+  if (compact.length <= limit) return compact
+  return `${compact.slice(0, Math.max(0, limit - 3))}...`
 }
 
 export function AgentRunTimeline({ taskId, runId }: AgentRunTimelineProps): JSX.Element | null {
@@ -168,8 +175,9 @@ export function AgentRunTimeline({ taskId, runId }: AgentRunTimelineProps): JSX.
                 ? stripInternalToolCallMarkup(part.output ?? '')
                 : ''
               const detail = line?.detail || agentPartPreview(part, 120)
-              const fullDetail = line?.fullDetail || detail
-              const canExpandPart = !textContent && shouldShowAgentActivityDetail(line)
+              const fullDetail = line?.fullDetail || textContent || detail
+              const canExpandText = Boolean(textContent && shouldShowAgentActivityDetail(line))
+              const canExpandPart = canExpandText || (!textContent && shouldShowAgentActivityDetail(line))
               const isPartExpanded = expandedPartIds.has(part.id)
               const permissionParts = permissionsByParent.get(part.id)
               return (
@@ -182,10 +190,7 @@ export function AgentRunTimeline({ taskId, runId }: AgentRunTimelineProps): JSX.
                       : 'text-muted-foreground'
                   )}
                 >
-                  {textContent ? (
-                    <AssistantMessageBody content={textContent} className="py-0.5" />
-                  ) : (
-                    <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     {canExpandPart ? (
                       <button
                         type="button"
@@ -205,12 +210,13 @@ export function AgentRunTimeline({ taskId, runId }: AgentRunTimelineProps): JSX.
                       className="shrink-0 text-muted-foreground"
                     />
                     <span className="shrink-0 font-medium">{line?.label || '处理'}</span>
-                    {detail && (
-                      <span className="min-w-0 flex-1 truncate font-mono text-xs">{detail}</span>
+                    {(textContent || detail) && (
+                      <span className="min-w-0 flex-1 truncate text-xs">
+                        {textContent ? activityPreview(textContent) : detail}
+                      </span>
                     )}
                     <AgentPermissionBadge permissions={permissionParts} />
-                    </div>
-                  )}
+                  </div>
                   {canExpandPart && isPartExpanded && (
                     <AgentActivityDetail line={line} fallback={fullDetail} />
                   )}
