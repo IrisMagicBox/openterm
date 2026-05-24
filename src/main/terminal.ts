@@ -290,7 +290,7 @@ class CommandExecutor {
   private readonly history = new TerminalHistoryRecorder()
   private streamingTimers = new Map<string, NodeJS.Timeout>()
 
-  async createSession(
+  createSession(
     sessionId: string,
     topicId: string,
     hostId: string,
@@ -299,7 +299,7 @@ class CommandExecutor {
     webContents?: WebContents,
     autoInject = true,
     role: TerminalSessionRole = 'agent_command'
-  ): Promise<TerminalSession> {
+  ): TerminalSession {
     const session: TerminalSession = {
       id: sessionId,
       topicId,
@@ -341,11 +341,18 @@ class CommandExecutor {
       shellIntegrationInjected: false
     })
 
-    if (autoInject) {
-      this.injectShellIntegration(stream)
+    if (autoInject && role === 'agent_command') {
+      setImmediate(() => this.prepareShellIntegration(sessionId))
     }
 
     return session
+  }
+
+  private prepareShellIntegration(sessionId: string): void {
+    const state = this.sessions.get(sessionId)
+    if (!state || state.shellIntegrationInjected) return
+    this.injectShellIntegration(state.stream)
+    state.shellIntegrationInjected = true
   }
 
   private syncSessionControlState(state: SessionState): void {
@@ -594,18 +601,38 @@ class CommandExecutor {
     this.history.createIO(output)
   }
 
-  handleUserInput(sessionId: string, data: string, topicId: string): void {
+  handleUserInput(sessionId: string, data: string, topicId: string): boolean {
     const state = this.sessions.get(sessionId)
-    if (!state) return
+    if (!state) return false
+
+    logger.debug('Terminal', 'Handling user terminal input', {
+      sessionId,
+      topicId,
+      length: data.length,
+      isLocked: state.isLocked,
+      lockedBy: state.lockedBy,
+      takeoverMode: state.takeoverMode,
+      hasCurrentCommand: Boolean(state.currentCommand)
+    })
 
     if (state.isLocked && state.lockedBy === 'agent') {
       this.takeoverSessionByUser(sessionId, 'auto')
-      return
+      return true
+    }
+
+    if ((state.session.role ?? 'user') !== 'agent_command') {
+      this.handleRawUserInput(state, data, topicId)
+      return true
     }
 
     if (data.startsWith('\x1b')) {
       state.stream.write(data)
-      return
+      logger.debug('Terminal', 'Wrote escape input to terminal stream', {
+        sessionId,
+        topicId,
+        length: data.length
+      })
+      return true
     }
 
     for (const char of data) {
@@ -669,6 +696,66 @@ class CommandExecutor {
     }
 
     state.stream.write(data)
+    logger.debug('Terminal', 'Wrote user input to terminal stream', {
+      sessionId,
+      topicId,
+      length: data.length
+    })
+    return true
+  }
+
+  private handleRawUserInput(state: SessionState, data: string, topicId: string): void {
+    if (data.startsWith('\x1b')) {
+      state.stream.write(data)
+      logger.debug('Terminal', 'Wrote raw escape input to terminal stream', {
+        sessionId: state.session.id,
+        topicId,
+        length: data.length
+      })
+      return
+    }
+
+    for (const char of data) {
+      if (char === '\r') {
+        const command = state.outputBuffer.trim()
+        if (command) {
+          this.history.createIO({
+            id: uuidv4(),
+            sessionId: state.session.id,
+            topicId,
+            hostId: state.session.hostId,
+            type: 'input',
+            source: 'user',
+            content: command,
+            timestamp: Date.now()
+          })
+        }
+        state.outputBuffer = ''
+        continue
+      }
+
+      if (char === '\n' || char === '\x03' || char === '\x15') {
+        state.outputBuffer = ''
+        continue
+      }
+
+      if (char === '\u007f' || char === '\b') {
+        state.outputBuffer = state.outputBuffer.slice(0, -1)
+        continue
+      }
+
+      const code = char.charCodeAt(0)
+      if (code >= 32 && code !== 127) {
+        state.outputBuffer += char
+      }
+    }
+
+    state.stream.write(data)
+    logger.debug('Terminal', 'Wrote raw user input to terminal stream', {
+      sessionId: state.session.id,
+      topicId,
+      length: data.length
+    })
   }
 
   takeoverSessionByUser(sessionId: string, mode: TerminalTakeoverMode = 'auto'): boolean {
@@ -714,10 +801,10 @@ class CommandExecutor {
   handleStreamOutput(
     sessionId: string,
     data: Buffer
-  ): { cleanData: string; isCommandEnd: boolean } {
+  ): { cleanData: string; displayData: string; isCommandEnd: boolean } {
     const state = this.sessions.get(sessionId)
     const textDataRaw = data.toString()
-    if (!state) return { cleanData: textDataRaw, isCommandEnd: false }
+    if (!state) return { cleanData: textDataRaw, displayData: textDataRaw, isCommandEnd: false }
 
     const rawChunk = data.toString()
     this.writeToScreen(state, data)
@@ -738,7 +825,7 @@ class CommandExecutor {
 
     let cleanData = parsed.cleanData
 
-    // Strip shell integration noise from the renderer, after preserving it for parsing.
+    // Strip shell integration noise after preserving it for parsing.
     if (cleanData.includes('__openterm_end') || cleanData.includes('OPENTERM_CMD')) {
       // Mark as injected if not yet done
       if (!state.shellIntegrationInjected) {
@@ -798,7 +885,7 @@ class CommandExecutor {
       }
     }
 
-    return { cleanData: displayData, isCommandEnd: parsed.isCommandEnd }
+    return { cleanData, displayData, isCommandEnd: parsed.isCommandEnd }
   }
 
   private writeToScreen(state: SessionState, data: string | Uint8Array): void {

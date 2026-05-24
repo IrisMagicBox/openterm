@@ -87,6 +87,13 @@ export class AgentSessionManager {
     this.webContents?.send('agent:session-closed', { id })
   }
 
+  notifySessionClosed(id: string): void {
+    const session = this.findSession(id)
+    if (!session) return
+    this.removeSession(id)
+    this.webContents?.send('agent:session-closed', { id })
+  }
+
   async renameTerminal(id: string, name: string): Promise<void> {
     const session = this.findSession(id)
     if (session) {

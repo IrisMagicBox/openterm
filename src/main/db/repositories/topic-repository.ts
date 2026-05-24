@@ -11,6 +11,27 @@ export class TopicRepository extends BaseRepository<TopicRow> {
     super(db)
   }
 
+  ensureWorkspaceTerminalsTopic(): Topic {
+    const existing = this.getTopicById(WORKSPACE_TERMINALS_TOPIC_ID)
+    if (existing) return existing
+
+    const now = Date.now()
+    this.stmt(
+      `
+      INSERT OR IGNORE INTO topics (id, title, hostIds, lastMessageAt, createdAt)
+      VALUES (?, ?, ?, ?, ?)
+    `
+    ).run(WORKSPACE_TERMINALS_TOPIC_ID, 'Workspace Terminals', '[]', now, now)
+
+    return this.getTopicById(WORKSPACE_TERMINALS_TOPIC_ID) ?? {
+      id: WORKSPACE_TERMINALS_TOPIC_ID,
+      title: 'Workspace Terminals',
+      hostIds: [],
+      lastMessageAt: now,
+      createdAt: now
+    }
+  }
+
   getTopics(): Topic[] {
     const rows = this.stmt('SELECT * FROM topics WHERE id != ? ORDER BY lastMessageAt DESC').all(
       WORKSPACE_TERMINALS_TOPIC_ID
@@ -46,6 +67,11 @@ export class TopicRepository extends BaseRepository<TopicRow> {
   }
 
   deleteTopic(id: string): void {
+    if (id === WORKSPACE_TERMINALS_TOPIC_ID) {
+      this.ensureWorkspaceTerminalsTopic()
+      return
+    }
+
     this.stmt('DELETE FROM topics WHERE id = ?').run(id)
   }
 

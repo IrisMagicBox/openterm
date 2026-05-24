@@ -27,10 +27,16 @@ interface LocalPtySession {
 }
 
 const sessions = new Map<string, LocalPtySession>()
-let agentServiceRef: { registerSession(session: AgentSession): void | Promise<void> } | null = null
+let agentServiceRef: {
+  registerSession(session: AgentSession): void | Promise<void>
+  notifyTerminalClosed?(sessionId: string): void
+} | null = null
 
 export function setLocalAgentService(
-  service: { registerSession(session: AgentSession): void | Promise<void> } | null
+  service: {
+    registerSession(session: AgentSession): void | Promise<void>
+    notifyTerminalClosed?(sessionId: string): void
+  } | null
 ): void {
   agentServiceRef = service
 }
@@ -99,10 +105,15 @@ export function createLocalSession(
         }
 
         const result = commandExecutor.handleStreamOutput(sessionId, Buffer.from(data))
+        logger.debug('LocalTerminal', 'local pty data', {
+          sessionId,
+          rawLength: data.length,
+          displayLength: result.displayData.length
+        })
 
         // IMPORTANT: Use localSession.webContents instead of webContents from the closure
         if (localSession.webContents) {
-          localSession.webContents.send(`ssh:data:${sessionId}`, result.cleanData)
+          localSession.webContents.send(`ssh:data:${sessionId}`, result.displayData)
         }
       })
 
@@ -111,6 +122,7 @@ export function createLocalSession(
         sessions.delete(sessionId)
         if (topicId && topicId !== '') {
           commandExecutor.closeSession(sessionId, 'system')
+          agentServiceRef?.notifyTerminalClosed?.(sessionId)
         }
         if (localSession.webContents) {
           localSession.webContents.send(`ssh:closed:${sessionId}`)
@@ -159,7 +171,18 @@ export function sendLocalInput(sessionId: string, data: string, fromUser = true)
   }
 
   if (fromUser) {
-    commandExecutor.handleUserInput(sessionId, data, session.topicId)
+    const handled = commandExecutor.handleUserInput(sessionId, data, session.topicId)
+    if (!handled) {
+      try {
+        session.pty.write(data)
+        logger.warn(
+          'LocalTerminal',
+          `command executor missed user input; wrote ${data.length} bytes directly`
+        )
+      } catch (err) {
+        logger.error('LocalTerminal', `sendLocalInput fallback write error: ${err}`)
+      }
+    }
     return
   }
 

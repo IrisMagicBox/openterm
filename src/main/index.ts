@@ -77,7 +77,13 @@ function sanitizeRendererDiagnostic(data: unknown): Record<string, unknown> {
 function registerRendererDiagnosticsIPC(): void {
   ipcMain.removeAllListeners('renderer:diagnostic')
   ipcMain.on('renderer:diagnostic', (_, data: unknown) => {
-    logger.error('Renderer', 'Renderer diagnostic event', sanitizeRendererDiagnostic(data))
+    const diagnostic = sanitizeRendererDiagnostic(data)
+    const type = typeof diagnostic.type === 'string' ? diagnostic.type : ''
+    if (type.startsWith('terminal-')) {
+      logger.debug('Renderer', 'Renderer diagnostic event', diagnostic)
+      return
+    }
+    logger.error('Renderer', 'Renderer diagnostic event', diagnostic)
   })
 }
 

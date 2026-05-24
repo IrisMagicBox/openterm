@@ -1,5 +1,10 @@
 import { useState, useEffect, type Dispatch, type SetStateAction } from 'react'
 import type { TerminalTab } from '../types'
+import {
+  DEFAULT_TERMINAL_FONT_SIZE,
+  MAX_TERMINAL_FONT_SIZE,
+  MIN_TERMINAL_FONT_SIZE
+} from '../lib/terminal-scaling'
 
 type ZoomDirection = 'in' | 'out' | 'reset'
 
@@ -28,7 +33,7 @@ export function useTerminalManager(): TerminalManagerState {
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([])
   const [activeTerminalTabIndex, setActiveTerminalTabIndex] = useState(0)
   const [terminalSessionId, setTerminalSessionId] = useState<string | null>(null)
-  const [terminalFontSize, setTerminalFontSize] = useState(13)
+  const [terminalFontSize, setTerminalFontSize] = useState(DEFAULT_TERMINAL_FONT_SIZE)
   const [terminalWidth, setTerminalWidth] = useState(500)
   const [commandHistoryOpen, setCommandHistoryOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -39,14 +44,14 @@ export function useTerminalManager(): TerminalManagerState {
     const applyTerminalZoom = (direction: ZoomDirection): void => {
       if (document.documentElement.dataset.zoomTarget !== 'terminal') return
       if (direction === 'in') {
-        setTerminalFontSize((s) => Math.min(s + 1, 30))
+        setTerminalFontSize((s) => Math.min(s + 1, MAX_TERMINAL_FONT_SIZE))
         return
       }
       if (direction === 'out') {
-        setTerminalFontSize((s) => Math.max(s - 1, 6))
+        setTerminalFontSize((s) => Math.max(s - 1, MIN_TERMINAL_FONT_SIZE))
         return
       }
-      setTerminalFontSize(13)
+      setTerminalFontSize(DEFAULT_TERMINAL_FONT_SIZE)
     }
 
     const handleZoomKey = (e: KeyboardEvent): void => {

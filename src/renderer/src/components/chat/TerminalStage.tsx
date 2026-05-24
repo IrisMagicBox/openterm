@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Command,
   Eye,
@@ -11,17 +11,12 @@ import type { TerminalSession } from '../../../../shared/types'
 import type { TerminalFocusOptions } from '../../hooks/useTerminalStageState'
 import { IconButton, Tooltip } from '../ui'
 import { cn } from '../../lib/utils'
-import {
-  sortTerminalActivities,
-  type TerminalActivity,
-  type TerminalStageMode
-} from '../../lib/terminal-stage'
+import { type TerminalStageMode } from '../../lib/terminal-stage'
 
 interface TerminalStageProps {
   visibleSessions: TerminalSession[]
   focusedSession: TerminalSession | undefined
   focusedSessionId: string | null
-  activities: TerminalActivity[]
   mode: TerminalStageMode
   followAgent: boolean
   terminalFontSize: number
@@ -30,7 +25,6 @@ interface TerminalStageProps {
   topicId: string
   topicHosts: { id: string; alias: string }[]
   commandAssist?: TerminalStageCommandAssist | null
-  onCloseTerminal: (id: string) => Promise<void>
   onOpenCommandPalette: (sessionId?: string) => void
   onCreateTerminal: (hostId: string) => Promise<void>
   onResizeStart: (rightEdge: number) => void
@@ -60,7 +54,6 @@ function StageTerminalPane({
   highlighted,
   terminalFontSize,
   topicId,
-  onCloseTerminal,
   onFocusSession,
   commandAssist
 }: {
@@ -68,7 +61,6 @@ function StageTerminalPane({
   highlighted: boolean
   terminalFontSize: number
   topicId: string
-  onCloseTerminal: (id: string) => Promise<void>
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
   commandAssist?: TerminalStageCommandAssist | null
 }): React.ReactElement {
@@ -98,9 +90,9 @@ function StageTerminalPane({
           hostAlias={session.hostAlias}
           terminalName={session.name}
           terminalRole={session.role}
+          autoFocus
           fontSize={terminalFontSize}
           onFocusSession={() => onFocusSession(session.id, { userInitiated: true })}
-          onClose={() => onCloseTerminal(session.id)}
           command={session.command}
           commandStatus={session.commandStatus}
           commandSource={session.commandSource}
@@ -133,7 +125,6 @@ function GridMode({
   focusedSessionId,
   terminalFontSize,
   topicId,
-  onCloseTerminal,
   onFocusSession,
   commandAssist
 }: {
@@ -141,7 +132,6 @@ function GridMode({
   focusedSessionId: string | null
   terminalFontSize: number
   topicId: string
-  onCloseTerminal: (id: string) => Promise<void>
   onFocusSession: (sessionId: string, options?: TerminalFocusOptions) => void
   commandAssist?: TerminalStageCommandAssist | null
 }): React.ReactElement {
@@ -169,9 +159,9 @@ function GridMode({
                 hostAlias={session.hostAlias}
                 terminalName={session.name}
                 terminalRole={session.role}
+                autoFocus={focused}
                 fontSize={terminalFontSize}
                 onFocusSession={() => onFocusSession(session.id, { userInitiated: true })}
-                onClose={() => onCloseTerminal(session.id)}
                 command={session.command}
                 commandStatus={session.commandStatus}
                 commandSource={session.commandSource}
@@ -206,7 +196,6 @@ export function TerminalStage({
   visibleSessions,
   focusedSession,
   focusedSessionId,
-  activities,
   mode,
   followAgent,
   terminalFontSize,
@@ -215,7 +204,6 @@ export function TerminalStage({
   topicId,
   topicHosts,
   commandAssist,
-  onCloseTerminal,
   onOpenCommandPalette,
   onCreateTerminal,
   onResizeStart,
@@ -224,19 +212,6 @@ export function TerminalStage({
   onFocusSession
 }: TerminalStageProps): React.ReactElement {
   const [highlightedSessionId, setHighlightedSessionId] = useState<string | null>(null)
-
-  const sessionsById = useMemo(
-    () => new Map(visibleSessions.map((session) => [session.id, session])),
-    [visibleSessions]
-  )
-  const sortedActivities = useMemo(() => sortTerminalActivities(activities), [activities])
-  const sortedSessions = useMemo(
-    () =>
-      sortedActivities
-        .map((activity) => sessionsById.get(activity.sessionId))
-        .filter((session): session is TerminalSession => !!session),
-    [sessionsById, sortedActivities]
-  )
 
   useEffect(() => {
     if (!focusedSessionId) return
@@ -363,7 +338,6 @@ export function TerminalStage({
             highlighted={highlightedSessionId === focusedSessionId}
             terminalFontSize={terminalFontSize}
             topicId={topicId}
-            onCloseTerminal={onCloseTerminal}
             onFocusSession={onFocusSession}
             commandAssist={commandAssist}
           />
@@ -371,11 +345,10 @@ export function TerminalStage({
 
         {mode === 'grid' && (
           <GridMode
-            sessions={sortedSessions}
+            sessions={visibleSessions}
             focusedSessionId={focusedSessionId}
             terminalFontSize={terminalFontSize}
             topicId={topicId}
-            onCloseTerminal={onCloseTerminal}
             onFocusSession={onFocusSession}
             commandAssist={commandAssist}
           />

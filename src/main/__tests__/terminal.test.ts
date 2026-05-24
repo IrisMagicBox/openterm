@@ -23,6 +23,7 @@ vi.mock('../db', () => ({
 
 vi.mock('../logger', () => ({
   logger: {
+    debug: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn()
@@ -64,6 +65,7 @@ describe('CommandExecutor shell integration parsing', () => {
 
     expect(parsed.isCommandEnd).toBe(true)
     expect(parsed.cleanData).not.toContain('OPENTERM_CMD_END')
+    expect(parsed.displayData).not.toContain('OPENTERM_CMD_END')
 
     const result = await resultPromise
     expect(result.exitCode).toBe(0)
@@ -175,6 +177,38 @@ describe('CommandExecutor shell integration parsing', () => {
         topicId: 'topic-1',
         source: 'user',
         content: 'npm test'
+      })
+    )
+  })
+
+  it('does not start command lifecycle for user terminal input', async () => {
+    const sessionId = `session-${Date.now()}-raw-user-input`
+    const stream = createFakeStream()
+    vi.mocked(terminalIODB.createIO).mockClear()
+
+    await commandExecutor.createSession(
+      sessionId,
+      'topic-1',
+      'local',
+      'Local',
+      stream as never,
+      undefined,
+      false,
+      'user'
+    )
+
+    commandExecutor.handleUserInput(sessionId, 'whoami', 'topic-1')
+    commandExecutor.handleUserInput(sessionId, '\r', 'topic-1')
+
+    expect(stream.write).toHaveBeenCalledWith('whoami')
+    expect(stream.write).toHaveBeenCalledWith('\r')
+    expect(commandExecutor.canAcceptAgentCommand(sessionId)).toEqual({ ok: true })
+    expect(terminalIODB.createIO).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId,
+        topicId: 'topic-1',
+        source: 'user',
+        content: 'whoami'
       })
     )
   })
@@ -295,7 +329,31 @@ describe('CommandExecutor shell integration parsing', () => {
     )
 
     expect(parsed.cleanData).toBe('')
+    expect(parsed.displayData).toBe('')
     expect(terminalSessionDB.updateSessionShellIntegration).toHaveBeenCalledWith(sessionId, true)
+  })
+
+  it('returns separate clean and display data for visible output', async () => {
+    const sessionId = `session-${Date.now()}-display-data`
+    const stream = createFakeStream()
+
+    await commandExecutor.createSession(
+      sessionId,
+      'topic-1',
+      'local',
+      'Local',
+      stream as never,
+      undefined,
+      false
+    )
+
+    const parsed = commandExecutor.handleStreamOutput(
+      sessionId,
+      Buffer.from('prompt$ echo hi\r\nhi\r\n')
+    )
+
+    expect(parsed.cleanData).toBe('prompt$ echo hi\r\nhi\r\n')
+    expect(parsed.displayData).toBe('prompt$ echo hi\r\nhi\r\n')
   })
 
   it('keeps a readable headless screen snapshot for interactive terminals', async () => {

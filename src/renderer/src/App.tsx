@@ -586,6 +586,7 @@ export default function App(): JSX.Element {
               setFileBrowserHostId={setFileBrowserHostId}
               fileBrowserHostAlias={fileBrowserHostAlias}
               setFileBrowserHostAlias={setFileBrowserHostAlias}
+              active={activeView === 'terminal'}
               focusTerminalRequest={terminalFocusRequest}
               closeTerminalRequest={terminalCloseRequest}
             />

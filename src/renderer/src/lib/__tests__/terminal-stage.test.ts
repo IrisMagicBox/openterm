@@ -162,4 +162,20 @@ describe('terminal stage helpers', () => {
       })
     ).toBe('s1')
   })
+
+  it('keeps user selected focus even when another terminal starts running', () => {
+    const sessions = [
+      session('s1', { commandStatus: 'running', commandSource: 'agent', commandStartTime: 1000 }),
+      session('s2', { commandStatus: 'running', commandSource: 'user', commandStartTime: 2000 })
+    ]
+
+    expect(
+      resolveFocusedSessionId({
+        sessions,
+        activeParts: [part('part-1', { sessionId: 's1', updatedAt: 3000 })],
+        currentFocusedSessionId: 's2',
+        followAgent: false
+      })
+    ).toBe('s2')
+  })
 })

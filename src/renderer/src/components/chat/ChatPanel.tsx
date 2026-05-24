@@ -21,9 +21,8 @@ import { isAgentRuntimeProvider, isAgentUsableModel } from '../../config/provide
 import { useVisibilityRestore } from '../../hooks/useVisibilityRestore'
 import { useChatMessages } from '../../hooks/useChatMessages'
 import { useCommandPalette } from '../../hooks/useCommandPalette'
-import { useTerminalPreviews } from '../../hooks/useTerminalPreviews'
 import { useTerminalStageState } from '../../hooks/useTerminalStageState'
-import { deriveTerminalActivities } from '../../lib/terminal-stage'
+import { deriveTerminalFontSize } from '../../lib/terminal-scaling'
 import { getErrorMessage } from '../../../../shared/errors'
 import { Dialog, DialogContent, IconButton, PageHeader, Tooltip } from '../ui'
 
@@ -232,11 +231,10 @@ export function ChatPanel({
     [agentSessions, topicHostIds]
   )
   const visibleSessions = useMemo(() => topicSessions.filter((s) => s.visible), [topicSessions])
-  const terminalPreviews = useTerminalPreviews(visibleSessions)
   const terminalStage = useTerminalStageState(visibleSessions, visibleActiveParts)
-  const terminalActivities = useMemo(
-    () => deriveTerminalActivities(visibleSessions, visibleActiveParts, terminalPreviews),
-    [terminalPreviews, visibleActiveParts, visibleSessions]
+  const effectiveTerminalFontSize = useMemo(
+    () => deriveTerminalFontSize(terminalFontSize, visibleSessions.length),
+    [terminalFontSize, visibleSessions.length]
   )
   const filteredHosts = topicHosts.filter(
     (h) =>
@@ -646,10 +644,9 @@ export function ChatPanel({
           visibleSessions={visibleSessions}
           focusedSession={terminalStage.focusedSession}
           focusedSessionId={terminalStage.focusedSessionId}
-          activities={terminalActivities}
           mode={terminalStage.mode}
           followAgent={terminalStage.followAgent}
-          terminalFontSize={terminalFontSize}
+          terminalFontSize={effectiveTerminalFontSize}
           terminalWidth={terminalWidth}
           isResizing={isResizing}
           topicId={topic.id}
@@ -674,7 +671,6 @@ export function ChatPanel({
                 }
               : null
           }
-          onCloseTerminal={onCloseTerminal}
           onOpenCommandPalette={openTerminalCommandPalette}
           onCreateTerminal={onCreateTerminal}
           onResizeStart={setResizeRightEdge}

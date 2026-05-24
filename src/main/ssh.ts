@@ -98,6 +98,22 @@ function buildSystemSSHArgs(host: Host): string[] {
   return args
 }
 
+function defaultSSH2PtyOptions(): {
+  term: string
+  rows: number
+  cols: number
+  width: number
+  height: number
+} {
+  return {
+    term: 'xterm-256color',
+    rows: DEFAULT_TERMINAL_ROWS,
+    cols: DEFAULT_TERMINAL_COLS,
+    width: DEFAULT_TERMINAL_COLS * 8,
+    height: DEFAULT_TERMINAL_ROWS * 17
+  }
+}
+
 async function createSystemSSHSession(
   host: Host,
   hostId: string,
@@ -163,54 +179,68 @@ async function createSystemSSHSession(
   }
   sessions.set(sessionId, session)
 
-  if (topicId) {
-    commandExecutor.createSession(
-      sessionId,
-      topicId,
-      hostId,
-      host.alias,
-      stream,
-      webContents,
-      false,
-      'user'
-    )
-
-    if (agentServiceRef) {
-      agentServiceRef.registerSession({
-        id: sessionId,
+  try {
+    if (topicId) {
+      commandExecutor.createSession(
+        sessionId,
         topicId,
         hostId,
-        hostAlias: host.alias,
-        role: 'user',
-        name: `${host.alias} Terminal`,
-        status: 'active',
-        shellIntegrationReady: false,
-        isPinned: false,
-        visible: true,
-        paused: false,
-        createdAt: Date.now()
-      })
+        host.alias,
+        stream,
+        webContents,
+        false,
+        'user'
+      )
+
+      if (agentServiceRef) {
+        agentServiceRef.registerSession({
+          id: sessionId,
+          topicId,
+          hostId,
+          hostAlias: host.alias,
+          role: 'user',
+          name: `${host.alias} Terminal`,
+          status: 'active',
+          shellIntegrationReady: false,
+          isPinned: false,
+          visible: true,
+          paused: false,
+          createdAt: Date.now()
+        })
+      }
     }
+  } catch (err) {
+    sessions.delete(sessionId)
+    ptyProcess.kill()
+    throw err
   }
 
   ptyProcess.onData((data: string) => {
     const currentSession = sessions.get(sessionId)
     if (!currentSession) return
     const buffer = Buffer.from(data)
-    const { cleanData } = topicId
+    const { displayData } = topicId
       ? commandExecutor.handleStreamOutput(sessionId, buffer)
-      : { cleanData: data }
+      : { displayData: data }
 
     currentSession.buffer += data
     currentSession.currentOutput += data
     if (currentSession.buffer.length > SSH_RAW_BUFFER_MAX) {
       currentSession.buffer = currentSession.buffer.slice(-SSH_RAW_BUFFER_TRIM)
     }
-    currentSession.webContents?.send(`ssh:data:${sessionId}`, cleanData)
+    logger.debug('SSH', 'system ssh data', {
+      sessionId,
+      hostId,
+      rawLength: data.length,
+      displayLength: displayData.length
+    })
+    currentSession.webContents?.send(`ssh:data:${sessionId}`, displayData)
   })
 
   ptyProcess.onExit(() => {
+    logger.info('SSH', 'system ssh session closed', { sessionId, hostId })
     if (topicId) commandExecutor.closeSession(sessionId, 'system')
+    if (topicId) agentServiceRef?.notifyTerminalClosed?.(sessionId)
     sessions.delete(sessionId)
     session.webContents?.send(`ssh:closed:${sessionId}`)
   })
@@ -312,7 +342,7 @@ export const createAgentSession = (
 
     client
       .on('ready', () => {
-        client.shell((err, stream) => {
+        client.shell(defaultSSH2PtyOptions(), (err, stream) => {
           if (err) {
             client.end()
             return reject(err)
@@ -330,21 +360,28 @@ export const createAgentSession = (
           }
           sessions.set(sessionId, session)
 
-          if (topicId) {
-            commandExecutor.createSession(
-              sessionId,
-              topicId,
-              hostId,
-              host.alias,
-              stream,
-              webContents,
-              true,
-              role
-            )
+          try {
+            if (topicId) {
+              commandExecutor.createSession(
+                sessionId,
+                topicId,
+                hostId,
+                host.alias,
+                stream,
+                webContents,
+                true,
+                role
+              )
+            }
+          } catch (registrationError) {
+            sessions.delete(sessionId)
+            stream.destroy?.()
+            client.end()
+            return reject(registrationError)
           }
 
           stream.on('data', (data: Buffer) => {
-            const { cleanData } = commandExecutor.handleStreamOutput(sessionId, data)
+            const { displayData } = commandExecutor.handleStreamOutput(sessionId, data)
 
             const str = data.toString()
             session.buffer += str
@@ -354,11 +391,19 @@ export const createAgentSession = (
               session.buffer = session.buffer.slice(-SSH_RAW_BUFFER_TRIM)
             }
 
-            session.webContents?.send(`ssh:data:${sessionId}`, cleanData)
+            logger.debug('SSH', 'agent ssh data', {
+              sessionId,
+              hostId,
+              rawLength: str.length,
+              displayLength: displayData.length
+            })
+            session.webContents?.send(`ssh:data:${sessionId}`, displayData)
           })
 
           stream.on('close', () => {
+            logger.info('SSH', 'agent ssh session closed', { sessionId, hostId })
             commandExecutor.closeSession(sessionId, 'system')
+            agentServiceRef?.notifyTerminalClosed?.(sessionId)
             sessions.delete(sessionId)
             session.webContents?.send(`ssh:closed:${sessionId}`)
             client.end()
@@ -404,7 +449,15 @@ export const sendSSHInput = (sessionId: string, data: string, topicId?: string):
   const session = sessions.get(sessionId)
   if (!session?.stream) return false
   if (topicId) {
-    commandExecutor.handleUserInput(sessionId, data, topicId)
+    const handled = commandExecutor.handleUserInput(sessionId, data, topicId)
+    if (!handled) {
+      logger.warn('SSH', 'command executor missed user input; writing directly to SSH stream', {
+        sessionId,
+        hostId: session.hostId,
+        length: data.length
+      })
+      session.stream.write(data)
+    }
   } else {
     session.stream.write(data)
   }
@@ -421,10 +474,13 @@ export const resizeSSHSession = (sessionId: string, cols: number, rows: number):
 
 import { AgentSession } from './agent'
 
-let agentServiceRef: { registerSession(session: AgentSession): void } | null = null
+let agentServiceRef: {
+  registerSession(session: AgentSession): void
+  notifyTerminalClosed?(sessionId: string): void
+} | null = null
 
 export function setAgentService(
-  service: { registerSession(session: AgentSession): void } | null
+  service: { registerSession(session: AgentSession): void; notifyTerminalClosed?(sessionId: string): void } | null
 ): void {
   agentServiceRef = service
 }
@@ -444,7 +500,7 @@ export function setupSSHHandlers(): void {
     return new Promise((resolve, reject) => {
       client
         .on('ready', () => {
-          client.shell((err, stream) => {
+          client.shell(defaultSSH2PtyOptions(), (err, stream) => {
             if (err) {
               client.end()
               return reject(err)
@@ -462,52 +518,67 @@ export function setupSSHHandlers(): void {
             sessions.set(sessionId, session)
 
             // Register with commandExecutor for Agent usage if topic is provided
-            if (topicId) {
-              commandExecutor.createSession(
-                sessionId,
-                topicId,
-                hostId,
-                host.alias,
-                stream,
-                webContents,
-                true,
-                'user'
-              )
-
-              if (agentServiceRef) {
-                agentServiceRef.registerSession({
-                  id: sessionId,
+            try {
+              if (topicId) {
+                commandExecutor.createSession(
+                  sessionId,
                   topicId,
                   hostId,
-                  hostAlias: host.alias,
-                  role: 'user',
-                  name: `${host.alias} Terminal`,
-                  status: 'active',
-                  shellIntegrationReady: false,
-                  isPinned: false,
-                  visible: true,
-                  paused: false,
-                  createdAt: Date.now()
-                })
+                  host.alias,
+                  stream,
+                  webContents,
+                  true,
+                  'user'
+                )
+
+                if (agentServiceRef) {
+                  agentServiceRef.registerSession({
+                    id: sessionId,
+                    topicId,
+                    hostId,
+                    hostAlias: host.alias,
+                    role: 'user',
+                    name: `${host.alias} Terminal`,
+                    status: 'active',
+                    shellIntegrationReady: false,
+                    isPinned: false,
+                    visible: true,
+                    paused: false,
+                    createdAt: Date.now()
+                  })
+                }
               }
+            } catch (registrationError) {
+              sessions.delete(sessionId)
+              stream.destroy?.()
+              client.end()
+              return reject(registrationError)
             }
 
             stream.on('data', (data: Buffer) => {
               // Use handleStreamOutput if it's registered in commandExecutor
-              const { cleanData } = topicId
+              const { displayData } = topicId
                 ? commandExecutor.handleStreamOutput(sessionId, data)
-                : { cleanData: data.toString() }
+                : { displayData: data.toString() }
 
               const currentSession = sessions.get(sessionId)
               if (currentSession) {
                 currentSession.buffer += data.toString()
                 currentSession.currentOutput += data.toString()
               }
-              currentSession?.webContents?.send(`ssh:data:${sessionId}`, cleanData)
+              logger.debug('SSH', 'ssh2 user data', {
+                sessionId,
+                hostId,
+                rawLength: data.length,
+                displayLength: displayData.length
+              })
+              currentSession?.webContents?.send(`ssh:data:${sessionId}`, displayData)
             })
 
             stream.on('close', () => {
+              logger.info('SSH', 'ssh2 user session closed', { sessionId, hostId })
               if (topicId) commandExecutor.closeSession(sessionId, 'system')
+              if (topicId) agentServiceRef?.notifyTerminalClosed?.(sessionId)
               sessions.delete(sessionId)
               session?.webContents?.send(`ssh:closed:${sessionId}`)
               client.end()

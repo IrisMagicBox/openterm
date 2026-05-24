@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentPart, TerminalSession } from '../../../shared/types'
 import {
   agentPartSessionId,
@@ -29,6 +29,7 @@ export function useTerminalStageState(
   const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null)
   const [focusedPartId, setFocusedPartId] = useState<string | null>(null)
   const [followAgent, setFollowAgentState] = useState(true)
+  const followAgentRef = useRef(true)
 
   const focusedSession = useMemo(
     () => visibleSessions.find((session) => session.id === focusedSessionId),
@@ -46,13 +47,13 @@ export function useTerminalStageState(
         sessions: visibleSessions,
         activeParts,
         currentFocusedSessionId: current,
-        followAgent
+        followAgent: followAgent && followAgentRef.current
       })
     )
   }, [visibleSessions, activeParts, followAgent])
 
   useEffect(() => {
-    if (!followAgent) return
+    if (!followAgent || !followAgentRef.current) return
 
     const runningPart = pickRunningAgentPart(visibleSessions, activeParts)
     const sessionId = runningPart ? agentPartSessionId(runningPart) : undefined
@@ -64,6 +65,7 @@ export function useTerminalStageState(
 
   const setFollowAgent = useCallback(
     (nextFollowAgent: boolean) => {
+      followAgentRef.current = nextFollowAgent
       setFollowAgentState(nextFollowAgent)
       if (!nextFollowAgent) return
 
@@ -85,6 +87,9 @@ export function useTerminalStageState(
     (sessionId: string, options: TerminalFocusOptions = {}) => {
       if (!visibleSessions.some((session) => session.id === sessionId)) return
 
+      if (options.userInitiated) {
+        followAgentRef.current = false
+      }
       setFocusedSessionId(sessionId)
       if (options.userInitiated) setFollowAgentState(false)
       if ('partId' in options) setFocusedPartId(options.partId || null)

@@ -15,19 +15,29 @@ import {
   updateTerminalInputBuffer,
   type TerminalCompletionResult
 } from '../lib/terminal-completion'
+import { pendingTerminalLiveDataAfterBuffer } from '../lib/terminal-buffer'
 
 const TERMINAL_COMPLETION_PREFETCH_DEBOUNCE_MS = 900
 const TERMINAL_COMPLETION_PREFETCH_MIN_INTERVAL_MS = 1200
 
+function reportTerminalDiagnostic(type: string, extra: Record<string, unknown>): void {
+  window.api.reportRendererDiagnostic({
+    type,
+    component: 'TerminalView',
+    extra
+  })
+}
+
 interface TerminalViewProps {
   id: string
-  onClose: () => void
   topicId?: string
   hostId?: string
   hostAlias?: string
   terminalName?: string
   terminalRole?: TerminalSessionRole
   onFocusSession?: () => void
+  onSessionClosed?: () => void
+  autoFocus?: boolean
   fontSize?: number
   command?: string
   commandStatus?: string
@@ -59,13 +69,14 @@ interface TerminalCommandAssistProps {
 
 export function TerminalView({
   id,
-  onClose,
   topicId,
   hostId,
   hostAlias,
   terminalName,
   terminalRole,
   onFocusSession,
+  onSessionClosed,
+  autoFocus = true,
   fontSize = 13,
   commandStatus,
   commandSource,
@@ -86,8 +97,9 @@ export function TerminalView({
   const [completionPending, setCompletionPending] = useState(false)
   const [completionAnchor, setCompletionAnchor] = useState({ left: 12, top: 12 })
 
-  const onCloseRef = useRef(onClose)
+  const onSessionClosedRef = useRef(onSessionClosed)
   const onFocusSessionRef = useRef(onFocusSession)
+  const autoFocusRef = useRef(autoFocus)
   const inputBufferRef = useRef('')
   const completionRef = useRef<TerminalCompletionResult | null>(null)
   const completionVisibleRef = useRef(false)
@@ -95,15 +107,18 @@ export function TerminalView({
   const completionTimerRef = useRef<number | null>(null)
   const completionRequestRef = useRef(0)
   const completionLastRequestAtRef = useRef(0)
+  const initialFitFrameRef = useRef<number | null>(null)
   const updateAnchorRef = useRef<() => void>(() => undefined)
+  const fitAndAttachRef = useRef<() => void>(() => undefined)
   const sendTerminalInputRef = useRef<(data: string) => void>(() => undefined)
   const terminalContextRef = useRef({ hostAlias, terminalName, terminalRole })
   const sidebarResizingRef = useRef(false)
 
   useEffect(() => {
-    onCloseRef.current = onClose
+    onSessionClosedRef.current = onSessionClosed
     onFocusSessionRef.current = onFocusSession
-  }, [onClose, onFocusSession])
+    autoFocusRef.current = autoFocus
+  }, [autoFocus, onFocusSession, onSessionClosed])
 
   useEffect(() => {
     terminalContextRef.current = { hostAlias, terminalName, terminalRole }
@@ -112,6 +127,13 @@ export function TerminalView({
   useEffect(() => {
     const terminalNode = terminalRef.current
     if (!terminalNode) return
+
+    reportTerminalDiagnostic('terminal-view-mount', {
+      id,
+      hostId,
+      topicId,
+      isLocal: hostId === 'local'
+    })
 
     const term = new Terminal({
       cursorBlink: true,
@@ -158,7 +180,6 @@ export function TerminalView({
     xtermRef.current = term
 
     const isLocal = hostId === 'local'
-
     const cleanupAgentExecuting = window.api.onTerminalAgentExecuting(id, setIsAgentExecuting)
 
     const sendTerminalInput = (data: string): void => {
@@ -434,6 +455,16 @@ export function TerminalView({
       try {
         fitAddon.fit()
         if (term.cols > 0 && term.rows > 0) {
+          const rect = terminalNode.getBoundingClientRect()
+          reportTerminalDiagnostic('terminal-fit-ready', {
+            id,
+            hostId,
+            topicId,
+            cols: term.cols,
+            rows: term.rows,
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
+          })
           if (isLocal) {
             window.api.resizeLocal(id, term.cols, term.rows)
           } else {
@@ -445,22 +476,52 @@ export function TerminalView({
             window.api.attachSSH(id)
           }
         } else {
-          requestAnimationFrame(doFitAndResize)
+          initialFitFrameRef.current = requestAnimationFrame(doFitAndResize)
         }
       } catch {
-        requestAnimationFrame(doFitAndResize)
+        initialFitFrameRef.current = requestAnimationFrame(doFitAndResize)
       }
     }
+    fitAndAttachRef.current = doFitAndResize
 
-    requestAnimationFrame(() => {
+    initialFitFrameRef.current = requestAnimationFrame(() => {
+      initialFitFrameRef.current = null
       doFitAndResize()
-      term.focus()
+      if (autoFocusRef.current) term.focus()
     })
+    updateAnchorRef.current = () => {
+      const outerNode = terminalNode.parentElement
+      if (!outerNode || term.cols <= 0 || term.rows <= 0) return
+
+      const terminalRect = terminalNode.getBoundingClientRect()
+      const outerRect = outerNode.getBoundingClientRect()
+      const cellWidth = terminalRect.width / Math.max(term.cols, 1)
+      const cellHeight = terminalRect.height / Math.max(term.rows, 1)
+      const preferredLeft =
+        terminalRect.left - outerRect.left + term.buffer.active.cursorX * cellWidth + 8
+      const preferredTop =
+        terminalRect.top - outerRect.top + (term.buffer.active.cursorY + 1) * cellHeight + 6
+
+      setCompletionAnchor({
+        left: Math.max(8, Math.min(preferredLeft, outerRect.width - 280)),
+        top: Math.max(8, Math.min(preferredTop, outerRect.height - 48))
+      })
+    }
 
     let isBufferLoaded = false
+    let pendingLiveData = ''
     const cleanupData = window.api.onSSHData(id, (data) => {
+      reportTerminalDiagnostic('terminal-live-data', {
+        id,
+        hostId,
+        topicId,
+        length: data.length,
+        isBufferLoaded
+      })
       if (isBufferLoaded) {
         term.write(data)
+      } else {
+        pendingLiveData += data
       }
     })
 
@@ -471,19 +532,48 @@ export function TerminalView({
         if (buffer) {
           term.write(buffer)
         }
+        const liveData = pendingTerminalLiveDataAfterBuffer(buffer || '', pendingLiveData)
+        if (liveData) {
+          term.write(liveData)
+        }
+        reportTerminalDiagnostic('terminal-buffer-loaded', {
+          id,
+          hostId,
+          topicId,
+          bufferLength: (buffer || '').length,
+          pendingLiveLength: pendingLiveData.length,
+          flushedLiveLength: liveData.length
+        })
       })
       .catch(() => {
-        // Fall back to live streaming when the initial buffer is unavailable.
+        if (pendingLiveData) {
+          term.write(pendingLiveData)
+        }
+        reportTerminalDiagnostic('terminal-buffer-load-failed', {
+          id,
+          hostId,
+          topicId,
+          pendingLiveLength: pendingLiveData.length
+        })
       })
       .finally(() => {
+        pendingLiveData = ''
         isBufferLoaded = true
       })
 
     const cleanupClosed = window.api.onSSHClosed(id, () => {
-      onCloseRef.current?.()
+      reportTerminalDiagnostic('terminal-session-closed-event', { id, hostId, topicId })
+      onSessionClosedRef.current?.()
     })
 
     const handleTerminalInput = (data: string): void => {
+      reportTerminalDiagnostic('terminal-input', {
+        id,
+        hostId,
+        topicId,
+        length: data.length,
+        isEscape: data.startsWith('\x1b')
+      })
       if (data.startsWith('\x1b')) {
         inputBufferRef.current = ''
         hideCompletion()
@@ -614,20 +704,34 @@ export function TerminalView({
       window.removeEventListener('openterm:sidebar-resize-start', handleSidebarResizeStart)
       window.removeEventListener('openterm:sidebar-resize-end', handleSidebarResizeEnd)
       resizeObserver.disconnect()
+      reportTerminalDiagnostic('terminal-view-unmount', { id, hostId, topicId })
       cleanupData()
       cleanupClosed()
       cleanupAgentExecuting?.()
+      if (initialFitFrameRef.current !== null) {
+        window.cancelAnimationFrame(initialFitFrameRef.current)
+        initialFitFrameRef.current = null
+      }
       if (completionTimerRef.current) window.clearTimeout(completionTimerRef.current)
       completionRequestRef.current += 1
       completionRef.current = null
       completionVisibleRef.current = false
       completionPendingRef.current = false
       updateAnchorRef.current = () => undefined
+      fitAndAttachRef.current = () => undefined
       sendTerminalInputRef.current = () => undefined
       terminalNode.removeEventListener('mousedown', handleMouseDown)
       term.dispose()
     }
   }, [hostId, id, topicId])
+
+  useEffect(() => {
+    if (!autoFocus) return
+    requestAnimationFrame(() => {
+      fitAndAttachRef.current()
+      xtermRef.current?.focus()
+    })
+  }, [autoFocus])
 
   useEffect(() => {
     if (!commandAssist?.open) return

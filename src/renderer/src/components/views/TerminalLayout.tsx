@@ -11,6 +11,7 @@ import { useFileTransfer } from '../../hooks/useFileTransfer'
 import { FileTransferToast } from '../FileTransferToast'
 import { ConfirmActionButton } from '../ui'
 import { cn } from '../../lib/utils'
+import { deriveTerminalFontSize } from '../../lib/terminal-scaling'
 import {
   paneDropPreviewClass,
   resolvePaneDropEdgeFromPoint,
@@ -43,6 +44,7 @@ interface TerminalLayoutProps {
   setFileBrowserHostId: (id: string | null) => void
   fileBrowserHostAlias: string
   setFileBrowserHostAlias: (alias: string) => void
+  active: boolean
   focusTerminalRequest?: { sessionId: string; requestId: number } | null
   closeTerminalRequest?: { sessionId: string; requestId: number } | null
 }
@@ -61,6 +63,7 @@ export function TerminalLayout({
   setFileBrowserHostId,
   fileBrowserHostAlias,
   setFileBrowserHostAlias,
+  active,
   focusTerminalRequest,
   closeTerminalRequest
 }: TerminalLayoutProps): React.ReactElement {
@@ -155,8 +158,16 @@ export function TerminalLayout({
   }, [focusTerminalRequest, focusTerminalTab])
 
   const leaves = paneManager.getLeaves()
-  const leafCount = leaves.length
   const focusedLeaf = leaves.find((leaf) => leaf.id === paneManager.focusedLeafId)
+  const focusedActiveTabId = focusedLeaf?.activeTabId ?? null
+
+  useEffect(() => {
+    if (!terminalSessionId) return
+    if (focusedActiveTabId === terminalSessionId) return
+    focusTerminalTab(terminalSessionId)
+  }, [focusTerminalTab, focusedActiveTabId, terminalSessionId])
+
+  const leafCount = leaves.length
   const activeTab = (() => {
     const tab =
       (focusedLeaf?.activeTabId ? paneManager.getTabData(focusedLeaf.activeTabId) : undefined) ??
@@ -216,6 +227,13 @@ export function TerminalLayout({
         console.error('Failed to close terminal session:', error)
         return false
       }
+    },
+    [removeTerminalTab]
+  )
+
+  const handleSessionClosed = useCallback(
+    (tabId: string) => {
+      removeTerminalTab(tabId)
     },
     [removeTerminalTab]
   )
@@ -291,6 +309,7 @@ export function TerminalLayout({
         .getLeafTabs(leaf)
         .map((tab) => legacyTabs.find((legacyTab) => legacyTab.sessionId === tab.sessionId) ?? tab)
       const showPaneTitle = tabs.length > 0 && (tabs.length > 1 || leafCount > 1)
+      const paneTerminalFontSize = deriveTerminalFontSize(terminalFontSize, leafCount)
 
       return (
         <div
@@ -354,8 +373,13 @@ export function TerminalLayout({
                   topicId={WORKSPACE_TERMINALS_TOPIC_ID}
                   hostId={tab.host.id}
                   hostAlias={tab.host.alias}
-                  fontSize={terminalFontSize}
-                  onClose={() => handleCloseTab(tab.sessionId)}
+                  fontSize={paneTerminalFontSize}
+                  autoFocus={
+                    active &&
+                    paneManager.focusedLeafId === leaf.id &&
+                    leaf.activeTabId === tab.sessionId
+                  }
+                  onSessionClosed={() => handleSessionClosed(tab.sessionId)}
                   onFocusSession={() => focusTerminalTab(tab.sessionId)}
                   onFileDrop={(sourceHostId, sourcePath, fileName, destHostId, destPath) => {
                     const transferId = `ft-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -381,6 +405,7 @@ export function TerminalLayout({
     [
       paneManager,
       terminalFontSize,
+      active,
       handleCloseTab,
       focusTerminalTab,
       handleTabDragStart,

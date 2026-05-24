@@ -89,7 +89,7 @@
   }
 
   .app-sidebar-content {
-    width: var(--sidebar-width, 248px);
+    width: var(--sidebar-width, 224px);
     padding-right: 0;
     border-color: transparent;
     background: transparent;
@@ -165,7 +165,7 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    left: calc(var(--sidebar-width, 248px) - var(--workspace-overlap, 0px) - 8px);
+    left: calc(var(--sidebar-width, 224px) - var(--workspace-overlap, 0px) - 8px);
     z-index: 80;
     width: 16px;
     cursor: col-resize;

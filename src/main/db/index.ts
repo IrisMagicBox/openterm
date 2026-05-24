@@ -48,6 +48,7 @@ class AppDatabase {
 
     this.hosts = new HostRepository(db)
     this.topics = new TopicRepository(db)
+    this.topics.ensureWorkspaceTerminalsTopic()
     this.messages = new MessageRepository(db)
     this.tasks = new TaskRepository(db)
     this.taskSteps = new TaskStepRepository(db)

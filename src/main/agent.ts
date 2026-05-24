@@ -79,6 +79,10 @@ export class AgentService implements IAgentService {
     return this.sessions.closeTerminal(id, options)
   }
 
+  notifyTerminalClosed(id: string): void {
+    this.sessions.notifySessionClosed(id)
+  }
+
   renameTerminal(id: string, name: string): Promise<void> {
     return this.sessions.renameTerminal(id, name)
   }

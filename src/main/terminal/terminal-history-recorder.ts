@@ -1,9 +1,14 @@
 import type { TerminalIO, TerminalSession, TerminalSessionDeletedBy } from '../../shared/types'
-import { terminalIODB, terminalSessionDB } from '../db'
+import { WORKSPACE_TERMINALS_TOPIC_ID } from '../../shared/constants'
+import { terminalIODB, terminalSessionDB, topicDB } from '../db'
 
 export class TerminalHistoryRecorder {
   createSession(session: TerminalSession): void {
-    if (session.topicId) terminalSessionDB.createSession(session)
+    if (!session.topicId) return
+    if (session.topicId === WORKSPACE_TERMINALS_TOPIC_ID) {
+      topicDB.ensureWorkspaceTerminalsTopic()
+    }
+    terminalSessionDB.createSession(session)
   }
 
   updateShellIntegration(sessionId: string, ready: boolean): void {
