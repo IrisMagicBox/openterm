@@ -50,7 +50,7 @@ OpenTerm is built for that workflow. The Agent can operate across multiple termi
 
 This demo shows the Agent co-driving a terminal workflow: it observes the workspace, runs commands, reacts to output, and keeps the process visible while you stay in control.
 
-[![Watch the OpenTerm Agent demo](docs/assets/readme/demo-poster.jpg)](docs/assets/readme/demo.mp4)
+https://github.com/user-attachments/assets/7f0d3f04-5f7c-4062-9a1a-3e102b5a5a29
 
 [Watch the demo video](docs/assets/readme/demo.mp4)
 
