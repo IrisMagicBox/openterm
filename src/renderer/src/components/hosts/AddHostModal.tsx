@@ -164,7 +164,7 @@ export function AddHostModal({
             <Textarea
               value={form.keyContent}
               onChange={(e) => setForm((f) => ({ ...f, keyContent: e.target.value }))}
-              placeholder="ssh-private-key-placeholder"
+              placeholder="粘贴 SSH 私钥内容"
               className="h-28 resize-y font-mono text-xs leading-5"
               spellCheck={false}
             />

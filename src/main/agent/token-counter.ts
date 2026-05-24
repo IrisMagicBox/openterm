@@ -1,6 +1,6 @@
 /**
  * Token estimation and context budget management.
- * Uses 4 chars/token heuristic (same as terminal assistant) for fast estimation.
+ * Uses a 4 chars/token heuristic for fast estimation.
  */
 
 import type { Message } from '../../shared/types'

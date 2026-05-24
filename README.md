@@ -42,23 +42,15 @@
 
 OpenTerm is a desktop workspace for people who live in terminals. It brings together local terminals, remote hosts, file transfer, port forwarding, model/provider configuration, and an AI Agent that can co-drive real terminal sessions with you.
 
-Many developers already have a large collection of CLI tools on their machines: terminal assistant, terminal assistant, terminal assistant, demo-cli, package managers, cloud CLIs, build tools, deployment scripts, and custom automation. The hard part is rarely one single command. It is switching between terminal windows, keeping context, configuring environments, connecting to remote machines, watching output, fixing failures, and continuing the next step without losing the thread.
+Many developers already have a large collection of CLI tools on their machines: Codex, Claude Code, OpenCode, OpenClaw, package managers, cloud CLIs, build tools, deployment scripts, and custom automation. The hard part is rarely one single command. It is switching between terminal windows, keeping context, configuring environments, connecting to remote machines, watching output, fixing failures, and continuing the next step without losing the thread.
 
 OpenTerm is built for that workflow. The Agent can operate across multiple terminal sessions, observe command output, help configure tools, debug failures, and continue work in a shared co-driving terminal. You stay in control, and you can pause, take over, or use OpenTerm as a traditional terminal whenever you want.
-
-## Demo
-
-This demo shows the Agent co-driving real terminal sessions to upgrade a component: it observes the workspace, runs commands, reacts to output, and keeps the process visible while you stay in control.
-
-<video src="demo/demo.mp4" controls muted playsinline width="100%">
-  Watch the Agent component upgrade demo: demo/demo.mp4
-</video>
 
 ## Highlights
 
 - **Multi-terminal workspace**: Manage local and remote terminal sessions in one place.
 - **Agent co-driving terminal**: Let the Agent execute commands, inspect output, and continue the workflow while you remain in control.
-- **CLI tool orchestration**: Drive tools such as terminal assistant, terminal assistant, terminal assistant, demo-cli, package managers, cloud CLIs, and project scripts.
+- **CLI tool orchestration**: Drive tools such as Codex, Claude Code, OpenCode, OpenClaw, package managers, cloud CLIs, and project scripts.
 - **Remote host workflow**: Connect to hosts over SSH and keep terminal context organized by task.
 - **Traditional terminal support**: Use OpenTerm as a normal terminal when you want direct manual control.
 - **File transfer and browsing**: Browse remote files, upload, download, and move through file workflows without leaving the workspace.

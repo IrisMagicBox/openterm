@@ -4,7 +4,7 @@ OpenTerm is a multi-terminal management Agent for developers. It brings local te
 
 ## The Problem
 
-Developer machines often contain many CLI tools: terminal assistant, terminal assistant, terminal assistant, demo-cli, package managers, cloud CLIs, build tools, deployment scripts, and custom internal commands. The problem is not just running one command. It is:
+Developer machines often contain many CLI tools: Codex, Claude Code, OpenCode, OpenClaw, package managers, cloud CLIs, build tools, deployment scripts, and custom internal commands. The problem is not just running one command. It is:
 
 - switching between many terminal sessions;
 - keeping context across local and remote hosts;
@@ -27,7 +27,7 @@ The Agent is not just a chat response. It can run commands, react to output, and
 
 ### CLI Tool Orchestration
 
-OpenTerm is useful for driving tools such as terminal assistant, terminal assistant, terminal assistant, demo-cli, package managers, cloud CLIs, build scripts, and project commands. The Agent can help configure, execute, debug, and finish command-line tasks.
+OpenTerm is useful for driving tools such as Codex, Claude Code, OpenCode, OpenClaw, package managers, cloud CLIs, build scripts, and project commands. The Agent can help configure, execute, debug, and finish command-line tasks.
 
 ### Remote Host Workflow
 

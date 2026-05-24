@@ -39,14 +39,14 @@ describe('Shared Types - Host', () => {
       username: 'admin',
       password: 'secret',
       keyPath: '/home/user/.ssh/id_rsa',
-      keyContent: 'ssh-private-key-placeholder',
+      keyContent: 'ssh-private-key-content',
       keyPassphrase: 'key-secret',
       tags: [],
       createdAt: Date.now()
     }
     expect(host.password).toBe('secret')
     expect(host.keyPath).toBe('/home/user/.ssh/id_rsa')
-    expect(host.keyContent).toBe('ssh-private-key-placeholder')
+    expect(host.keyContent).toBe('ssh-private-key-content')
     expect(host.keyPassphrase).toBe('key-secret')
   })
 })

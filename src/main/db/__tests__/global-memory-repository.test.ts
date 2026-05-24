@@ -34,7 +34,7 @@ class FakeStatement {
 }
 
 describe('GlobalMemoryRepository', () => {
-  it('returns an empty structured-style memory profile by default', () => {
+  it('returns an empty structured memory profile by default', () => {
     const { repo } = createRepo()
 
     const memory = repo.getMemory()
