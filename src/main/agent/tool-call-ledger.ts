@@ -76,6 +76,16 @@ export class ToolCallLedger {
       }
     }
 
+    if (toolName === 'create_artifact') {
+      const content = stringValue(args.content) ?? ''
+      return {
+        title: stringValue(args.title) ?? '',
+        type: stringValue(args.type) ?? '',
+        source: stringValue(args.source) ?? '',
+        contentLength: numberValue(args.contentLength) ?? content.length
+      }
+    }
+
     const copy = { ...args }
     delete copy.reason
     return copy

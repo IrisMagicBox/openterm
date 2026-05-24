@@ -7,6 +7,8 @@ import type { CompactionMode } from './compaction'
 import type { PendingVerificationCheckpoint } from './agent-checkpoint'
 import { ToolCallLedger, type ToolCallLedgerEntry } from './tool-call-ledger'
 
+const ARTIFACT_CONTEXT_CONTENT_LIMIT = 400
+
 export type AgentRunEvent =
   | {
       type: 'assistant_response'
@@ -125,6 +127,58 @@ function cloneEvent(event: AgentRunEvent): AgentRunEvent {
     return { ...event, args: { ...event.args } }
   }
   return { ...event }
+}
+
+function safeParseRecord(raw: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(raw || '{}') as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
+    return parsed as Record<string, unknown>
+  } catch {
+    return undefined
+  }
+}
+
+function artifactReferenceForToolResult(
+  event: Extract<AgentRunEvent, { type: 'tool_result' }>
+): Record<string, unknown> | undefined {
+  if (event.toolName !== 'create_artifact') return undefined
+  const parsed = safeParseRecord(event.observation ?? event.content)
+  if (!parsed) return undefined
+  return {
+    artifactId: typeof parsed.artifactId === 'string' ? parsed.artifactId : undefined,
+    title: typeof parsed.title === 'string' ? parsed.title : undefined,
+    type: typeof parsed.type === 'string' ? parsed.type : undefined,
+    contentLength: typeof parsed.contentLength === 'number' ? parsed.contentLength : undefined
+  }
+}
+
+function redactCreateArtifactCallArguments(
+  call: ChatCompletionMessageFunctionToolCall,
+  artifact?: Record<string, unknown>
+): ChatCompletionMessageFunctionToolCall {
+  if (call.function.name !== 'create_artifact') return cloneToolCall(call)
+  const args = safeParseRecord(call.function.arguments)
+  if (!args) return cloneToolCall(call)
+  const content = typeof args.content === 'string' ? args.content : ''
+  if (content.length <= ARTIFACT_CONTEXT_CONTENT_LIMIT) return cloneToolCall(call)
+
+  const redactedArgs = {
+    ...args,
+    content: `[Artifact content compressed after save: ${content.length} characters total. Use the saved Artifact${
+      typeof artifact?.artifactId === 'string' ? ` ${artifact.artifactId}` : ''
+    } as the full source.]\n\nPreview:\n${content.slice(0, ARTIFACT_CONTEXT_CONTENT_LIMIT)}`,
+    contentLength: content.length,
+    savedArtifact: artifact
+  }
+
+  return {
+    ...call,
+    function: {
+      ...call.function,
+      arguments: JSON.stringify(redactedArgs)
+    }
+  }
 }
 
 function sortPersistedParts(parts: AgentPart[]): AgentPart[] {
@@ -612,13 +666,21 @@ export class AgentRunState {
 
   private toRawModelMessages(events: AgentRunEvent[]): ChatCompletionMessageParam[] {
     const result: ChatCompletionMessageParam[] = []
+    const artifactByToolCallId = new Map<string, Record<string, unknown>>()
+    for (const event of events) {
+      if (event.type !== 'tool_result') continue
+      const artifact = artifactReferenceForToolResult(event)
+      if (artifact) artifactByToolCallId.set(event.toolCallId, artifact)
+    }
 
     for (const event of events) {
       if (event.type === 'assistant_response') {
         result.push({
           role: 'assistant',
           content: event.content,
-          tool_calls: event.toolCalls
+          tool_calls: event.toolCalls.map((call) =>
+            redactCreateArtifactCallArguments(call, artifactByToolCallId.get(call.id))
+          )
         })
       } else if (event.type === 'tool_call_requested') {
         continue

@@ -28,6 +28,21 @@ function call(
   }
 }
 
+function artifactCall(id: string, content: string): ChatCompletionMessageFunctionToolCall {
+  return {
+    id,
+    type: 'function',
+    function: {
+      name: 'create_artifact',
+      arguments: JSON.stringify({
+        title: 'Long report',
+        type: 'report',
+        content
+      })
+    }
+  }
+}
+
 function part(input: Partial<AgentPart> & Pick<AgentPart, 'id' | 'type'>): AgentPart {
   return {
     id: input.id,
@@ -161,6 +176,47 @@ describe('AgentRunState', () => {
     )
 
     expect(String(firstTool?.content)).toContain('旧结果已压缩')
+  })
+
+  it('redacts saved create_artifact content from derived model messages', () => {
+    const longReport = '# Report\n\n' + 'findings '.repeat(120)
+    const state = new AgentRunState({ workingHistory: [] })
+    state.appendAssistantResponse({
+      turn: 1,
+      content: longReport,
+      toolCalls: [artifactCall('artifact-call-1', longReport)]
+    })
+    state.appendToolResult({
+      turn: 1,
+      toolCallId: 'artifact-call-1',
+      toolName: 'create_artifact',
+      signature: 'sig',
+      content: JSON.stringify({
+        artifactId: 'artifact-1',
+        taskId: 'task-1',
+        type: 'report',
+        title: 'Long report',
+        contentLength: longReport.length
+      })
+    })
+
+    const assistantMessage = state.toModelMessages()[0] as {
+      tool_calls?: ChatCompletionMessageFunctionToolCall[]
+    }
+    const args = JSON.parse(
+      assistantMessage.tool_calls?.[0]?.function.arguments ?? '{}'
+    ) as Record<string, unknown>
+    const rawEvent = state.snapshot().events.find((event) => event.type === 'assistant_response')
+
+    expect(args.content).toContain('Artifact content compressed')
+    expect(args.content).toContain('Preview:')
+    expect(args.contentLength).toBe(longReport.length)
+    expect(args.savedArtifact).toMatchObject({ artifactId: 'artifact-1', title: 'Long report' })
+    expect(
+      rawEvent?.type === 'assistant_response'
+        ? JSON.parse(rawEvent.toolCalls[0].function.arguments).content
+        : ''
+    ).toBe(longReport)
   })
 
   it('round-trips v2 state snapshots', () => {

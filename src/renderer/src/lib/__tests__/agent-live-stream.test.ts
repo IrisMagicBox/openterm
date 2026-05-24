@@ -329,6 +329,38 @@ describe('agent live stream visibility', () => {
     ])
   })
 
+  it('summarizes create_artifact calls without expanding full content', () => {
+    const longContent = '# Report\n\n' + 'findings '.repeat(80)
+    const [line] = agentActivityLines([
+      part({
+        id: 'artifact-1',
+        type: 'tool',
+        toolName: 'create_artifact',
+        status: 'completed',
+        input: JSON.stringify({
+          title: 'Hermes Agent 深度调研报告',
+          type: 'report',
+          content: longContent
+        }),
+        metadata: {
+          artifactId: 'artifact-1',
+          artifactTitle: 'Hermes Agent 深度调研报告',
+          artifactType: 'report',
+          contentLength: longContent.length
+        },
+        orderIndex: 1
+      })
+    ])
+
+    expect(line).toMatchObject({
+      label: '保存 Artifact',
+      detail: `Hermes Agent 深度调研报告 · report · ${longContent.length} 字`
+    })
+    expect(line.sections[0].content).toContain('已省略')
+    expect(line.sections[0].content).toContain(String(longContent.length))
+    expect(line.sections[0].content).not.toContain('findings findings findings')
+  })
+
   it('keeps permission parts out of the main process projection and attaches them to tools', () => {
     const parts = [
       part({

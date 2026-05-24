@@ -68,6 +68,10 @@ function textValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
 function compactJsonValue(value: unknown): string {
   if (typeof value === 'string') return value
   if (value === undefined || value === null) return ''
@@ -81,16 +85,43 @@ function compactJsonValue(value: unknown): string {
   }
 }
 
+function artifactInputSummary(part: AgentPart): string | undefined {
+  if (part.toolName !== 'create_artifact') return undefined
+  const parsed = parseJsonValue(part.input)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
+  const input = parsed as Record<string, unknown>
+  const content = typeof input.content === 'string' ? input.content : ''
+  const contentLength =
+    content.length ||
+    numberValue(input.contentLength) ||
+    numberValue(part.metadata?.contentLength) ||
+    undefined
+  const summary: Record<string, unknown> = {
+    title: textValue(input.title) || textValue(part.metadata?.artifactTitle),
+    type: textValue(input.type) || textValue(part.metadata?.artifactType)
+  }
+  const source = textValue(input.source)
+  if (source) summary.source = source
+  if (contentLength !== undefined) summary.contentLength = contentLength
+  if (content) {
+    summary.content = `[已省略 ${content.length} 字符，完整内容见 Artifact]`
+  }
+  if (Object.values(summary).every((value) => !value)) return undefined
+  return JSON.stringify(summary, null, 2)
+}
+
 function fullPartDetail(part: AgentPart): string {
   const command = parseAgentPartCommand(part)
   const output = agentPartOutput(part)
   const liveOutputPreview = sanitizeAgentText(textValue(part.metadata?.liveOutputPreview))
-  const input = prettyInput(part)
+  const input = artifactInputSummary(part) || prettyInput(part)
   if (part.type === 'text' || part.type === 'reasoning') return output || input
   return output || liveOutputPreview || command || input
 }
 
 function prettyInput(part: AgentPart): string {
+  const artifactSummary = artifactInputSummary(part)
+  if (artifactSummary) return artifactSummary
   const raw = sanitizeAgentText(part.input || '')
   const parsed = parseJsonValue(part.input)
   if (parsed && typeof parsed === 'object') {
@@ -199,6 +230,18 @@ function toolLine(
   if (part.toolName === 'webfetch') {
     const detail = textValue(input.url) || command
     return { label: '读取网页', detail, fullDetail: fullPartDetail(part) || detail }
+  }
+
+  if (part.toolName === 'create_artifact') {
+    const title = textValue(input.title) || textValue(part.metadata?.artifactTitle)
+    const type = textValue(input.type) || textValue(part.metadata?.artifactType) || 'artifact'
+    const contentLength =
+      (typeof input.content === 'string' ? input.content.length : undefined) ??
+      numberValue(part.metadata?.contentLength)
+    const detail = [title, type, contentLength === undefined ? '' : `${contentLength} 字`]
+      .filter(Boolean)
+      .join(' · ')
+    return { label: '保存 Artifact', detail, fullDetail: artifactInputSummary(part) || detail }
   }
 
   if (part.toolName === 'execute_command') {
